@@ -1,0 +1,24 @@
+Listado de rutas de carpetas
+El número de serie del volumen es 000000C7 243E:B1A5
+C:.
+|   config.yaml
+|   deepflow.py
+|   README.md
+|   
++---docs
+|   \---audits
+|           git_branch.txt
+|           git_log_20.txt
+|           git_remotes.txt
+|           git_status_initial.txt
+|           repo_tree_initial.txt
+|           
+\---utils
+        config.py
+        data_handling.py
+        flow_models.py
+        logging_config.py
+        plotting.py
+        run_management.py
+        training.py
+        

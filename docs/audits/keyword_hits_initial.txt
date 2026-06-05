@@ -1,0 +1,153 @@
+.\config.yaml:7:datapath_mothers: "/path/to/muonsGAN_data_afterMS.h5"
+.\config.yaml:14:  name: "RealNVP_Flow"
+.\deepflow.py:3:import pickle
+.\deepflow.py:9:import torch
+.\deepflow.py:11:from torch.utils.data import DataLoader, TensorDataset
+.\deepflow.py:12:from torch.utils.tensorboard import SummaryWriter
+.\deepflow.py:14:from utils.config import load_config
+.\deepflow.py:17:                                 scale_muon_data)
+.\deepflow.py:18:from utils.flow_models import NormalizingFlow
+.\deepflow.py:19:from utils.logging_config import setup_logging
+.\deepflow.py:27:    # Load external configuration
+.\deepflow.py:28:    config = load_config()
+.\deepflow.py:31:    run_base_dir = config.get("run_base_dir", "outputs")
+.\deepflow.py:34:    config_copy_path = os.path.join(run_dir, "config.yaml")
+.\deepflow.py:35:    shutil.copy("config.yaml", config_copy_path)
+.\deepflow.py:38:    setup_logging(config.get("logging", {}), run_dir)
+.\deepflow.py:42:    device = torch.device(config.get("device", "cuda") if torch.cuda.is_available() else "cpu")
+.\deepflow.py:44:    datapath_mothers = config.get("datapath_mothers")
+.\deepflow.py:45:    model_config = config.get("model", {})
+.\deepflow.py:47:    name_model = model_config.get("name", "RealNVP_Flow")
+.\deepflow.py:59:        scaled_np, scaler_mother, raw_np = scale_muon_data(mothers_df, run_dir)
+.\deepflow.py:71:    split_config = config.get("data", {})
+.\deepflow.py:72:    val_ratio = split_config.get("val_ratio", 0.2)
+.\deepflow.py:78:    batch_size = config.get("batch_size", 128)
+.\deepflow.py:79:    train_loader = DataLoader(TensorDataset(torch.tensor(train_scaled, dtype=torch.float)),
+.\deepflow.py:81:    val_loader = DataLoader(TensorDataset(torch.tensor(val_scaled, dtype=torch.float)),
+.\deepflow.py:86:    hidden_dim = model_config.get("hidden_dim", 64)
+.\deepflow.py:87:    n_layers = model_config.get("n_layers", 8)
+.\deepflow.py:88:    flow_model = NormalizingFlow(input_dim, hidden_dim, n_layers)
+.\deepflow.py:96:    epochs = model_config.get("epochs", 150)
+.\deepflow.py:97:    lr = model_config.get("learning_rate", 0.001)
+.\deepflow.py:109:        patience=model_config.get("patience", 20),
+.\deepflow.py:115:    with torch.no_grad():
+.\deepflow.py:118:        torch.cuda.synchronize()
+.\deepflow.py:126:        torch.cuda.synchronize()
+.\deepflow.py:141:    gen_file = os.path.join(run_dir, "generated_muon_features.pkl")
+.\deepflow.py:143:        pickle.dump({"generated_scaled": generated_scaled,
+.\docs\audits\git_remotes.txt:1:origin	https://github.com/fbientrigo/ship_adaptive_muon_bg.git (fetch)
+.\docs\audits\git_remotes.txt:2:origin	https://github.com/fbientrigo/ship_adaptive_muon_bg.git (push)
+.\docs\audits\repo_file_inventory_initial.csv:2:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\config.yaml","439","05-06-2026 16:52:38"
+.\docs\audits\repo_file_inventory_initial.csv:3:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\deepflow.py","5852","05-06-2026 16:52:38"
+.\docs\audits\repo_file_inventory_initial.csv:4:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\README.md","6606","05-06-2026 16:52:38"
+.\docs\audits\repo_file_inventory_initial.csv:5:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\docs\audits\git_branch.txt","5","05-06-2026 16:55:43"
+.\docs\audits\repo_file_inventory_initial.csv:6:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\docs\audits\git_log_20.txt","125","05-06-2026 16:55:43"
+.\docs\audits\repo_file_inventory_initial.csv:7:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\docs\audits\git_remotes.txt","141","05-06-2026 16:55:43"
+.\docs\audits\repo_file_inventory_initial.csv:8:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\docs\audits\git_status_initial.txt","9","05-06-2026 16:55:42"
+.\docs\audits\repo_file_inventory_initial.csv:9:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\docs\audits\repo_file_inventory_initial.csv","0","05-06-2026 16:55:45"
+.\docs\audits\repo_file_inventory_initial.csv:10:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\docs\audits\repo_tree_initial.txt","526","05-06-2026 16:55:44"
+.\docs\audits\repo_file_inventory_initial.csv:11:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\utils\config.py","291","05-06-2026 16:52:38"
+.\docs\audits\repo_file_inventory_initial.csv:12:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\utils\data_handling.py","3579","05-06-2026 16:52:38"
+.\docs\audits\repo_file_inventory_initial.csv:13:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\utils\flow_models.py","3760","05-06-2026 16:52:38"
+.\docs\audits\repo_file_inventory_initial.csv:14:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\utils\logging_config.py","1166","05-06-2026 16:52:38"
+.\docs\audits\repo_file_inventory_initial.csv:15:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\utils\plotting.py","7963","05-06-2026 16:52:38"
+.\docs\audits\repo_file_inventory_initial.csv:16:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\utils\run_management.py","739","05-06-2026 16:52:38"
+.\docs\audits\repo_file_inventory_initial.csv:17:"C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg\utils\training.py","2596","05-06-2026 16:52:38"
+.\docs\audits\repo_tree_initial.txt:4:|   config.yaml
+.\docs\audits\repo_tree_initial.txt:5:|   deepflow.py
+.\docs\audits\repo_tree_initial.txt:17:        config.py
+.\docs\audits\repo_tree_initial.txt:20:        logging_config.py
+.\README.md:3:Adaptive simulation tools for muon-induced background studies in the SHiP experiment.
+.\README.md:5:This repository is a fork of `mferril/NFlow`, used as a clean starting point for developing a reproducible thesis pipeline around post-muon-shield muon generation, Normalizing Flows, proxy-based filtering, and FairShip-compatible simulation backends.
+.\README.md:11:The current goal is not to publish final physics results, but to build a reproducible software artifact that can evolve from toy studies to CERN/FairShip workflows.
+.\README.md:15:The long-term goal is to reduce the computational cost of finding useful muon-induced background candidates for SHiP by combining:
+.\README.md:17:* post-muon-shield muon datasets,
+.\README.md:20:* Normalizing Flow proposal models,
+.\README.md:22:* FairShip-compatible batch interfaces,
+.\README.md:28:post-muon-shield muon sample
+.\README.md:34:biased proposal / Normalizing Flow
+.\README.md:42:FairShip / reconstruction / selection results
+.\README.md:53:3. Google Colab playground notebooks.
+.\README.md:55:5. Future integration with FairShip workflows.
+.\README.md:61:* replace FairShip or GEANT4;
+.\README.md:64:* assume that historical datasets are valid without provenance;
+.\README.md:88:ship_adaptive_muon_bg/
+.\README.md:89:  configs/
+.\README.md:97:    ship_muon_bg/
+.\README.md:120:The pipeline should treat every input dataset as suspect until its schema, units, geometry, provenance, and intended use are documented.
+.\README.md:129:* post-muon-shield definition,
+.\README.md:130:* dataset hash,
+.\README.md:136:Proxy models estimate whether a generated muon candidate is worth sending to a more expensive simulation stage.
+.\README.md:148:### Normalizing Flows
+.\README.md:150:Normalizing Flows are used as proposal models for generating candidate muons in relevant regions of phase space.
+.\README.md:169:* FairShip adapter,
+.\README.md:185:* config,
+.\README.md:188:* dataset hash,
+.\README.md:196:MLflow or another lightweight tracking mechanism may be used.
+.\README.md:202:* Keep configs versioned.
+.\README.md:203:* Keep large datasets out of Git.
+.\README.md:212:* `mferril/NFlow`;
+.\README.md:215:* previous Google Colab toy studies;
+.\README.md:216:* FairShip documentation and scripts.
+.\README.md:247:python scripts/run_toy_loop.py --config configs/campaigns/toy_adaptive_v0.yaml
+.\README.md:256:    config_resolved.yaml
+.\README.md:257:    dataset_hash.json
+.\README.md:267:The repository should be designed so that the same campaign can eventually run on LXPLUS or CERN batch infrastructure with explicit runtime configs.
+.\README.md:272:configs/runtime/local.yaml
+.\README.md:273:configs/runtime/colab.yaml
+.\README.md:274:configs/runtime/lxplus.yaml
+.\README.md:277:The LXPLUS profile should avoid assumptions that only work on a laptop or Colab.
+.\utils\config.py:3:import yaml
+.\utils\config.py:6:def load_config(config_path="config.yaml"):
+.\utils\config.py:7:    if not os.path.exists(config_path):
+.\utils\config.py:8:        raise FileNotFoundError(f"Configuration file {config_path} not found.")
+.\utils\config.py:9:    with open(config_path, "r") as f:
+.\utils\config.py:10:        config = yaml.safe_load(f)
+.\utils\config.py:11:    return config
+.\utils\data_handling.py:3:import pickle
+.\utils\data_handling.py:8:import torch
+.\utils\data_handling.py:10:from torch.utils.data import TensorDataset
+.\utils\data_handling.py:15:    torch.save(data, cache_path)
+.\utils\data_handling.py:21:        data = torch.load(cache_path)
+.\utils\data_handling.py:28:    tensor_data = torch.tensor(scaled_data, dtype=torch.float)
+.\utils\data_handling.py:29:    dataset = TensorDataset(tensor_data)
+.\utils\data_handling.py:30:    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+.\utils\data_handling.py:48:    # Mother (muon)
+.\utils\data_handling.py:75:def scale_muon_data(mothers_df, plotdir):
+.\utils\data_handling.py:78:    mass_muon = 0.1134289259 # units GeV
+.\utils\data_handling.py:80:    energy = np.sqrt(np.sum(raw_features**2, axis=1) + mass_muon**2)
+.\utils\flow_models.py:3:import torch
+.\utils\flow_models.py:4:import torch.nn as nn
+.\utils\flow_models.py:5:import torch.nn.functional as F
+.\utils\flow_models.py:9:class CouplingLayer(nn.Module):
+.\utils\flow_models.py:13:        super(CouplingLayer, self).__init__()
+.\utils\flow_models.py:51:            x2 = x2 * torch.exp(s) + t
+.\utils\flow_models.py:54:            x2 = (x2 - t) * torch.exp(-s)
+.\utils\flow_models.py:56:        x = torch.cat([x1, x2], dim=1)
+.\utils\flow_models.py:68:        permutation = torch.randperm(num_features)
+.\utils\flow_models.py:71:        inv_perm = torch.empty_like(permutation)
+.\utils\flow_models.py:72:        inv_perm[self.permutation] = torch.arange(num_features)
+.\utils\flow_models.py:84:class NormalizingFlow(nn.Module):
+.\utils\flow_models.py:85:# RealNVP normalizing flow
+.\utils\flow_models.py:89:        super(NormalizingFlow, self).__init__()
+.\utils\flow_models.py:93:            layers.append(CouplingLayer(input_dim, hidden_dim, init_zero=init_zero))
+.\utils\flow_models.py:99:        self.base_dist = torch.distributions.MultivariateNormal(torch.zeros(input_dim), torch.eye(input_dim))
+.\utils\flow_models.py:107:            if isinstance(layer, CouplingLayer):
+.\utils\flow_models.py:119:            if isinstance(layer, CouplingLayer):
+.\utils\logging_config.py:2:import logging.config
+.\utils\logging_config.py:6:def setup_logging(log_config, run_dir):
+.\utils\logging_config.py:8:    log_file = os.path.join(run_dir, log_config.get("file", "logs/project.log"))
+.\utils\logging_config.py:11:    logging_config = {
+.\utils\logging_config.py:23:                "level": log_config.get("level", "INFO"),
+.\utils\logging_config.py:29:                "level": log_config.get("level", "INFO"),
+.\utils\logging_config.py:32:        "root": {
+.\utils\logging_config.py:34:            "level": log_config.get("level", "INFO"),
+.\utils\logging_config.py:37:    logging.config.dictConfig(logging_config)
+.\utils\training.py:5:import torch
+.\utils\training.py:6:import torch.optim as optim
+.\utils\training.py:18:    model.base_dist = torch.distributions.MultivariateNormal(
+.\utils\training.py:19:        torch.zeros(input_dim, device=device),
+.\utils\training.py:20:        torch.eye(input_dim, device=device)
+.\utils\training.py:39:        with torch.no_grad():
+.\utils\training.py:61:            torch.save(model.state_dict(), save_path)
+.\utils\training.py:71:    model.load_state_dict(torch.load(os.path.join(model_dir, f"{name_model}.pt"), map_location=device))
