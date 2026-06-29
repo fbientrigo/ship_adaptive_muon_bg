@@ -78,14 +78,36 @@ increment should **introduce only the packages that have working, tested code in
 the same commit that creates them.** Do not reintroduce empty packages — an empty
 package is a maintenance liability and a false promise of capability.
 
-Recommended introduction order (each package lands *with* its tests):
+Each package lands *with* its tests, and the packages land in **separate commits**,
+one track at a time. The first implementation commit is **`data_contracts` only** —
+it does **not** introduce `flows/`, `acquisition/`, or `proxy/`.
 
-| Package | Introduce when | First responsibility |
+| Package | Introduce in | First responsibility |
 | --- | --- | --- |
-| `src/ship_muon_bg/data_contracts/` | **This increment** | PKL load, schema/units/finite validation, `dataset_hash`, split manifest, normalization metadata. |
-| `src/ship_muon_bg/flows/` | **This increment** | Density/proposal track: tiny baseline + tiny-overfit smoke test, metrics/artifact writers. Keep the NF behind a small interface so a real flow can drop in later. |
-| `src/ship_muon_bg/acquisition/` | **This increment** | Score-driven baseline policies (random, top-k, diversity-aware top-k). Depends only on a score vector, not on a trained proxy. |
-| `src/ship_muon_bg/proxy/` | **Next increment, only once labels exist** | `U(x)` interface + dummy baseline now; trained, calibrated classifier later. Ship the *interface and dummy* this increment **only if** it stays trivial; otherwise keep proxy as a contract section here and create the package when labels arrive. |
+| `src/ship_muon_bg/data_contracts/` | **Commit 1 (this increment)** | PKL load, schema/units/finite validation, `dataset_hash`, split manifest, normalization metadata. **Nothing else ships in this commit.** |
+| `src/ship_muon_bg/flows/` | **Commit 2** | Density/proposal **placeholder** + proposal diagnostics: tiny baseline + tiny-overfit smoke test, metrics/artifact writers. Keep the model behind a small interface so a real flow can drop in later. |
+| `src/ship_muon_bg/acquisition/` | **Commit 3** | Score-driven baseline policies (random, top-k, diversity-aware top-k). Depends only on a score vector, not on a trained proxy. |
+| `src/ship_muon_bg/proxy/` | **Commit 3 (dummy only); trained proxy deferred** | Dummy `U(x)` baseline + score schema in Commit 3. A **trained, calibrated proxy is deferred until labels exist from the `simulation_backend`** (see §6). |
+
+### Implementation sequence (strict)
+
+1. **Commit 1 — `data_contracts` only.** PKL ingestion contract, validation,
+   `dataset_hash`, deterministic split manifest, train-only normalization metadata,
+   the data-contract tests, and the thin `scripts/build_dataset_report.py`. No
+   `flows/`, no `acquisition/`, no `proxy/`, no modelling code, no new dependencies.
+2. **Commit 2 — density/proposal placeholder + proposal diagnostics.** Introduce
+   `flows/` with a deliberately tiny placeholder density/proposal model, the
+   tiny-overfit smoke test, and `proposal_diagnostics.json` (out-of-support rate,
+   diversity, ESS-style diagnostic).
+3. **Commit 3 — dummy proxy + acquisition baselines.** Introduce `proxy/` with a
+   **dummy** `U(x)` baseline and the score schema, and `acquisition/` with the
+   random / top-k / diversity-aware top-k baselines.
+4. **Real trained proxy — only after labels exist** from the `simulation_backend`
+   (today `toy_simulator`; eventually the `FairShip base simulator` via the
+   `fairship_adapter`). No labels, no trained proxy.
+5. **Real Normalizing Flow — only after** the placeholder density/proposal path and
+   its diagnostics are green. The placeholder must prove the plumbing first; a real
+   NF replaces it behind the same interface, not before.
 
 Notes:
 
@@ -440,24 +462,26 @@ no FairShip, no ROOT, no GPU, and no large data — only a tiny committed PKL fi
 
 ---
 
-## 14. Recommended next branch and first commit scope
+## 14. Recommended branch and commit sequence
 
-**Branch:** `claude/ml-skeleton-muon-pkl` (continue the current
-`claude/ml-skeleton-muon-pkl-4qrvc8` line as planned by the operator).
+**Branch:** `feat/ml-proposal`.
 
-**First commit scope (smallest shippable increment):**
+**Commit 1 scope — `data_contracts` only (smallest shippable increment):**
 
 1. Create `src/ship_muon_bg/data_contracts/` implementing: PKL load,
-   shape/units/finite validation, `dataset_hash`, deterministic split + manifest,
-   normalization metadata.
+   shape/units/finite/positive-weight/integer-id validation, `dataset_hash`,
+   deterministic split + manifest, train-only normalization metadata.
 2. Add a tiny committed gzip-PKL fixture under `tests/fixtures/`.
-3. Add `tests/` covering tests 1–4 and 8 from §12 (load, invalid shape, invalid
-   units/NaN/inf, deterministic split, no-FairShip/ROOT-import).
+3. Add `tests/` covering: valid load, invalid shape, NaN/inf, non-positive
+   weights, non-integer `id`, deterministic split (same seed), different split
+   (different seed), normalization fit on train only, and no-FairShip/ROOT-import.
 4. Add `scripts/build_dataset_report.py` that writes `dataset_report.json`,
    `split_manifest.json`, and `normalization.json` for a given PKL.
-5. Defer the density model, proposal diagnostics, dummy proxy, and acquisition to
-   the *second* commit on the same branch (tests 5–7), once the data contract is
-   green.
+5. **Do not** introduce `flows/`, `acquisition/`, or `proxy/` in this commit.
+
+**Commit 2** — density/proposal placeholder + proposal diagnostics (`flows/`).
+**Commit 3** — dummy proxy + acquisition baselines (`proxy/` dummy, `acquisition/`).
+Trained proxy and real NF follow the deferral rules in §2.
 
 This keeps the first increment minimal, fully tested, dependency-light, and free
 of any physics or FairShip claim — exactly the boundary discipline established by
