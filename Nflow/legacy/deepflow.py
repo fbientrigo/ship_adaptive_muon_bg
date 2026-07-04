@@ -11,15 +11,17 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter
 
-from utils.config import load_config
-from utils.data_handling import (cache_processed_data, load_cached_data,
-                                 open_datafiles, prepare_dataloader,
-                                 scale_muon_data)
-from utils.flow_models import NormalizingFlow
-from utils.logging_config import setup_logging
-from utils.plotting import plot_feature_histograms
-from utils.run_management import get_next_attempt_number
-from utils.training import train_model
+from Nflow.legacy.utils.config import load_config
+from Nflow.legacy.utils.data_handling import (cache_processed_data,
+                                              load_cached_data,
+                                              open_datafiles,
+                                              prepare_dataloader,
+                                              scale_muon_data)
+from Nflow.legacy.utils.flow_models import NormalizingFlow
+from Nflow.legacy.utils.logging_config import setup_logging
+from Nflow.legacy.utils.plotting import plot_feature_histograms
+from Nflow.legacy.utils.run_management import get_next_attempt_number
+from Nflow.legacy.utils.training import train_model
 
 logger = logging.getLogger(__name__)
 

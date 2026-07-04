@@ -1,2 +1,9 @@
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+# Run/campaign outputs (large data stays out of git)
+outputs/
+artifacts/

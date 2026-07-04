@@ -1,0 +1,4 @@
+# The CERN FairShip clone/symlink lives here and is never committed.
+*
+!README.md
+!.gitignore
