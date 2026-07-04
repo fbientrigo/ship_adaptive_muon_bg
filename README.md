@@ -82,36 +82,78 @@ Avoid:
 
 * `oracle`
 
-## Planned Repository Structure
+## Repository Structure
+
+The repo is organized around the three modules of the adaptive loop (see
+`docs/architecture/repo_architecture_v1.md` for the full map and roadmap):
 
 ```text
 ship_adaptive_muon_bg/
-  configs/
-    runtime/
-    data/
-    model/
-    simulation/
-    campaigns/
+  pyproject.toml            # pip install -e .  (numpy-only core; extras: flow, legacy, dev)
 
-  src/
-    ship_muon_bg/
-      data/
-      proxy/
-      flows/
-      acquisition/
-      simulation/
-      loop/
-      evaluation/
-      tracking/
+  FairShip/                 # module 1 (backend): slot for the CERN ShipSoft/FairShip
+                            #   clone or symlink — contents gitignored, never committed
 
-  notebooks/
-    colab/
-    local/
+  Nflow/                    # module 2: normalizing-flow proposal model
+    interfaces.py           #   DensityModel + BiasStrategy (A/B seam for DIS biasing)
+    legacy/                 #   quarantined untested code from the mferril/NFlow fork
 
-  scripts/
-  tests/
-  docs/
+  ProxyTagger/              # module 3: U(x) — continuous DIS-boundary score in [0, 1]
+    interfaces.py           #   ProxyScorer protocol + score-artifact schema
+    baseline.py             #   DummyProxy placeholder (non-physical)
+
+  src/ship_muon_bg/         # shared core (imported by all modules; no FairShip/ROOT)
+    data_contracts/         #   validated (N, 8) muon PKL ingestion (tested)
+    simulation/             #   module-1 boundary: SimulationBackend, FlowProposalRecord,
+                            #     SimulationResult, OutcomeCategory
+
+  notebooks/colab/          # thin notebooks: clone → install → call (no function defs)
+  scripts/                  # thin CLI entry points (no business logic)
+  tests/                    # numpy-only guard-rail suite
+  docs/                     # contracts, architecture, legacy migration log
 ```
+
+### The three modules
+
+1. **Simulation (`FairShip/` + `src/ship_muon_bg/simulation/`)** — takes a
+   proposal of points `x`, runs the FairShip software, and saves outcomes
+   with DIS marking. Project code talks only to the `SimulationBackend`
+   interface; the CERN repo itself is referenced (not committed) under
+   `FairShip/`.
+2. **`Nflow/`** — the ML-heavy part: a normalizing flow learns to generate
+   the data distribution with a bias toward DIS-likely points. The biasing
+   mechanism (data aggregation, modified loss, both, ...) is an open
+   question, so it stays behind the `BiasStrategy` interface for A/B
+   testing.
+3. **`ProxyTagger/`** — uses new simulation outcomes to improve `U(x)`, the
+   continuous 0 (never DIS) → 1 (DIS always) boundary estimate over all
+   simulation inputs; it steers the proposal bias and supports
+   hyperparameter-landscape visualization.
+
+## Installation
+
+Local / lxplus (editable, with test tooling):
+
+```bash
+git clone https://github.com/fbientrigo/ship_adaptive_muon_bg
+cd ship_adaptive_muon_bg
+pip install -e .[dev]
+pytest
+```
+
+Google Colab — open `notebooks/colab/quickstart.ipynb`, or:
+
+```python
+!git clone https://github.com/fbientrigo/ship_adaptive_muon_bg
+%cd ship_adaptive_muon_bg
+%pip install .
+```
+
+Extras: `.[flow]` (torch, for future flow implementations), `.[legacy]`
+(everything the quarantined `Nflow/legacy/` trainer needs). The core and
+the whole test suite need only NumPy — no GPU, no ROOT, no FairShip. On
+lxplus, place the FairShip clone/symlink under `FairShip/` (see
+`FairShip/README.md`).
 
 ## Core Components
 
