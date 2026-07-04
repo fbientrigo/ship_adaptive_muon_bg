@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from utils.data_handling import compute_angles
+from Nflow.legacy.utils.data_handling import compute_angles
 
 logger = logging.getLogger(__name__)
 
