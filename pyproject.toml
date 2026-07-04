@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ship-adaptive-muon-bg"
+version = "0.1.0"
+description = "Adaptive simulation tools for muon-induced background studies in the SHiP experiment."
+readme = "README.md"
+requires-python = ">=3.9"
+# Core stays NumPy-only: everything needed for data contracts, interfaces,
+# the simulation boundary, and the test suite. Heavy stacks are extras.
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+# Future tested flow implementations (module 2).
+flow = [
+    "torch",
+]
+# Running the quarantined Nflow/legacy code as-is (untested, HDF5-era).
+legacy = [
+    "torch",
+    "h5py",
+    "scikit-learn",
+    "matplotlib",
+    "seaborn",
+    "pandas",
+    "optuna",
+    "tensorboard",
+    "pyyaml",
+]
+dev = [
+    "pytest",
+]
+
+[project.urls]
+Repository = "https://github.com/fbientrigo/ship_adaptive_muon_bg"
+
+[tool.hatch.build.targets.wheel]
+# Three importable roots: the shared core (src layout) plus the two
+# top-level module packages.
+packages = ["src/ship_muon_bg", "Nflow", "ProxyTagger"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
