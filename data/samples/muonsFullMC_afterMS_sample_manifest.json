@@ -18,8 +18,7 @@
   "sampling": {
     "requested_n_rows": 40000,
     "seed": 1234,
-    "strategy": "uniform_core_plus_forced_extremes",
-    "tail_count": 100
+    "strategy": "uniform_core_plus_range_anchors"
   },
   "schema_version": "0",
   "source_dataset_hash": "44336e8e3629149c813026cf21334c6fc2db75ae9ffa12e78ed2b064f3a54579",
@@ -27,7 +26,7 @@
   "source_n_rows": 13779080,
   "source_release_tag": "v1.0.0-fullmc-afterms",
   "source_sha256": "fb251be2cbfb04aed52bee215c23cbd0898eccae989523952d3b774c004f974c",
-  "subset_dataset_hash": "d07ddeab345f4fb5c267d6ea2638a0aecd63690e84f1576ed280fd4a57d19f07",
+  "subset_dataset_hash": "718b9197a3965f6842574fec1f3f6b1bf4c16949ff8a1f27dca6232817c03c32",
   "subset_n_rows": 40000,
   "units": {
     "id": "PDG code (int-valued)",

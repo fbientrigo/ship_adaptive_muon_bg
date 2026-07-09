@@ -43,10 +43,7 @@ from ship_muon_bg.data_contracts import (  # noqa: E402
     save_subset_pkl_gz,
     schema,
 )
-from ship_muon_bg.data_contracts.subsampling import (  # noqa: E402
-    DEFAULT_TAIL_COUNT,
-    NPZ_ARRAY_KEY,
-)
+from ship_muon_bg.data_contracts.subsampling import NPZ_ARRAY_KEY  # noqa: E402
 
 MANIFEST_SCHEMA_VERSION = "0"
 
@@ -68,12 +65,6 @@ def parse_args(argv=None):
         "--seed", type=int, required=True, help="Explicit deterministic subsample seed."
     )
     parser.add_argument(
-        "--tail-count",
-        type=int,
-        default=DEFAULT_TAIL_COUNT,
-        help=f"Per-side count of extreme pz/pt rows forced in. Default: {DEFAULT_TAIL_COUNT}.",
-    )
-    parser.add_argument(
         "--source-tag",
         default=None,
         help="Release tag the source asset came from (recorded in the manifest).",
@@ -90,9 +81,7 @@ def main(argv=None):
     args = parse_args(argv)
 
     array = load_muon_pkl(args.input)
-    subset, _selected = representative_subset(
-        array, args.n_rows, seed=args.seed, tail_count=args.tail_count
-    )
+    subset, _selected = representative_subset(array, args.n_rows, seed=args.seed)
 
     stem = args.output_stem
     os.makedirs(os.path.dirname(os.path.abspath(stem)), exist_ok=True)
@@ -115,10 +104,9 @@ def main(argv=None):
         "source_n_rows": int(array.shape[0]),
         "source_dataset_hash": dataset_hash(array),
         "sampling": {
-            "strategy": "uniform_core_plus_forced_extremes",
+            "strategy": "uniform_core_plus_range_anchors",
             "seed": int(args.seed),
             "requested_n_rows": int(args.n_rows),
-            "tail_count": int(args.tail_count),
         },
         "subset_n_rows": int(subset.shape[0]),
         "subset_dataset_hash": dataset_hash(subset),

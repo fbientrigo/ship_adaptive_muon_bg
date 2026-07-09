@@ -7,12 +7,11 @@ units, and ranges from a clone, a small representative subset is committed.
 The subset is built from two parts, then deduplicated:
 
 1. **Uniform core** — a deterministic seeded uniform random sample of rows, so
-   the committed marginals resemble the full distribution.
-2. **Forced extremes** — the argmin/argmax row of every column plus the extreme
-   tail rows of ``pz`` and ``pt = hypot(px, py)``, so the committed sample spans
-   the full observed envelope rather than shrinking it. Without this, a small
-   uniform sample would systematically understate the ranges the report is meant
-   to convey.
+   the committed marginals (and quantiles) resemble the full distribution.
+2. **Range anchors** — the argmin and argmax row of every column, so the sample's
+   per-column min/max equal the full dataset's. This preserves the observed
+   *envelope* (which a small uniform sample would understate) while adding only
+   two rows per column, far too few to distort the distribution's quantiles.
 
 All randomness is driven by an explicit integer ``seed`` via
 ``numpy.random.default_rng`` — no wall-clock seeding, mirroring
@@ -37,39 +36,22 @@ from .errors import LoaderError, ShapeError
 # NPZ array key for a saved muon subset.
 NPZ_ARRAY_KEY = "muons"
 
-# Default number of extreme rows, per side, forced in for the heavy-tailed
-# kinematic columns ``pz`` and ``pt``. An absolute count (not a fraction of N) so
-# the forced set stays small and predictable regardless of dataset size.
-DEFAULT_TAIL_COUNT = 100
 
+def _range_anchor_indices(array):
+    """Row indices whose values define the per-column envelope.
 
-def _extreme_indices(array, *, tail_count=DEFAULT_TAIL_COUNT):
-    """Row indices that define the observed envelope.
-
-    Includes the argmin and argmax of every one of the 8 columns, plus the
-    ``tail_count`` most extreme rows on each side of ``pz`` and of
-    ``pt = hypot(px, py)``. These are the rows a representative sample must not
-    drop if it is to report the same ranges as the full dataset.
+    The argmin and argmax of every one of the 8 columns — the rows a
+    representative sample must not drop if the sample is to report the same
+    per-column min/max as the full dataset.
     """
     idx = set()
-
-    # argmin/argmax of every column (covers px..z, id, w extremes).
     for col in range(array.shape[1]):
         idx.add(int(np.argmin(array[:, col])))
         idx.add(int(np.argmax(array[:, col])))
-
-    n_tail = min(max(1, int(tail_count)), array.shape[0])
-    pz = array[:, schema.COLUMN_INDEX["pz"]]
-    pt = np.hypot(array[:, schema.COLUMN_INDEX["px"]], array[:, schema.COLUMN_INDEX["py"]])
-    for values in (pz, pt):
-        order = np.argsort(values)
-        idx.update(int(i) for i in order[:n_tail])
-        idx.update(int(i) for i in order[-n_tail:])
-
     return idx
 
 
-def representative_subset(array, n_rows, *, seed, tail_count=DEFAULT_TAIL_COUNT):
+def representative_subset(array, n_rows, *, seed):
     """Return a deterministic, range-preserving subset of ``array``.
 
     Parameters
@@ -77,13 +59,10 @@ def representative_subset(array, n_rows, *, seed, tail_count=DEFAULT_TAIL_COUNT)
     array : numpy.ndarray
         Full ``(N, 8)`` muon array (``[px, py, pz, x, y, z, id, w]``).
     n_rows : int
-        Target number of rows in the subset. If the forced-extreme rows already
-        exceed ``n_rows`` the result may be slightly larger (extremes are never
-        dropped); if ``n_rows >= N`` the whole array is returned.
+        Target number of rows in the subset. If ``n_rows >= N`` the whole array
+        is returned.
     seed : int
         Explicit deterministic seed; never derived from wall-clock time.
-    tail_count : int
-        Per-side count of extreme ``pz``/``pt`` rows forced into the sample.
 
     Returns
     -------
@@ -105,7 +84,7 @@ def representative_subset(array, n_rows, *, seed, tail_count=DEFAULT_TAIL_COUNT)
     if n_rows >= n_total:
         return np.array(array, copy=True), np.arange(n_total)
 
-    forced = _extreme_indices(array, tail_count=tail_count)
+    forced = _range_anchor_indices(array)
 
     # Fill the remainder with a deterministic uniform sample of the other rows.
     rng = np.random.default_rng(int(seed))

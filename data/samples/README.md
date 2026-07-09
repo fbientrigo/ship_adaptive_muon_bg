@@ -65,12 +65,12 @@ The `.npz` and `.pkl.gz` copies of a given sample contain the identical array
 ## How the sample was built
 
 `scripts/make_muon_subset.py` → `ship_muon_bg.data_contracts.subsampling.representative_subset`:
-a deterministic seeded **uniform core** (so marginals resemble the full data)
-**plus forced extremes** — the argmin/argmax row of every column and the 100
-most extreme rows on each side of `pz` and `pt = hypot(px, py)`. The forced
-extremes make the committed sample span the **same observed envelope** as the
+a deterministic seeded **uniform core** (so the marginals and quantiles resemble
+the full data) **plus range anchors** — the argmin/argmax row of every column.
+The anchors make the committed sample span the **same observed envelope** as the
 full dataset (the `min`/`max` in the `*_sample_dataset_report.json` match the
-`*_full_dataset_report.json`), which a plain uniform sample would understate.
+`*_full_dataset_report.json`), which a plain uniform sample would understate,
+while adding only two rows per column — far too few to distort the quantiles.
 
 Reproduce a sample from the full file:
 
@@ -83,9 +83,9 @@ python scripts/make_muon_subset.py \
   --source-sha256 91273fe62e30a2bc5647d60ec51c7212b8659df31eaf670e9fc4a21d232ceb9c
 ```
 
-Given the same source file, `--seed`, `--n-rows`, and `--tail-count`, the subset
-is bit-for-bit reproducible; the manifest records the resulting
-`subset_dataset_hash` so it can be verified.
+Given the same source file, `--seed`, and `--n-rows`, the subset is bit-for-bit
+reproducible; the manifest records the resulting `subset_dataset_hash` so it can
+be verified.
 
 ## Loading
 
