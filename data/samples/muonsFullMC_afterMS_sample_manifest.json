@@ -1,0 +1,41 @@
+{
+  "columns": [
+    "px",
+    "py",
+    "pz",
+    "x",
+    "y",
+    "z",
+    "id",
+    "w"
+  ],
+  "contract_version": "0",
+  "npz_array_key": "muons",
+  "outputs": {
+    "npz": "muonsFullMC_afterMS_sample.npz",
+    "pkl_gz": "muonsFullMC_afterMS_sample.pkl.gz"
+  },
+  "sampling": {
+    "requested_n_rows": 40000,
+    "seed": 1234,
+    "strategy": "uniform_core_plus_range_anchors"
+  },
+  "schema_version": "0",
+  "source_dataset_hash": "44336e8e3629149c813026cf21334c6fc2db75ae9ffa12e78ed2b064f3a54579",
+  "source_file": "muonsFullMC_afterMS.pkl",
+  "source_n_rows": 13779080,
+  "source_release_tag": "v1.0.0-fullmc-afterms",
+  "source_sha256": "fb251be2cbfb04aed52bee215c23cbd0898eccae989523952d3b774c004f974c",
+  "subset_dataset_hash": "718b9197a3965f6842574fec1f3f6b1bf4c16949ff8a1f27dca6232817c03c32",
+  "subset_n_rows": 40000,
+  "units": {
+    "id": "PDG code (int-valued)",
+    "px": "GeV/c",
+    "py": "GeV/c",
+    "pz": "GeV/c",
+    "w": "dimensionless",
+    "x": "m",
+    "y": "m",
+    "z": "m"
+  }
+}
