@@ -23,6 +23,12 @@ from .loader import load_muon_pkl
 from .normalization import apply_normalization, fit_normalization
 from .report import build_dataset_report, process_pkl, write_artifacts
 from .splitting import make_split
+from .subsampling import (
+    load_muon_npz,
+    representative_subset,
+    save_subset_npz,
+    save_subset_pkl_gz,
+)
 from .validation import (
     DEFAULT_BOUNDS,
     run_checks,
@@ -44,6 +50,10 @@ __all__ = [
     "BoundsError",
     "LoaderError",
     "load_muon_pkl",
+    "load_muon_npz",
+    "representative_subset",
+    "save_subset_npz",
+    "save_subset_pkl_gz",
     "dataset_hash",
     "make_split",
     "fit_normalization",
