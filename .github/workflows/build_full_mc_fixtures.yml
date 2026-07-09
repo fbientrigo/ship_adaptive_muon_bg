@@ -1,0 +1,120 @@
+name: Build full-MC muon fixtures
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_mb:
+        description: Max compressed size per fixture in MiB
+        required: false
+        default: "40"
+      max_rows:
+        description: Initial reservoir size before applying size cap
+        required: false
+        default: "250000"
+      position_scale:
+        description: Scale applied to x/y/z; 0.01 converts legacy cm to m
+        required: false
+        default: "0.01"
+      z_shift_m:
+        description: Optional z shift in metres after scaling
+        required: false
+        default: "0.0"
+  push:
+    branches:
+      - data/full-mc-small-fixtures
+    paths:
+      - .github/workflows/build_full_mc_fixtures.yml
+      - scripts/download_nflow_release_assets.py
+      - scripts/sample_muon_contract_fixture.py
+      - src/ship_muon_bg/data_contracts/**
+
+permissions:
+  contents: write
+
+jobs:
+  build-fixtures:
+    if: github.ref == 'refs/heads/data/full-mc-small-fixtures'
+    runs-on: ubuntu-latest
+    env:
+      AFTER_TAG: v1.0.0-fullmc-afterms
+      SCORING_TAG: v1.0.0-fullmc
+      MAX_MB: ${{ inputs.max_mb || '40' }}
+      MAX_ROWS: ${{ inputs.max_rows || '250000' }}
+      POSITION_SCALE: ${{ inputs.position_scale || '0.01' }}
+      Z_SHIFT_M: ${{ inputs.z_shift_m || '0.0' }}
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: data/full-mc-small-fixtures
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest uproot awkward
+
+      - name: Download exact NFlow full-MC releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/nflow_releases
+          mkdir -p .tmp/nflow_releases/after_muon_shield .tmp/nflow_releases/scoring_plane
+          gh release download "$AFTER_TAG" --repo fbientrigo/NFlow --dir .tmp/nflow_releases/after_muon_shield --clobber
+          gh release download "$SCORING_TAG" --repo fbientrigo/NFlow --dir .tmp/nflow_releases/scoring_plane --clobber
+          find .tmp/nflow_releases -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+
+      - name: Extract release archives if present
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            case "$file" in
+              *.zip)
+                mkdir -p "${file%.zip}"
+                unzip -o "$file" -d "${file%.zip}"
+                ;;
+              *.tar|*.tar.gz|*.tgz)
+                mkdir -p "${file%.*}_extract"
+                tar -xf "$file" -C "${file%.*}_extract"
+                ;;
+            esac
+          done < <(find .tmp/nflow_releases -type f \( -name '*.zip' -o -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' \) -print0)
+
+      - name: Build capped v0 muon-contract fixtures
+        run: |
+          set -euo pipefail
+          python scripts/sample_muon_contract_fixture.py \
+            --after-input .tmp/nflow_releases/after_muon_shield \
+            --scoring-input .tmp/nflow_releases/scoring_plane \
+            --output-dir data/fixtures/full_mc \
+            --max-mb "$MAX_MB" \
+            --max-rows "$MAX_ROWS" \
+            --seed 3407 \
+            --position-scale "$POSITION_SCALE" \
+            --z-shift-m "$Z_SHIFT_M"
+          find data/fixtures/full_mc -maxdepth 2 -type f -printf '%p %s bytes\n' | sort
+
+      - name: Validate repository tests
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/download_nflow_release_assets.py scripts/sample_muon_contract_fixture.py
+          pytest
+
+      - name: Commit generated fixtures
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/fixtures/full_mc
+          if git diff --cached --quiet; then
+            echo 'No generated fixture changes to commit.'
+          else
+            git commit -m 'Add full-MC fixture datasets [skip ci]'
+            git push
+          fi
