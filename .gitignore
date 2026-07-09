@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.venv/
 # Run/campaign outputs (large data stays out of git)
 outputs/
 artifacts/
