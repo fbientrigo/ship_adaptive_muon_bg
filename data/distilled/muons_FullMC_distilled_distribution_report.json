@@ -1,0 +1,180 @@
+{
+  "columns": [
+    "px",
+    "py",
+    "pz",
+    "x",
+    "y",
+    "z"
+  ],
+  "distilled_n_rows": 1700000,
+  "full_n_rows": 16533515,
+  "ks_reference": "complement",
+  "per_column": {
+    "px": {
+      "delta_mean": 0.00012199365292209814,
+      "delta_std": 0.0004897178537621727,
+      "distilled": {
+        "bimodality_coeff": 0.17905770007818947,
+        "excess_kurtosis": 2.58878422128804,
+        "mean": 7.4271420960564e-05,
+        "skew": -0.02673665830113298,
+        "std": 0.36862539301995967
+      },
+      "distilled_max": 5.740203857421875,
+      "distilled_min": -12.3098726272583,
+      "full": {
+        "bimodality_coeff": 0.20585309297954893,
+        "excess_kurtosis": 1.8579039344994825,
+        "mean": -4.772223196153414e-05,
+        "skew": -0.0038144874149247557,
+        "std": 0.3681356751661975
+      },
+      "full_max": 5.740203857421875,
+      "full_min": -12.3098726272583,
+      "ks_pvalue": 0.2114412896700178,
+      "ks_statistic": 0.0008579488011954961,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 0.00033138231676955305,
+      "rel_std_shift": 0.0013302645920993288
+    },
+    "py": {
+      "delta_mean": -2.956802140649028e-05,
+      "delta_std": 2.447308871389442e-06,
+      "distilled": {
+        "bimodality_coeff": 0.20648028774261937,
+        "excess_kurtosis": 1.8430984426352035,
+        "mean": 1.3599646346507337e-05,
+        "skew": -0.00208806157679829,
+        "std": 0.3681302307521752
+      },
+      "distilled_max": 4.9085211753845215,
+      "distilled_min": -5.491170406341553,
+      "full": {
+        "bimodality_coeff": 0.20914690076765052,
+        "excess_kurtosis": 1.7813493192797054,
+        "mean": 4.316766775299762e-05,
+        "skew": -0.0020956180152754827,
+        "std": 0.3681277834433038
+      },
+      "full_max": 4.9085211753845215,
+      "full_min": -5.491170406341553,
+      "ks_pvalue": 0.9697660506273529,
+      "ks_statistic": 0.000397033641286626,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 8.031999413335265e-05,
+      "rel_std_shift": 6.6479874148547045e-06
+    },
+    "pz": {
+      "delta_mean": 0.045988594153875795,
+      "delta_std": 0.0629765901167687,
+      "distilled": {
+        "bimodality_coeff": 0.6329383817310713,
+        "excess_kurtosis": 10.795952382362968,
+        "mean": 45.39593740944316,
+        "skew": 2.780645208460032,
+        "std": 31.083251527170134
+      },
+      "distilled_max": 373.9810791015625,
+      "distilled_min": 2.1193172931671143,
+      "full": {
+        "bimodality_coeff": 0.6334595429797117,
+        "excess_kurtosis": 10.760988726902111,
+        "mean": 45.34994881528928,
+        "skew": 2.777954216665994,
+        "std": 31.020274937053365
+      },
+      "full_max": 373.9810791015625,
+      "full_min": 2.1193172931671143,
+      "ks_pvalue": 0.07500179422317152,
+      "ks_statistic": 0.0010373770781908487,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 0.0014825334155547068,
+      "rel_std_shift": 0.002030175111102703
+    },
+    "x": {
+      "delta_mean": 2.4947595812938405e-05,
+      "delta_std": 0.0019194317486475737,
+      "distilled": {
+        "bimodality_coeff": 0.007274853482784859,
+        "excess_kurtosis": 4183.6487068182,
+        "mean": -1.2873931597513802e-05,
+        "skew": 5.427453908232948,
+        "std": 0.07542296403969603
+      },
+      "distilled_max": 19.268142700195312,
+      "distilled_min": -15.983152389526367,
+      "full": {
+        "bimodality_coeff": 0.0016757715037402558,
+        "excess_kurtosis": 936.2552261568156,
+        "mean": -3.782152741045221e-05,
+        "skew": 0.7576127920862351,
+        "std": 0.07350353229104846
+      },
+      "full_max": 19.268142700195312,
+      "full_min": -15.983152389526367,
+      "ks_pvalue": 0.6442465897802904,
+      "ks_statistic": 0.0005990272013389752,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 0.00033940676094523716,
+      "rel_std_shift": 0.02611346269791893
+    },
+    "y": {
+      "delta_mean": 6.632837583633856e-06,
+      "delta_std": 0.0005499489803047763,
+      "distilled": {
+        "bimodality_coeff": 0.007213853901648436,
+        "excess_kurtosis": 809.9036394836627,
+        "mean": 2.3916442397689492e-05,
+        "skew": 2.2054859082191918,
+        "std": 0.07337043947974052
+      },
+      "distilled_max": 12.453383445739746,
+      "distilled_min": -7.874706268310547,
+      "full": {
+        "bimodality_coeff": 0.002889430545857672,
+        "excess_kurtosis": 411.23280072368897,
+        "mean": 1.7283604814055636e-05,
+        "skew": 0.44373067000963656,
+        "std": 0.07282049049943574
+      },
+      "full_max": 12.453383445739746,
+      "full_min": -7.874706268310547,
+      "ks_pvalue": 0.8549189426821658,
+      "ks_statistic": 0.0004914307074613822,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 9.108476938486498e-05,
+      "rel_std_shift": 0.0075521185937224315
+    },
+    "z": {
+      "delta_mean": 1.7575983945583573e-05,
+      "delta_std": -1.2866813530798549e-05,
+      "distilled": {
+        "bimodality_coeff": 0.4044394691610389,
+        "excess_kurtosis": 4.184586037812198,
+        "mean": -2.1196129329446243,
+        "skew": 1.3804818590892736,
+        "std": 0.20792806131690356
+      },
+      "distilled_max": 3.888422851562494,
+      "distilled_min": -2.545000000000003,
+      "full": {
+        "bimodality_coeff": 0.4494268381626221,
+        "excess_kurtosis": 3.310325776751104,
+        "mean": -2.11963050892857,
+        "skew": 1.3550017570547062,
+        "std": 0.20794092813043435
+      },
+      "full_max": 3.888422851562494,
+      "full_min": -2.545000000000003,
+      "ks_pvalue": 0.5645055182938342,
+      "ks_statistic": 0.0006376445200575453,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 8.452392755772807e-05,
+      "rel_std_shift": 6.18772535377337e-05
+    }
+  },
+  "schema_version": "0",
+  "source_file": "muons_FullMC.pkl",
+  "source_release_tag": "v1.0.0-fullmc"
+}

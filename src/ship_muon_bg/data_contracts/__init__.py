@@ -23,6 +23,11 @@ from .loader import load_muon_pkl
 from .normalization import apply_normalization, fit_normalization
 from .report import build_dataset_report, process_pkl, write_artifacts
 from .splitting import make_split
+from .distribution_compare import (
+    compare_distributions,
+    ks_2samp,
+    moment_summary,
+)
 from .subsampling import (
     load_muon_npz,
     representative_subset,
@@ -54,6 +59,9 @@ __all__ = [
     "representative_subset",
     "save_subset_npz",
     "save_subset_pkl_gz",
+    "compare_distributions",
+    "ks_2samp",
+    "moment_summary",
     "dataset_hash",
     "make_split",
     "fit_normalization",

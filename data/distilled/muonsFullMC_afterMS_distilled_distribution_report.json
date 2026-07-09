@@ -1,0 +1,180 @@
+{
+  "columns": [
+    "px",
+    "py",
+    "pz",
+    "x",
+    "y",
+    "z"
+  ],
+  "distilled_n_rows": 1000000,
+  "full_n_rows": 13779080,
+  "ks_reference": "complement",
+  "per_column": {
+    "px": {
+      "delta_mean": -0.002052110431934819,
+      "delta_std": -0.0003073659593120226,
+      "distilled": {
+        "bimodality_coeff": 0.2186345913469944,
+        "excess_kurtosis": 1.5739575901475034,
+        "mean": -0.012441341746012278,
+        "skew": 0.005034735383575709,
+        "std": 2.5249645310163773
+      },
+      "distilled_max": 12.536413454430955,
+      "distilled_min": -12.447641730809092,
+      "full": {
+        "bimodality_coeff": 0.2185903214528948,
+        "excess_kurtosis": 1.574795007505477,
+        "mean": -0.010389231314077459,
+        "skew": 0.0024313107001407166,
+        "std": 2.5252718969756893
+      },
+      "full_max": 12.536413454430955,
+      "full_min": -12.447641730809092,
+      "ks_pvalue": 0.5434493883316336,
+      "ks_statistic": 0.0008310503979942485,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 0.000812629497200861,
+      "rel_std_shift": 0.00012171598617959894
+    },
+    "py": {
+      "delta_mean": -5.228654561990255e-05,
+      "delta_std": 0.0001824351848879191,
+      "distilled": {
+        "bimodality_coeff": 0.1670037118237676,
+        "excess_kurtosis": 2.9887163509948325,
+        "mean": 6.92180489723196e-05,
+        "skew": -0.0117413660119283,
+        "std": 0.31587111774993315
+      },
+      "distilled_max": 5.420345737858878,
+      "distilled_min": -5.4078783892403095,
+      "full": {
+        "bimodality_coeff": 0.1725355341722864,
+        "excess_kurtosis": 2.7959128995561207,
+        "mean": 0.00012150459459222215,
+        "skew": 0.0009634007268258226,
+        "std": 0.31568868256504523
+      },
+      "full_max": 5.420345737858878,
+      "full_min": -5.4078783892403095,
+      "ks_pvalue": 0.9462769723398462,
+      "ks_statistic": 0.0005443206991426752,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 0.0001656269245861524,
+      "rel_std_shift": 0.0005778958669205056
+    },
+    "pz": {
+      "delta_mean": 0.0007171643659908966,
+      "delta_std": 0.006369491988699849,
+      "distilled": {
+        "bimodality_coeff": 0.6061658648875042,
+        "excess_kurtosis": 11.300301585590425,
+        "mean": 24.338744793962377,
+        "skew": 2.769179423363818,
+        "std": 25.30933078930057
+      },
+      "distilled_max": 300.5182534464586,
+      "distilled_min": 0.0,
+      "full": {
+        "bimodality_coeff": 0.6064420555477584,
+        "excess_kurtosis": 11.240077504870984,
+        "mean": 24.338027629596386,
+        "skew": 2.7632918545121785,
+        "std": 25.30296129731187
+      },
+      "full_max": 300.5182534464586,
+      "full_min": 0.0,
+      "ks_pvalue": 0.9059564234479645,
+      "ks_statistic": 0.000587561683626614,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 2.834310014405652e-05,
+      "rel_std_shift": 0.00025172911240932617
+    },
+    "x": {
+      "delta_mean": -0.001983397115730798,
+      "delta_std": -0.0002762469150194846,
+      "distilled": {
+        "bimodality_coeff": 0.6748578039374767,
+        "excess_kurtosis": -1.5180776121429296,
+        "mean": -0.01263982549449549,
+        "skew": 0.009321388040649055,
+        "std": 2.42112554115091
+      },
+      "distilled_max": 7.5,
+      "distilled_min": -7.5,
+      "full": {
+        "bimodality_coeff": 0.6747366025649175,
+        "excess_kurtosis": -1.5178340044071286,
+        "mean": -0.010656428378764692,
+        "skew": 0.008464532094724189,
+        "std": 2.4214017880659293
+      },
+      "full_max": 7.5,
+      "full_min": -7.5,
+      "ks_pvalue": 0.7373864072634395,
+      "ks_statistic": 0.0007103554465579531,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 0.0008191111138622792,
+      "rel_std_shift": 0.00011408553358677996
+    },
+    "y": {
+      "delta_mean": 0.0002493001269261841,
+      "delta_std": -0.0005593911360709525,
+      "distilled": {
+        "bimodality_coeff": 0.052745496228687974,
+        "excess_kurtosis": 16.01856792919749,
+        "mean": 0.0004854717909737411,
+        "skew": 0.056069626220729245,
+        "std": 0.6207057057841346
+      },
+      "distilled_max": 7.5,
+      "distilled_min": -7.5,
+      "full": {
+        "bimodality_coeff": 0.05244127068354779,
+        "excess_kurtosis": 16.069008127898087,
+        "mean": 0.00023617166404755699,
+        "skew": -0.0017369231061165331,
+        "std": 0.6212650969202056
+      },
+      "full_max": 7.5,
+      "full_min": -7.5,
+      "ks_pvalue": 0.4282402412696126,
+      "ks_statistic": 0.0009084183712755323,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 0.00040127817925397454,
+      "rel_std_shift": 0.0009004065073734537
+    },
+    "z": {
+      "delta_mean": -1.6464555088191446e-06,
+      "delta_std": 2.472518608063719e-06,
+      "distilled": {
+        "bimodality_coeff": 0.9235376660247754,
+        "excess_kurtosis": 14.771814769327246,
+        "mean": 28.90453807166061,
+        "skew": -3.9259317789652326,
+        "std": 0.0016995466252642806
+      },
+      "distilled_max": 28.905,
+      "distilled_min": 28.895,
+      "full": {
+        "bimodality_coeff": 0.9237773419951708,
+        "excess_kurtosis": 14.825207730747369,
+        "mean": 28.90453971811612,
+        "skew": -3.932750057913873,
+        "std": 0.0016970741066562169
+      },
+      "full_max": 28.905,
+      "full_min": 28.895,
+      "ks_pvalue": 0.9583782890165566,
+      "ks_statistic": 0.0005277600922758141,
+      "range_preserved": true,
+      "rel_mean_shift_in_std": 0.0009701730185862023,
+      "rel_std_shift": 0.0014569302532906933
+    }
+  },
+  "schema_version": "0",
+  "source_file": "muonsFullMC_afterMS.pkl",
+  "source_release_tag": "v1.0.0-fullmc-afterms"
+}

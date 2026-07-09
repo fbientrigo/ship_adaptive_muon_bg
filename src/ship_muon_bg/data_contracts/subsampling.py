@@ -1,26 +1,30 @@
-"""Deterministic, range-preserving subsampling of muon datasets.
+"""Deterministic distillation of muon datasets into committable subsets.
 
 The full ``Muon NTuples v1.0`` datasets are hundreds of MB (GitHub release
-assets) and must stay out of git. To let anyone understand the data shape,
-units, and ranges from a clone, a small representative subset is committed.
+assets) and must stay out of git. A *distilled* subset — the same distribution
+with far fewer rows — is committed so anyone can work from a clone without
+downloading the originals. Fidelity (bimodality, ranges, means, std) is verified
+by :mod:`ship_muon_bg.data_contracts.distribution_compare`.
 
 The subset is built from two parts, then deduplicated:
 
-1. **Uniform core** — a deterministic seeded uniform random sample of rows, so
-   the committed marginals (and quantiles) resemble the full distribution.
-2. **Range anchors** — the argmin and argmax row of every column, so the sample's
-   per-column min/max equal the full dataset's. This preserves the observed
-   *envelope* (which a small uniform sample would understate) while adding only
-   two rows per column, far too few to distort the distribution's quantiles.
+1. **Uniform core** — a deterministic seeded uniform random sample of rows. A
+   uniform subsample is an unbiased sample, so its marginals, moments, and
+   quantiles match the full distribution within sampling noise; the larger the
+   budget, the tighter the match.
+2. **Range anchors** — the argmin and argmax row of every column, so the subset's
+   per-column min/max equal the full dataset's. This pins the observed *envelope*
+   (which a finite uniform sample would slightly understate) while adding only two
+   rows per column, far too few to distort the distribution.
 
 All randomness is driven by an explicit integer ``seed`` via
 ``numpy.random.default_rng`` — no wall-clock seeding, mirroring
 :mod:`ship_muon_bg.data_contracts.splitting`.
 
-New on-disk samples are also written as NPZ. Per the storage strategy in
+Distilled files are written as NPZ. Per the storage strategy in
 ``docs/architecture/ml_skeleton_local_pkl_v0.md`` (§9), NPZ is preferred over
-pickle for *new* samples because pickle executes arbitrary code on load; the
-gzip-PKL copy is kept only for compatibility with the existing legacy loaders.
+pickle because pickle executes arbitrary code on load; :func:`save_subset_pkl_gz`
+remains available for callers that need the legacy format.
 """
 
 from __future__ import annotations
