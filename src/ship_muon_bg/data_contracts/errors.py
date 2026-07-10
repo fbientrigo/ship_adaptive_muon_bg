@@ -33,3 +33,19 @@ class BoundsError(DataContractError):
 
 class LoaderError(DataContractError):
     """The PKL payload could not be loaded into a usable NumPy array."""
+
+
+class FeatureViewError(DataContractError):
+    """Base class for deterministic density feature-view failures."""
+
+
+class FeatureViewConfigError(FeatureViewError):
+    """A feature-view identifier or configuration value is unsupported."""
+
+
+class FeatureViewShapeError(FeatureViewError):
+    """Raw or transformed data has an invalid feature-view shape."""
+
+
+class FeatureViewDomainError(FeatureViewError):
+    """A row lies outside the declared invertible feature-view domain."""
