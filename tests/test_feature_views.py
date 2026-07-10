@@ -1,10 +1,4 @@
-"""Tests for deterministic density feature views.
-
-These tests validate the scientific contract before any flow backend exists:
-shape/domain failures are explicit, both views are invertible, and analytic
-Jacobian terms agree with finite-difference determinants. No FairShip, ROOT,
-PyTorch or GPU is required.
-"""
+"""Tests for the matched feature-view A/B experiment."""
 
 from __future__ import annotations
 
@@ -12,16 +6,23 @@ import numpy as np
 import pytest
 
 from ship_muon_bg.data_contracts import (
-    CARTESIAN_LOG_VIEW_ID,
-    SLOPE_LOG_VIEW_ID,
+    CARTESIAN_LOGPZ_VIEW_ID,
+    FEATURE_VIEW_EXPERIMENT_ID,
+    IDENTITY_CARTESIAN_VIEW_ID,
+    SLOPE_LOGPZ_VIEW_ID,
     FeatureView,
     FeatureViewConfigError,
     FeatureViewDomainError,
     FeatureViewShapeError,
+    feature_view_experiment_manifest,
 )
 
-
-VIEW_IDS = (CARTESIAN_LOG_VIEW_ID, SLOPE_LOG_VIEW_ID)
+VIEW_IDS = (
+    IDENTITY_CARTESIAN_VIEW_ID,
+    CARTESIAN_LOGPZ_VIEW_ID,
+    SLOPE_LOGPZ_VIEW_ID,
+)
+LOG_VIEW_IDS = (CARTESIAN_LOGPZ_VIEW_ID, SLOPE_LOGPZ_VIEW_ID)
 
 
 def _raw_rows() -> np.ndarray:
@@ -61,7 +62,8 @@ def _numerical_forward_logdet(view: FeatureView, physical: np.ndarray) -> float:
         minus = point.copy()
         plus[column] += step
         minus[column] -= step
-        assert minus[2] > 0.0
+        if view.requires_positive_pz:
+            assert minus[2] > 0.0
         out_plus = view.forward(_raw_from_physical(plus[None, :]))[0]
         out_minus = view.forward(_raw_from_physical(minus[None, :]))[0]
         jacobian[:, column] = (out_plus - out_minus) / (2.0 * step)
@@ -86,6 +88,17 @@ def test_forward_inverse_round_trip(view_id: str) -> None:
     np.testing.assert_allclose(recovered, expected, rtol=1.0e-13, atol=1.0e-13)
 
 
+def test_identity_is_exact_reference_arm() -> None:
+    raw = _raw_rows()
+    view = FeatureView(IDENTITY_CARTESIAN_VIEW_ID)
+
+    np.testing.assert_array_equal(view.forward(raw), raw[:, :5])
+    np.testing.assert_array_equal(view.inverse(raw[:, :5]), raw[:, :5])
+    np.testing.assert_array_equal(
+        view.forward_log_abs_det_jacobian(raw), np.zeros(raw.shape[0])
+    )
+
+
 @pytest.mark.parametrize("view_id", VIEW_IDS)
 def test_forward_does_not_mutate_raw_input(view_id: str) -> None:
     raw = _raw_rows()
@@ -106,32 +119,31 @@ def test_z_id_and_weight_are_not_features(view_id: str) -> None:
     np.testing.assert_array_equal(view.forward(raw_a), view.forward(raw_b))
 
 
-@pytest.mark.parametrize("view_id", VIEW_IDS)
+@pytest.mark.parametrize("view_id", LOG_VIEW_IDS)
 def test_non_default_pz_unit_is_invertible(view_id: str) -> None:
     raw = _raw_rows()
     view = FeatureView(view_id, pz_unit_gev=10.0)
-    features = view.forward(raw)
-    recovered = view.inverse(features)
-    np.testing.assert_allclose(
-        recovered,
-        raw[:, [0, 1, 2, 3, 4]],
-        rtol=1.0e-13,
-        atol=1.0e-13,
-    )
+    recovered = view.inverse(view.forward(raw))
+    np.testing.assert_allclose(recovered, raw[:, :5], rtol=1.0e-13, atol=1.0e-13)
 
 
-def test_cartesian_forward_values() -> None:
+def test_identity_rejects_irrelevant_pz_unit() -> None:
+    with pytest.raises(FeatureViewConfigError):
+        FeatureView(IDENTITY_CARTESIAN_VIEW_ID, pz_unit_gev=1.0)
+
+
+def test_cartesian_logpz_forward_values() -> None:
     raw = _raw_rows()[:1]
-    features = FeatureView(CARTESIAN_LOG_VIEW_ID).forward(raw)
+    features = FeatureView(CARTESIAN_LOGPZ_VIEW_ID).forward(raw)
     expected = np.asarray(
         [[raw[0, 0], raw[0, 1], np.log(raw[0, 2]), raw[0, 3], raw[0, 4]]]
     )
     np.testing.assert_allclose(features, expected)
 
 
-def test_slope_forward_values() -> None:
+def test_slope_logpz_forward_values() -> None:
     raw = _raw_rows()[:1]
-    features = FeatureView(SLOPE_LOG_VIEW_ID).forward(raw)
+    features = FeatureView(SLOPE_LOGPZ_VIEW_ID).forward(raw)
     expected = np.asarray(
         [[
             raw[0, 0] / raw[0, 2],
@@ -146,7 +158,11 @@ def test_slope_forward_values() -> None:
 
 @pytest.mark.parametrize(
     ("view_id", "power"),
-    ((CARTESIAN_LOG_VIEW_ID, 1.0), (SLOPE_LOG_VIEW_ID, 3.0)),
+    (
+        (IDENTITY_CARTESIAN_VIEW_ID, 0.0),
+        (CARTESIAN_LOGPZ_VIEW_ID, 1.0),
+        (SLOPE_LOGPZ_VIEW_ID, 3.0),
+    ),
 )
 def test_analytic_jacobian_formula(view_id: str, power: float) -> None:
     raw = _raw_rows()
@@ -189,24 +205,59 @@ def test_physical_log_prob_adds_forward_jacobian(view_id: str) -> None:
     np.testing.assert_allclose(actual, expected)
 
 
+def test_identity_physical_log_prob_is_unchanged() -> None:
+    raw = _raw_rows()
+    log_prob = np.asarray([-2.0, -3.5, -8.0])
+    actual = FeatureView(IDENTITY_CARTESIAN_VIEW_ID).physical_log_prob_from_feature(
+        log_prob, raw
+    )
+    np.testing.assert_array_equal(actual, log_prob)
+
+
 @pytest.mark.parametrize("view_id", VIEW_IDS)
-def test_manifest_is_explicit_and_hash_is_deterministic(view_id: str) -> None:
+def test_manifest_and_hash_are_deterministic(view_id: str) -> None:
     view = FeatureView(view_id)
     manifest = view.manifest()
 
+    assert manifest["feature_view_experiment_id"] == FEATURE_VIEW_EXPERIMENT_ID
     assert manifest["feature_view_id"] == view_id
     assert manifest["physical_input_columns"] == ["px", "py", "pz", "x", "y"]
     assert manifest["excluded_raw_columns"] == ["z", "id", "w"]
-    assert manifest["domain"] == {"pz": "strictly_positive"}
     assert manifest["includes_train_fitted_standardization"] is False
     assert view.config_hash() == FeatureView(view_id).config_hash()
 
 
-def test_config_hash_changes_with_view_or_unit() -> None:
-    cartesian = FeatureView(CARTESIAN_LOG_VIEW_ID)
-    slope = FeatureView(SLOPE_LOG_VIEW_ID)
-    rescaled = FeatureView(CARTESIAN_LOG_VIEW_ID, pz_unit_gev=10.0)
-    assert len({cartesian.config_hash(), slope.config_hash(), rescaled.config_hash()}) == 3
+def test_experiment_manifest_declares_reference_and_candidates() -> None:
+    manifest = feature_view_experiment_manifest()
+    assert manifest["experiment_id"] == FEATURE_VIEW_EXPERIMENT_ID
+    assert manifest["baseline_arm_id"] == IDENTITY_CARTESIAN_VIEW_ID
+    assert manifest["candidate_arm_ids"] == [
+        CARTESIAN_LOGPZ_VIEW_ID,
+        SLOPE_LOGPZ_VIEW_ID,
+    ]
+    assert "physical-space" in manifest["selection_rule"]
+
+
+def test_manifest_roles_do_not_predeclare_candidate_winner() -> None:
+    baseline = FeatureView(IDENTITY_CARTESIAN_VIEW_ID).manifest()
+    logpz = FeatureView(CARTESIAN_LOGPZ_VIEW_ID).manifest()
+    slope = FeatureView(SLOPE_LOGPZ_VIEW_ID).manifest()
+
+    assert baseline["experiment_role"] == "baseline"
+    assert baseline["promotion_status"] == "reference"
+    for candidate in (logpz, slope):
+        assert candidate["experiment_role"] == "candidate"
+        assert candidate["promotion_status"] == "unvalidated_candidate"
+
+
+def test_config_hash_changes_across_arms_and_candidate_unit() -> None:
+    hashes = {
+        FeatureView(IDENTITY_CARTESIAN_VIEW_ID).config_hash(),
+        FeatureView(CARTESIAN_LOGPZ_VIEW_ID).config_hash(),
+        FeatureView(SLOPE_LOGPZ_VIEW_ID).config_hash(),
+        FeatureView(CARTESIAN_LOGPZ_VIEW_ID, pz_unit_gev=10.0).config_hash(),
+    }
+    assert len(hashes) == 4
 
 
 @pytest.mark.parametrize("bad_view", ["", "cartesian", "unknown_v0"])
@@ -218,12 +269,20 @@ def test_unsupported_view_fails(bad_view: str) -> None:
 @pytest.mark.parametrize("bad_unit", [0.0, -1.0, np.nan, np.inf, "not-a-number"])
 def test_invalid_pz_unit_fails(bad_unit: object) -> None:
     with pytest.raises(FeatureViewConfigError):
-        FeatureView(CARTESIAN_LOG_VIEW_ID, pz_unit_gev=bad_unit)  # type: ignore[arg-type]
+        FeatureView(CARTESIAN_LOGPZ_VIEW_ID, pz_unit_gev=bad_unit)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("view_id", VIEW_IDS)
+def test_identity_accepts_finite_nonpositive_pz_as_reference() -> None:
+    raw = _raw_rows()
+    raw[0, 2] = 0.0
+    raw[1, 2] = -2.0
+    features = FeatureView(IDENTITY_CARTESIAN_VIEW_ID).forward(raw)
+    np.testing.assert_array_equal(features[:, 2], raw[:, 2])
+
+
+@pytest.mark.parametrize("view_id", LOG_VIEW_IDS)
 @pytest.mark.parametrize("bad_pz", [0.0, -0.1])
-def test_non_positive_pz_fails(view_id: str, bad_pz: float) -> None:
+def test_log_views_reject_nonpositive_pz(view_id: str, bad_pz: float) -> None:
     raw = _raw_rows()
     raw[1, 2] = bad_pz
     view = FeatureView(view_id)
@@ -253,7 +312,7 @@ def test_invalid_feature_shape_fails(view_id: str) -> None:
         FeatureView(view_id).inverse(np.ones((4, 4), dtype=np.float64))
 
 
-@pytest.mark.parametrize("view_id", VIEW_IDS)
+@pytest.mark.parametrize("view_id", LOG_VIEW_IDS)
 def test_inverse_overflow_fails_explicitly(view_id: str) -> None:
     features = np.zeros((1, 5), dtype=np.float64)
     features[0, 2] = 1.0e4
@@ -263,6 +322,6 @@ def test_inverse_overflow_fails_explicitly(view_id: str) -> None:
 
 def test_log_prob_shape_is_checked() -> None:
     raw = _raw_rows()
-    view = FeatureView(CARTESIAN_LOG_VIEW_ID)
+    view = FeatureView(IDENTITY_CARTESIAN_VIEW_ID)
     with pytest.raises(FeatureViewShapeError):
         view.physical_log_prob_from_feature(np.zeros((raw.shape[0], 1)), raw)
