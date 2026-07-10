@@ -1,9 +1,9 @@
-"""Local post-shield muon PKL data contract (v0).
+"""Local post-shield muon data contracts (v0).
 
 Enforces the ``(N, 8)`` ``[px, py, pz, x, y, z, id, w]`` contract for trusted
-local legacy muon PKL files: load, validate, hash, deterministically split, and
-record train-only normalization metadata. Pure Python + NumPy; imports neither
-FairShip nor ROOT.
+local legacy muon files: load, validate, hash, deterministically split, record
+train-only normalization metadata, and construct explicit invertible density
+feature views. Pure Python + NumPy; imports neither FairShip nor ROOT.
 """
 
 from __future__ import annotations
@@ -12,11 +12,26 @@ from . import schema
 from .errors import (
     BoundsError,
     DataContractError,
+    FeatureViewConfigError,
+    FeatureViewDomainError,
+    FeatureViewError,
+    FeatureViewShapeError,
     FiniteError,
     IdError,
     LoaderError,
     ShapeError,
     WeightError,
+)
+from .feature_views import (
+    CARTESIAN_LOG_FEATURES,
+    CARTESIAN_LOG_VIEW_ID,
+    FEATURE_VIEW_SCHEMA_VERSION,
+    N_DENSITY_FEATURES,
+    PHYSICAL_STATE_COLUMNS,
+    SLOPE_LOG_FEATURES,
+    SLOPE_LOG_VIEW_ID,
+    SUPPORTED_FEATURE_VIEW_IDS,
+    FeatureView,
 )
 from .hashing import dataset_hash
 from .loader import load_muon_pkl
@@ -49,6 +64,19 @@ __all__ = [
     "IdError",
     "BoundsError",
     "LoaderError",
+    "FeatureViewError",
+    "FeatureViewConfigError",
+    "FeatureViewShapeError",
+    "FeatureViewDomainError",
+    "FeatureView",
+    "FEATURE_VIEW_SCHEMA_VERSION",
+    "CARTESIAN_LOG_VIEW_ID",
+    "SLOPE_LOG_VIEW_ID",
+    "SUPPORTED_FEATURE_VIEW_IDS",
+    "PHYSICAL_STATE_COLUMNS",
+    "CARTESIAN_LOG_FEATURES",
+    "SLOPE_LOG_FEATURES",
+    "N_DENSITY_FEATURES",
     "load_muon_pkl",
     "load_muon_npz",
     "representative_subset",
