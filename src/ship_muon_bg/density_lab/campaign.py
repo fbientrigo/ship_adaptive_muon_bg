@@ -224,6 +224,15 @@ def run_campaign(
     config.validate()
     store = ArtifactStore(config.experiment_id, root=root)
     device = device or config.resources.device
+    # Resolve "auto" to the concrete backend (cpu/cuda) of THIS host before it
+    # enters the run identity, so an "auto" config produces a device-specific
+    # run_id: a CPU host and a CUDA host no longer share a run_id (and thus
+    # cannot skip/overwrite each other's checkpoints) even though the flow
+    # resolves "auto" to different devices. Explicit cpu/cuda pass through.
+    if device == "auto":
+        from .environment import resolve_actual_device
+
+        device = resolve_actual_device("auto")["actual_device"]
     tracker = None
     if config.tracking.mode != "local":
         try:
@@ -241,9 +250,9 @@ def run_campaign(
             continue
         if not _selected(run_spec.seed, seeds):
             continue
-        # Materialize the effective device into the run identity so run_id /
+        # Materialize the resolved device into the run identity so run_id /
         # config_hash / experiment_config.json reflect the device actually used;
-        # a CPU-forced run of an "auto" config cannot then be skipped or
+        # a CPU-forced (or CPU-resolved "auto") run cannot then be skipped or
         # overwritten by a later differing-device run.
         run_spec = dataclasses.replace(run_spec, device=device)
         record = run_single(

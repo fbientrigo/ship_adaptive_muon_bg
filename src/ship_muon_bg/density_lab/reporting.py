@@ -53,6 +53,7 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
                     "feature_view": config["feature_view"]["view_id"],
                     "model": config["model"]["name"],
                     "seed": config["seed"],
+                    "device": config.get("device"),
                 }
             )
             record["target_label"] = _target_label(
@@ -99,8 +100,8 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     columns = [
-        "target_label", "pdg_id", "feature_view", "model", "seed", "status",
-        "forward_kl", "ess_over_n", "ess_catastrophic", "c2st_accuracy",
+        "target_label", "pdg_id", "feature_view", "model", "device", "seed",
+        "status", "forward_kl", "ess_over_n", "ess_catastrophic", "c2st_accuracy",
         "held_out_nll", "parameter_count", "fit_wall_time_seconds",
         "q_rare_region_mass", "target_rare_mass",
     ]
@@ -116,10 +117,16 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
     for r in records:
         if r.get("status") != "completed":
             continue
-        key = (r.get("target_label"), r.get("pdg_id"), r.get("feature_view"), r.get("model"))
+        # Device is part of the key: runs differing only by backend must not be
+        # averaged together (backend-dependent metrics) or counted as extra
+        # seeds when a config is run once on CPU and once on CUDA/auto.
+        key = (
+            r.get("target_label"), r.get("pdg_id"), r.get("feature_view"),
+            r.get("model"), r.get("device"),
+        )
         groups[key].append(r)
     aggregate = []
-    for (target_label, pdg_id, view, model), rows in sorted(
+    for (target_label, pdg_id, view, model, device), rows in sorted(
         groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])
     ):
         aggregate.append(
@@ -128,6 +135,7 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
                 "pdg_id": pdg_id,
                 "feature_view": view,
                 "model": model,
+                "device": device,
                 "n_seeds": len(rows),
                 "forward_kl_mean": _mean(rows, "forward_kl"),
                 "forward_kl_std": _std(rows, "forward_kl"),
@@ -149,11 +157,11 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
     lines = ["# Controlled Density Lab — Benchmark Summary", ""]
     lines.append("Runs: {} completed, {} failed.".format(summary["n_completed"], summary["n_failed"]))
     lines.append("")
-    lines.append("| target | pdg | view | model | seeds | fKL (mean) | ESS/N (mean) | C2ST acc | catastrophic |")
-    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    lines.append("| target | pdg | view | model | device | seeds | fKL (mean) | ESS/N (mean) | C2ST acc | catastrophic |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for row in aggregate:
         lines.append(
-            "| {target_label} | {pdg_id} | {feature_view} | {model} | {n_seeds} | "
+            "| {target_label} | {pdg_id} | {feature_view} | {model} | {device} | {n_seeds} | "
             "{fkl} | {ess} | {c2st} | {cat} |".format(
                 fkl=_fmt(row["forward_kl_mean"]),
                 ess=_fmt(row["ess_over_n_mean"]),
