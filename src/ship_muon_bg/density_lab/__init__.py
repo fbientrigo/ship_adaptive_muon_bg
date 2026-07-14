@@ -9,9 +9,44 @@ functions that need them (model registry, C2ST metric, reporting, tracking).
 
 from __future__ import annotations
 
+from .artifacts import ArtifactStore, derive_run_id
+from .campaign import run_campaign, run_single
+from .config import (
+    CONFIG_SCHEMA_VERSION,
+    PREDEFINED_SCIENTIFIC_SEEDS,
+    DatasetSpec,
+    EvaluationSpec,
+    ExperimentConfig,
+    FeatureViewSpec,
+    ModelSpec,
+    ResourceSpec,
+    RunSpec,
+    TargetSpec,
+    TrackingSpec,
+)
+from .datasets import ControlledDataset, build_controlled_dataset
+from .evaluator import evaluate_run
 from .feature_pipeline import FeaturePipelineError, FittedFeaturePipeline
 
 __all__ = [
     "FittedFeaturePipeline",
     "FeaturePipelineError",
+    "ExperimentConfig",
+    "RunSpec",
+    "TargetSpec",
+    "FeatureViewSpec",
+    "ModelSpec",
+    "DatasetSpec",
+    "EvaluationSpec",
+    "TrackingSpec",
+    "ResourceSpec",
+    "CONFIG_SCHEMA_VERSION",
+    "PREDEFINED_SCIENTIFIC_SEEDS",
+    "build_controlled_dataset",
+    "ControlledDataset",
+    "evaluate_run",
+    "ArtifactStore",
+    "derive_run_id",
+    "run_campaign",
+    "run_single",
 ]

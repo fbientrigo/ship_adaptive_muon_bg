@@ -1,0 +1,50 @@
+{
+  "experiment_id": "smoke_v0",
+  "description": "Fast CPU correctness smoke: D0/D2/D3/D5(1e-2), all views, all model families, seed 11.",
+  "targets": [
+    {"target_id": "D0", "variant": null},
+    {"target_id": "D2", "variant": null},
+    {"target_id": "D3", "variant": null},
+    {"target_id": "D5", "variant": "rare_1e-2"}
+  ],
+  "pdg_ids": [13, -13],
+  "feature_views": [
+    {"view_id": "identity_cartesian_v0"},
+    {"view_id": "cartesian_logpz_v0"},
+    {"view_id": "slope_logpz_v0"}
+  ],
+  "models": [
+    {"name": "diagonal_gaussian", "family": "diagonal_gaussian", "params": {}},
+    {"name": "full_gaussian", "family": "full_gaussian", "params": {}},
+    {"name": "gmm_k2", "family": "gaussian_mixture", "params": {"n_components": 2, "n_init": 1}},
+    {
+      "name": "affine_tiny",
+      "family": "affine_coupling",
+      "training_budget_id": "tiny",
+      "params": {
+        "number_of_blocks": 2,
+        "hidden_width": 32,
+        "hidden_depth": 1,
+        "activation": "relu",
+        "max_log_scale": 3.0,
+        "dtype": "float32",
+        "learning_rate": 0.003,
+        "batch_size": 512,
+        "max_epochs": 15,
+        "patience": 8
+      }
+    }
+  ],
+  "seeds": [11],
+  "dataset": {"n_train": 2048, "n_validation": 1024, "n_test": 2048},
+  "evaluation": {
+    "ess_sample_count": 5000,
+    "c2st_sample_count": 2000,
+    "tail_quantiles": [0.9, 0.99],
+    "exceedance_pz_thresholds": [60.0, 70.0],
+    "catastrophic_ess_threshold": 0.01,
+    "near_duplicate_atol": 1e-06
+  },
+  "tracking": {"mode": "local", "experiment_name": "controlled_density_lab"},
+  "resources": {"device": "cpu"}
+}

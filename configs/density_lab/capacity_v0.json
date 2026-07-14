@@ -1,0 +1,49 @@
+{
+  "experiment_id": "capacity_v0",
+  "description": "Controlled scaling frontier: an explicit affine-flow capacity ladder (tiny/small/medium) vs Gaussian baselines on the harder targets. No enormous Cartesian product.",
+  "targets": [
+    {"target_id": "D3", "variant": null},
+    {"target_id": "D4", "variant": null},
+    {"target_id": "D5", "variant": "rare_1e-3"}
+  ],
+  "pdg_ids": [13],
+  "feature_views": [
+    {"view_id": "identity_cartesian_v0"}
+  ],
+  "models": [
+    {"name": "diagonal_gaussian", "family": "diagonal_gaussian", "params": {}},
+    {"name": "full_gaussian", "family": "full_gaussian", "params": {}},
+    {"name": "gmm_k2", "family": "gaussian_mixture", "params": {"n_components": 2, "n_init": 2}},
+    {"name": "gmm_k4", "family": "gaussian_mixture", "params": {"n_components": 4, "n_init": 2}},
+    {
+      "name": "affine_tiny",
+      "family": "affine_coupling",
+      "training_budget_id": "tiny",
+      "params": {"number_of_blocks": 2, "hidden_width": 32, "hidden_depth": 1, "dtype": "float32", "learning_rate": 0.003, "batch_size": 256, "max_epochs": 80, "patience": 15}
+    },
+    {
+      "name": "affine_small",
+      "family": "affine_coupling",
+      "training_budget_id": "small",
+      "params": {"number_of_blocks": 4, "hidden_width": 64, "hidden_depth": 2, "dtype": "float32", "learning_rate": 0.002, "batch_size": 256, "max_epochs": 120, "patience": 20}
+    },
+    {
+      "name": "affine_medium",
+      "family": "affine_coupling",
+      "training_budget_id": "medium",
+      "params": {"number_of_blocks": 8, "hidden_width": 128, "hidden_depth": 2, "dtype": "float32", "learning_rate": 0.001, "batch_size": 256, "max_epochs": 160, "patience": 25}
+    }
+  ],
+  "seeds": [11, 22, 33],
+  "dataset": {"n_train": 131072, "n_validation": 16384, "n_test": 65536},
+  "evaluation": {
+    "ess_sample_count": 40000,
+    "c2st_sample_count": 8000,
+    "tail_quantiles": [0.9, 0.99, 0.999],
+    "exceedance_pz_thresholds": [60.0, 70.0],
+    "catastrophic_ess_threshold": 0.01,
+    "near_duplicate_atol": 1e-06
+  },
+  "tracking": {"mode": "local", "experiment_name": "controlled_density_lab"},
+  "resources": {"device": "auto"}
+}
