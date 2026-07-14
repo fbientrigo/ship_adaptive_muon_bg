@@ -37,15 +37,20 @@ def pytest_collection_modifyitems(config, items):
 
     skip_flow = None
     skip_lab = None
+    skip_tracking = None
     if not _module_available("torch"):
         skip_flow = pytest.mark.skip(reason="requires optional torch stack (.[flow])")
     if not _module_available("sklearn"):
         skip_lab = pytest.mark.skip(reason="requires optional scikit-learn (.[lab])")
+    if not _module_available("mlflow"):
+        skip_tracking = pytest.mark.skip(reason="requires optional mlflow (.[tracking])")
     for item in items:
         if skip_flow is not None and "flow" in item.keywords:
             item.add_marker(skip_flow)
         if skip_lab is not None and "lab" in item.keywords:
             item.add_marker(skip_lab)
+        if skip_tracking is not None and "tracking" in item.keywords:
+            item.add_marker(skip_tracking)
 
 
 @pytest.fixture

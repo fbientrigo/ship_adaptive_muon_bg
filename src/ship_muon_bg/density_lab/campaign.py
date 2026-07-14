@@ -55,6 +55,7 @@ def run_single(
     force: bool = False,
     dataset_cache: Optional[Dict[tuple, Any]] = None,
     device: str = "cpu",
+    tracker=None,
 ) -> Dict[str, Any]:
     """Execute one run; return a status record. Never raises for run failures."""
 
@@ -167,6 +168,16 @@ def run_single(
             save_manifest=save_manifest,
             hashes=hashes,
         )
+        if tracker is not None:
+            try:
+                tracker.log_run(
+                    run_id=run_id,
+                    params=run_spec.to_dict(),
+                    metrics=metrics,
+                    run_dir=paths.run_dir,
+                )
+            except Exception:  # tracking is best-effort, never fatal
+                pass
         return {
             "run_id": run_id,
             "status": STATUS_COMPLETED,
@@ -215,6 +226,14 @@ def run_campaign(
     config.validate()
     store = ArtifactStore(config.experiment_id, root=root)
     device = device or config.resources.device
+    tracker = None
+    if config.tracking.mode != "local":
+        try:
+            from .tracking import make_tracker
+
+            tracker = make_tracker(config.tracking)
+        except Exception:  # optional adapter missing/misconfigured -> local only
+            tracker = None
     dataset_cache: Dict[tuple, Any] = {}
     records: List[Dict[str, Any]] = []
     for run_spec in config.runs():
@@ -230,6 +249,7 @@ def run_campaign(
             force=force,
             dataset_cache=dataset_cache,
             device=device,
+            tracker=tracker,
         )
         records.append(record)
     summary = {
