@@ -13,6 +13,7 @@ from .controlled_targets import (
     ControlledTargetDomainError,
     ControlledTargetError,
     ControlledTargetShapeError,
+    D5_VARIANTS,
     GaussianComponent,
     N_PHYSICAL_DIMS,
     PHYSICAL_COLUMNS,
@@ -20,8 +21,18 @@ from .controlled_targets import (
     SUPPORTED_TARGET_IDS,
     SampleBatch,
     TARGET_SCHEMA_VERSION,
+    TransformedControlledTarget,
+    calibrate_d5_rare_region,
     embed_physical_to_raw,
     make_controlled_target,
+)
+from .target_regions import MahalanobisRegion
+from .target_transforms import (
+    ComposedTransform,
+    ExactTransform,
+    SinhArcsinhSkewTransform,
+    TriangularBananaTransform,
+    numerical_forward_log_abs_det_jacobian,
 )
 
 __all__ = [
@@ -32,11 +43,20 @@ __all__ = [
     "ControlledTargetDomainError",
     "GaussianComponent",
     "SampleBatch",
+    "TransformedControlledTarget",
     "TARGET_SCHEMA_VERSION",
     "SUPPORTED_TARGET_IDS",
     "SUPPORTED_PDG_IDS",
     "PHYSICAL_COLUMNS",
     "N_PHYSICAL_DIMS",
+    "D5_VARIANTS",
     "make_controlled_target",
+    "calibrate_d5_rare_region",
     "embed_physical_to_raw",
+    "ExactTransform",
+    "TriangularBananaTransform",
+    "SinhArcsinhSkewTransform",
+    "ComposedTransform",
+    "numerical_forward_log_abs_det_jacobian",
+    "MahalanobisRegion",
 ]
