@@ -9,7 +9,7 @@ dicts. Optional scikit-learn is imported lazily inside :func:`c2st` only.
 from __future__ import annotations
 
 import math
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import Any, Dict, Sequence
 
 import numpy as np
 
@@ -284,7 +284,6 @@ def rare_mode_diagnostics(
     q_log_prob_on_target_samples: np.ndarray,
     p_log_prob_on_target_samples: np.ndarray,
     target_rare_labels_mask: np.ndarray,
-    n_train: int,
 ) -> Dict[str, Any]:
     """D5 rare-region diagnostics that do not use model-internal labels.
 

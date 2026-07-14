@@ -13,8 +13,6 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import numpy as np
-
 from ..benchmarks import embed_physical_to_raw
 from ..data_contracts.feature_views import FeatureView
 from .artifacts import (
@@ -136,7 +134,6 @@ def run_single(
             model=model,
             evaluation=run_spec.evaluation,
             seed=run_spec.seed,
-            n_train=run_spec.dataset.n_train,
         )
         metrics["fit_wall_time_seconds"] = fit_result.wall_time_seconds
         metrics["ended_at"] = utc_timestamp()

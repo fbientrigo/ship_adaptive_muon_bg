@@ -9,7 +9,7 @@ and dtype. Returns a :class:`~Nflow.interfaces.FitResult`.
 from __future__ import annotations
 
 import time
-from typing import Any, List, Optional
+from typing import List, Optional
 
 import numpy as np
 import torch

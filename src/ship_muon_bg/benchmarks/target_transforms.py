@@ -22,7 +22,7 @@ These are numerical benchmark transforms, not SHiP physics. See
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, Sequence, Tuple
 
 import numpy as np
 

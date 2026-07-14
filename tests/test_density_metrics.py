@@ -138,7 +138,6 @@ def test_rare_mode_diagnostics_flags_zero_count():
         q_log_prob_on_target_samples=q_log,
         p_log_prob_on_target_samples=p_log,
         target_rare_labels_mask=mask,
-        n_train=1000,
     )
     assert out["observed_q_rare_sample_count"] == 0
     assert out["zero_rare_samples_flag"] is True

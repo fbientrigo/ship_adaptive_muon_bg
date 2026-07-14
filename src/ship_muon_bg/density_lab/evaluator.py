@@ -43,7 +43,6 @@ def evaluate_run(
     model,
     evaluation,
     seed: int,
-    n_train: int,
 ) -> Tuple[Dict[str, Any], np.ndarray]:
     """Return (metrics dict, model sample array in physical space)."""
 
@@ -143,7 +142,6 @@ def evaluate_run(
             q_log_prob_on_target_samples=q_log_on_test,
             p_log_prob_on_target_samples=p_log_on_test,
             target_rare_labels_mask=test_rare_mask,
-            n_train=n_train,
         )
 
     # --- throughput / capacity ---
