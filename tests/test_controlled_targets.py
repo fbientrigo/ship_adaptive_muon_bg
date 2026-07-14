@@ -150,6 +150,74 @@ def test_gaussian_component_rejects_non_positive_weight():
         GaussianComponent(mean=np.zeros(5), covariance=np.eye(5), weight=0.0)
 
 
+# --- 2b. GaussianComponent configuration is genuinely immutable ------------
+
+
+def test_gaussian_component_copies_mean_and_covariance_at_construction():
+    mean_source = np.array([0.0, 0.0, 50.0, 0.0, 0.0])
+    covariance_source = np.eye(5) * 4.0
+    component = GaussianComponent(mean=mean_source, covariance=covariance_source)
+
+    original_mean = component.mean.copy()
+    original_covariance = component.covariance.copy()
+
+    # Mutating the caller's source arrays after construction must not be
+    # visible through the component: construction must copy, not alias.
+    mean_source[0] = 999.0
+    covariance_source[0, 0] = 999.0
+
+    np.testing.assert_array_equal(component.mean, original_mean)
+    np.testing.assert_array_equal(component.covariance, original_covariance)
+
+
+def test_gaussian_component_mean_and_covariance_are_read_only():
+    component = GaussianComponent(mean=np.zeros(5), covariance=np.eye(5))
+
+    assert component.mean.flags["WRITEABLE"] is False
+    assert component.covariance.flags["WRITEABLE"] is False
+
+    with pytest.raises(ValueError):
+        component.mean[0] = 1.0
+    with pytest.raises(ValueError):
+        component.covariance[0, 0] = 1.0
+
+
+def test_gaussian_component_rebinding_mean_attribute_fails():
+    component = GaussianComponent(mean=np.zeros(5), covariance=np.eye(5))
+    with pytest.raises(Exception):
+        component.mean = np.ones(5)
+
+
+def test_gaussian_component_immutability_preserves_log_prob_sample_manifest_and_hash():
+    mean = np.array([0.0, 0.0, 50.0, 0.0, 0.0])
+    covariance = np.eye(5) * 4.0
+    component = GaussianComponent(mean=mean.copy(), covariance=covariance.copy())
+
+    target = ControlledTarget(
+        target_id="IMMUTABILITY_TEST",
+        description="t",
+        pdg_id_parameterization="shared_across_pdg_ids",
+        components_by_pdg_id={13: (component,), -13: (component,)},
+    )
+    manifest_before = target.manifest()
+    hash_before = target.config_hash()
+    points = np.array([[1.0, 2.0, 50.0, 0.3, -0.2]])
+    log_prob_before = target.log_prob(points, pdg_id=13)
+    sample_before = target.sample(n=8, pdg_id=13, seed=5).physical
+
+    # Mutate the original source arrays (already copied at construction) --
+    # none of the target's derived state may change as a result.
+    mean[0] = 12345.0
+    covariance[0, 0] = 999.0
+
+    assert target.manifest() == manifest_before
+    assert target.config_hash() == hash_before
+    np.testing.assert_array_equal(target.log_prob(points, pdg_id=13), log_prob_before)
+    np.testing.assert_array_equal(
+        target.sample(n=8, pdg_id=13, seed=5).physical, sample_before
+    )
+
+
 def test_controlled_target_rejects_mixture_weights_not_summing_to_one():
     good = GaussianComponent(
         mean=np.array([0.0, 0.0, 50.0, 0.0, 0.0]), covariance=np.eye(5), weight=0.5

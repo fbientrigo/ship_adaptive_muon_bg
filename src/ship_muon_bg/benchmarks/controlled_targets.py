@@ -159,6 +159,18 @@ class GaussianComponent:
     ``covariance`` is validated (and its Cholesky factor cached) at
     construction time so every downstream ``log_prob``/``sample`` call uses
     stable linear algebra rather than an explicitly formed inverse.
+
+    ``@dataclass(frozen=True)`` only prevents rebinding the ``mean`` and
+    ``covariance`` attributes to a new object; it does not freeze the NumPy
+    buffers those attributes point at, and ``np.ascontiguousarray`` returns
+    its input unchanged (aliased, not copied) whenever that input is already
+    C-contiguous. So construction here makes an explicit copy of the
+    caller-supplied arrays before validating and storing them, and marks the
+    stored ``mean``, ``covariance`` and cached Cholesky arrays read-only via
+    ``flags.writeable = False``. This guarantees a component's configuration
+    cannot change after construction, whether by later mutating the array the
+    caller originally passed in or by writing directly into
+    ``component.mean``/``component.covariance``.
     """
 
     mean: np.ndarray
@@ -166,8 +178,8 @@ class GaussianComponent:
     weight: float = 1.0
 
     def __post_init__(self) -> None:
-        mean = np.asarray(self.mean, dtype=np.float64)
-        covariance = np.asarray(self.covariance, dtype=np.float64)
+        mean = np.array(self.mean, dtype=np.float64, copy=True, order="C")
+        covariance = np.array(self.covariance, dtype=np.float64, copy=True, order="C")
 
         if mean.shape != (N_PHYSICAL_DIMS,):
             raise ControlledTargetShapeError(
@@ -200,8 +212,13 @@ class GaussianComponent:
                 "component weight must be finite and positive, got {}".format(weight)
             )
 
-        object.__setattr__(self, "mean", np.ascontiguousarray(mean))
-        object.__setattr__(self, "covariance", np.ascontiguousarray(covariance))
+        mean.flags.writeable = False
+        covariance.flags.writeable = False
+        cholesky = np.ascontiguousarray(cholesky)
+        cholesky.flags.writeable = False
+
+        object.__setattr__(self, "mean", mean)
+        object.__setattr__(self, "covariance", covariance)
         object.__setattr__(self, "weight", weight)
         object.__setattr__(self, "_cholesky", cholesky)
         log_det_covariance = 2.0 * float(np.sum(np.log(np.diag(cholesky))))

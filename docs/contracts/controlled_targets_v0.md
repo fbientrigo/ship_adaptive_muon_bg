@@ -26,6 +26,14 @@ Targets are not defined in log-`pz` or slope/log-`pz` feature coordinates.
 
 ## 3. Mathematical definitions
 
+Every `GaussianComponent`'s `mean` and `covariance` (and its cached Cholesky
+factor) are copied into new, read-only NumPy arrays at construction time.
+Mutating a caller-owned source array after construction, or writing directly
+into `component.mean`/`component.covariance`, has no effect on the component
+and the latter raises `ValueError`. A component's configuration -- and
+therefore its `log_prob`, `sample`, and its target's `manifest()`/
+`config_hash()` -- cannot change after construction.
+
 ### D0 — diagonal Gaussian
 
 One component, `component_id = 0`, shared numerically across both charges:
