@@ -298,6 +298,44 @@ def test_controlled_target_rejects_entirely_unsupported_pdg_id_mapping():
         )
 
 
+def test_controlled_target_rejects_non_integer_pdg_id_mapping_key():
+    # A key that is `==` to a supported id but not actually an int (e.g. a
+    # float or a string) must not be silently coerced by `int(pdg_id)`.
+    with pytest.raises(ControlledTargetConfigError, match=_MAPPING_KEY_ERROR):
+        ControlledTarget(
+            target_id="BAD_PDG_ID_MAPPING",
+            description="t",
+            pdg_id_parameterization="shared_across_pdg_ids",
+            components_by_pdg_id={
+                "13": (_valid_pz_margin_component(),),
+                -13: (_valid_pz_margin_component(),),
+            },
+        )
+
+
+def test_controlled_target_rejects_non_integer_pdg_id_key_that_could_overwrite_a_real_entry():
+    # Regression guard: 13.9 is a distinct dict key from 13 (different hash),
+    # so both can be present in the same mapping. The old validation order
+    # coerced keys with int(pdg_id) *before* checking the key set, so
+    # int(13.9) == 13 would silently overwrite the real pdg_id=13 entry and
+    # the resulting {13, -13} key set would pass validation.
+    real_component = _valid_pz_margin_component()
+    truncating_component = GaussianComponent(
+        mean=np.array([9.0, 9.0, 50.0, 9.0, 9.0]), covariance=np.eye(5)
+    )
+    with pytest.raises(ControlledTargetConfigError, match=_MAPPING_KEY_ERROR):
+        ControlledTarget(
+            target_id="BAD_PDG_ID_MAPPING",
+            description="t",
+            pdg_id_parameterization="shared_across_pdg_ids",
+            components_by_pdg_id={
+                13: (real_component,),
+                13.9: (truncating_component,),
+                -13: (real_component,),
+            },
+        )
+
+
 # --- 3, 4. Determinism -------------------------------------------------------
 
 
@@ -456,6 +494,21 @@ def test_d2_log_density_matches_manual_logsumexp():
 
     actual = target.log_prob(points, pdg_id=13)
     np.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-10)
+
+
+def test_d2_log_prob_is_negative_infinity_not_nan_when_all_components_underflow():
+    # At this finite but extreme point, each component's squared Mahalanobis
+    # distance overflows to +inf in float64, so each component log_prob is
+    # exactly -inf. Before the _logsumexp underflow guard, shifting by
+    # max_term (-inf) computed -inf - (-inf) = nan instead of the
+    # mathematically correct -inf.
+    target = make_controlled_target("D2")
+    far_point = np.full((1, 5), 1.0e200)
+    with np.errstate(over="ignore"):
+        log_prob = target.log_prob(far_point, pdg_id=13)
+    assert log_prob.shape == (1,)
+    assert not np.isnan(log_prob[0])
+    assert np.isneginf(log_prob[0])
 
 
 # --- 12. Charges are observably distinct ------------------------------------

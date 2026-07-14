@@ -74,12 +74,19 @@ def _canonical_json_hash(payload: Dict[str, Any]) -> str:
 
 
 def _logsumexp(log_terms: np.ndarray, axis: int = -1) -> np.ndarray:
-    """Numerically stable ``log(sum(exp(log_terms)))`` along ``axis``."""
+    """Numerically stable ``log(sum(exp(log_terms)))`` along ``axis``.
+
+    Rows where every term is ``-inf`` (all mixture components underflow at
+    a far-tail point) are shifted by ``0`` instead of ``max_term``: shifting
+    by ``max_term`` there would compute ``-inf - (-inf) = nan``, when the
+    mathematically exact result is ``-inf``.
+    """
 
     max_term = np.max(log_terms, axis=axis, keepdims=True)
-    shifted = log_terms - max_term
-    summed = np.sum(np.exp(shifted), axis=axis, keepdims=True)
-    result = max_term + np.log(summed)
+    shift = np.where(np.isneginf(max_term), 0.0, max_term)
+    with np.errstate(divide="ignore"):
+        summed = np.sum(np.exp(log_terms - shift), axis=axis, keepdims=True)
+        result = shift + np.log(summed)
     return np.squeeze(result, axis=axis)
 
 
@@ -281,11 +288,26 @@ class ControlledTarget:
         pdg_id_parameterization: str,
         components_by_pdg_id: Mapping[int, Sequence[GaussianComponent]],
     ) -> None:
-        if set(components_by_pdg_id.keys()) != set(SUPPORTED_PDG_IDS):
+        # Validate each key's type strictly (same rule as `_validate_pdg_id`)
+        # before comparing the key set, so a key that is merely `==` to a
+        # supported id but not actually an int (e.g. `13.9`, `"13"`) cannot
+        # be silently coerced by `int(pdg_id)` into overwriting a real entry.
+        coerced_keys: Dict[Any, int] = {}
+        for pdg_id in components_by_pdg_id.keys():
+            if isinstance(pdg_id, bool) or not isinstance(pdg_id, (int, np.integer)):
+                raise ControlledTargetConfigError(
+                    "components_by_pdg_id must declare exactly the supported "
+                    "PDG ids {}, got a non-integer key {!r}".format(
+                        sorted(SUPPORTED_PDG_IDS), pdg_id
+                    )
+                )
+            coerced_keys[pdg_id] = int(pdg_id)
+
+        if set(coerced_keys.values()) != set(SUPPORTED_PDG_IDS):
             raise ControlledTargetConfigError(
                 "components_by_pdg_id must declare exactly the supported PDG "
                 "ids {}, got {}".format(
-                    sorted(SUPPORTED_PDG_IDS), sorted(components_by_pdg_id.keys())
+                    sorted(SUPPORTED_PDG_IDS), sorted(coerced_keys.values())
                 )
             )
 
@@ -309,7 +331,7 @@ class ControlledTarget:
                     component.marginal_std(_PZ_INDEX),
                     "{} pdg_id {}".format(target_id, pdg_id),
                 )
-            normalized[int(pdg_id)] = components
+            normalized[coerced_keys[pdg_id]] = components
 
         self.target_id = target_id
         self.description = description
