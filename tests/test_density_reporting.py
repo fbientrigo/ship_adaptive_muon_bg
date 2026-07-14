@@ -1,0 +1,96 @@
+"""Tests for the report builder (reads artifacts only, never retrains).
+
+The summary/limitations builders are NumPy-only; the plot builder is marked
+``lab`` (matplotlib).
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from ship_muon_bg.density_lab.reporting import (
+    build_report,
+    build_summary_tables,
+    load_run_records,
+)
+
+
+def _write_run(campaign_dir, run_id, *, device, seed, status="completed", fkl=0.1, ess=0.8):
+    run_dir = campaign_dir / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_status.json").write_text(json.dumps({"run_id": run_id, "status": status}))
+    (run_dir / "experiment_config.json").write_text(
+        json.dumps(
+            {
+                "target": {"target_id": "D3", "variant": None},
+                "pdg_id": 13,
+                "feature_view": {"view_id": "identity_cartesian_v0"},
+                "model": {"name": "affine_small"},
+                "seed": seed,
+                "device": device,
+            }
+        )
+    )
+    if status == "completed":
+        (run_dir / "metrics.json").write_text(
+            json.dumps(
+                {
+                    "forward_kl": {"forward_kl": fkl},
+                    "held_out": {"held_out_nll": 1.0},
+                    "importance_ess": {"ess_over_n": ess, "catastrophic": False},
+                    "c2st": {"c2st_accuracy": 0.6},
+                    "parameter_count": 37416,
+                }
+            )
+        )
+
+
+def test_load_run_records_carries_device(tmp_path):
+    _write_run(tmp_path, "run_cpu", device="cpu", seed=11)
+    records = load_run_records(tmp_path)
+    assert records[0]["device"] == "cpu"
+
+
+def test_device_runs_are_not_collapsed_in_aggregate(tmp_path):
+    # Same config on two backends must not be counted as 2 seeds of one group.
+    _write_run(tmp_path, "run_cpu", device="cpu", seed=11, fkl=0.10)
+    _write_run(tmp_path, "run_cuda", device="cuda", seed=11, fkl=0.40)
+    records = load_run_records(tmp_path)
+    summary = build_summary_tables(records, tmp_path / "report")
+    # two distinct device groups, each with a single seed -- not one 2-seed group
+    assert len(summary["aggregate"]) == 2
+    devices = {row["device"] for row in summary["aggregate"]}
+    assert devices == {"cpu", "cuda"}
+    for row in summary["aggregate"]:
+        assert row["n_seeds"] == 1
+
+
+def test_same_device_multiple_seeds_group_together(tmp_path):
+    _write_run(tmp_path, "run_s11", device="cpu", seed=11, fkl=0.10)
+    _write_run(tmp_path, "run_s22", device="cpu", seed=22, fkl=0.20)
+    records = load_run_records(tmp_path)
+    summary = build_summary_tables(records, tmp_path / "report")
+    assert len(summary["aggregate"]) == 1
+    assert summary["aggregate"][0]["n_seeds"] == 2
+    assert summary["aggregate"][0]["forward_kl_mean"] == pytest.approx(0.15)
+
+
+def test_failed_runs_remain_visible(tmp_path):
+    _write_run(tmp_path, "ok", device="cpu", seed=11)
+    _write_run(tmp_path, "bad", device="cpu", seed=22, status="failed")
+    records = load_run_records(tmp_path)
+    summary = build_summary_tables(records, tmp_path / "report")
+    assert summary["n_failed"] == 1
+    csv_text = (tmp_path / "report" / "benchmark_summary.csv").read_text()
+    assert "failed" in csv_text  # failed run row is present, not dropped
+
+
+def test_build_report_reads_only_without_plots(tmp_path):
+    _write_run(tmp_path, "run_cpu", device="cpu", seed=11)
+    result = build_report(tmp_path, with_plots=False)
+    report_dir = tmp_path / "report"
+    for name in ("benchmark_summary.json", "benchmark_summary.csv", "benchmark_summary.md", "limitations.md"):
+        assert (report_dir / name).exists(), name
+    assert result["summary"]["n_completed"] == 1

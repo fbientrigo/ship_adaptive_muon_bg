@@ -17,9 +17,98 @@ No implementation here trains anything; these are contracts only.
 
 from __future__ import annotations
 
-from typing import Protocol, Tuple, runtime_checkable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Tuple,
+    runtime_checkable,
+)
 
 import numpy as np
+
+# Fit outcome status strings (see docs / gates). ``ok`` = converged/finished
+# cleanly; ``failed`` = a hard failure (non-finite loss, exception) that the
+# campaign runner records without aborting the whole campaign.
+FIT_STATUS_OK = "ok"
+FIT_STATUS_FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class FitResult:
+    """Outcome of fitting a :class:`DensityEstimator`.
+
+    ``train_history`` is a list of JSON-safe dicts (one per recorded step),
+    ``best_step`` / ``best_validation_nll`` describe the restored checkpoint
+    (``None`` when no validation set was supplied), ``wall_time_seconds`` is
+    the fit wall time, and ``warnings`` collects non-fatal issues.
+    """
+
+    status: str
+    seed: int
+    train_history: List[Dict[str, Any]] = field(default_factory=list)
+    best_step: Optional[int] = None
+    best_validation_nll: Optional[float] = None
+    wall_time_seconds: float = 0.0
+    warnings: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status,
+            "seed": int(self.seed),
+            "best_step": self.best_step,
+            "best_validation_nll": self.best_validation_nll,
+            "wall_time_seconds": float(self.wall_time_seconds),
+            "warnings": list(self.warnings),
+            "n_history_steps": len(self.train_history),
+        }
+
+
+@runtime_checkable
+class DensityEstimator(Protocol):
+    """A density model whose public data boundary is NumPy arrays.
+
+    Implementations may use torch/sklearn internally, but ``log_prob`` and
+    ``sample`` take/return plain float64 arrays and ``fit`` accepts NumPy
+    training data. Weights must be either honored or rejected explicitly
+    (never silently ignored). Models are trained separately per PDG id; no
+    charge conditioning is built in.
+    """
+
+    def fit(
+        self,
+        x_train: np.ndarray,
+        *,
+        x_validation: Optional[np.ndarray],
+        seed: int,
+        sample_weight: Optional[np.ndarray] = None,
+    ) -> FitResult:
+        """Fit on ``x_train`` (already view-transformed + normalized)."""
+        ...
+
+    def log_prob(self, x: np.ndarray) -> np.ndarray:
+        """Per-row log-density under the model, shape ``(n,)``."""
+        ...
+
+    def sample(self, n: int, *, seed: int) -> np.ndarray:
+        """Draw ``n`` rows deterministically for a given ``seed``."""
+        ...
+
+    def manifest(self) -> Dict[str, Any]:
+        """JSON-serializable description of the fitted model."""
+        ...
+
+    def parameter_count(self) -> int:
+        """Number of free parameters in the fitted model."""
+        ...
+
+    def save(self, output_dir: Path) -> Dict[str, Any]:
+        """Persist explicit parameters/checkpoint; return a save manifest."""
+        ...
 
 
 @runtime_checkable

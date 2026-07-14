@@ -15,9 +15,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Future tested flow implementations (module 2).
+# Tested affine-coupling normalizing flow (density lab, module 2).
 flow = [
     "torch",
+]
+# Density-lab optional stack: Gaussian-mixture baseline (scikit-learn),
+# C2ST metric classifier (scikit-learn) and report plots (matplotlib).
+lab = [
+    "scikit-learn",
+    "matplotlib",
+]
+# Optional experiment tracking adapter (local file store stays canonical).
+tracking = [
+    "mlflow",
 ]
 # Running the quarantined Nflow/legacy code as-is (untested, HDF5-era).
 legacy = [
@@ -45,3 +55,9 @@ packages = ["src/ship_muon_bg", "Nflow", "ProxyTagger"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "flow: tests that require the optional torch stack (.[flow])",
+    "lab: tests that require the optional scikit-learn/matplotlib stack (.[lab])",
+    "tracking: tests that require the optional mlflow stack (.[tracking])",
+    "slow: slower tests (small training runs); not performance benchmarks",
+]

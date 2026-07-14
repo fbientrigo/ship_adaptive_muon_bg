@@ -1,0 +1,46 @@
+name: Optional stack tests
+
+# Installs the optional flow/lab stack and runs the flow/lab tests on CPU.
+# Does not run performance benchmarks, sets no wall-time thresholds, and never
+# requires a GPU. The NumPy-only core is covered by ci.yml.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: optional-stack-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest-optional:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install CPU-only torch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dev + flow + lab extras
+        run: python -m pip install -e ".[dev,flow,lab]"
+
+      - name: Run flow and lab tests on CPU
+        run: python -m pytest -q -m "flow or lab"
+
+      - name: Run full suite (core + optional)
+        run: python -m pytest -q

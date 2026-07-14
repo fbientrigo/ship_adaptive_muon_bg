@@ -56,8 +56,8 @@ SMOKE_CONFIGS = (
 # --- 1. Factory -------------------------------------------------------------
 
 
-def test_supported_target_ids_are_exactly_d0_d1_d2():
-    assert SUPPORTED_TARGET_IDS == ("D0", "D1", "D2")
+def test_supported_target_ids_include_full_curriculum():
+    assert SUPPORTED_TARGET_IDS == ("D0", "D1", "D2", "D3", "D4", "D5")
 
 
 @pytest.mark.parametrize("target_id", SUPPORTED_TARGET_IDS)
@@ -66,7 +66,7 @@ def test_factory_accepts_known_targets(target_id):
     assert target.target_id == target_id
 
 
-@pytest.mark.parametrize("bad_id", ["", "d0", "D3", "unknown_v0"])
+@pytest.mark.parametrize("bad_id", ["", "d0", "D6", "unknown_v0"])
 def test_factory_rejects_unknown_targets(bad_id):
     with pytest.raises(ControlledTargetConfigError):
         make_controlled_target(bad_id)
@@ -526,7 +526,13 @@ def test_d2_pdg_id_distributions_are_observably_distinct():
 # --- 13, 14. Manifest and config hash determinism ---------------------------
 
 
-@pytest.mark.parametrize("target_id", SUPPORTED_TARGET_IDS)
+# D0-D2 are base Gaussian/mixture targets with the base manifest schema. D3-D5
+# are transformed targets with a different manifest (see
+# tests/test_controlled_targets_d3_d5.py).
+BASE_TARGET_IDS = ("D0", "D1", "D2")
+
+
+@pytest.mark.parametrize("target_id", BASE_TARGET_IDS)
 def test_manifest_and_hash_are_deterministic(target_id):
     target_a = make_controlled_target(target_id)
     target_b = make_controlled_target(target_id)
@@ -561,7 +567,7 @@ def test_manifest_and_hash_are_deterministic(target_id):
     assert manifest["event_level_conservation_applied"] is False
 
 
-@pytest.mark.parametrize("target_id", SUPPORTED_TARGET_IDS)
+@pytest.mark.parametrize("target_id", BASE_TARGET_IDS)
 def test_probability_pz_nonpositive_is_positive_finite_and_negligible(target_id):
     # Regression guard: the previous ``0.5 * (1 + erf(-z))`` formula
     # catastrophically cancelled at these margins and silently reported

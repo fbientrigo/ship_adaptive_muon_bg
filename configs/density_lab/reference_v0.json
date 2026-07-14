@@ -1,0 +1,53 @@
+{
+  "experiment_id": "reference_v0",
+  "description": "First presentable controlled result: D0-D5 (both D5 masses), both pdg ids, all views, Gaussian baselines + small affine flow, five seeds.",
+  "targets": [
+    {"target_id": "D0", "variant": null},
+    {"target_id": "D1", "variant": null},
+    {"target_id": "D2", "variant": null},
+    {"target_id": "D3", "variant": null},
+    {"target_id": "D4", "variant": null},
+    {"target_id": "D5", "variant": "rare_1e-2"},
+    {"target_id": "D5", "variant": "rare_1e-3"}
+  ],
+  "pdg_ids": [13, -13],
+  "feature_views": [
+    {"view_id": "identity_cartesian_v0"},
+    {"view_id": "cartesian_logpz_v0"},
+    {"view_id": "slope_logpz_v0"}
+  ],
+  "models": [
+    {"name": "diagonal_gaussian", "family": "diagonal_gaussian", "params": {}},
+    {"name": "full_gaussian", "family": "full_gaussian", "params": {}},
+    {"name": "gmm_k4", "family": "gaussian_mixture", "params": {"n_components": 4, "n_init": 2}},
+    {
+      "name": "affine_small",
+      "family": "affine_coupling",
+      "training_budget_id": "small",
+      "params": {
+        "number_of_blocks": 4,
+        "hidden_width": 64,
+        "hidden_depth": 2,
+        "activation": "relu",
+        "max_log_scale": 3.0,
+        "dtype": "float32",
+        "learning_rate": 0.002,
+        "batch_size": 256,
+        "max_epochs": 80,
+        "patience": 15
+      }
+    }
+  ],
+  "seeds": [11, 22, 33, 44, 55],
+  "dataset": {"n_train": 65536, "n_validation": 16384, "n_test": 65536},
+  "evaluation": {
+    "ess_sample_count": 40000,
+    "c2st_sample_count": 8000,
+    "tail_quantiles": [0.9, 0.99, 0.999],
+    "exceedance_pz_thresholds": [60.0, 70.0],
+    "catastrophic_ess_threshold": 0.01,
+    "near_duplicate_atol": 1e-06
+  },
+  "tracking": {"mode": "local", "experiment_name": "controlled_density_lab"},
+  "resources": {"device": "auto"}
+}

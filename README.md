@@ -149,11 +149,38 @@ Google Colab — open `notebooks/colab/quickstart.ipynb`, or:
 %pip install .
 ```
 
-Extras: `.[flow]` (torch, for future flow implementations), `.[legacy]`
-(everything the quarantined `Nflow/legacy/` trainer needs). The core and
-the whole test suite need only NumPy — no GPU, no ROOT, no FairShip. On
-lxplus, place the FairShip clone/symlink under `FairShip/` (see
-`FairShip/README.md`).
+Extras: `.[flow]` (torch, for the tested affine-coupling flow), `.[lab]`
+(scikit-learn + matplotlib, for the Gaussian-mixture baseline, the C2ST metric
+and report plots), `.[tracking]` (optional MLflow adapter), `.[legacy]`
+(everything the quarantined `Nflow/legacy/` trainer needs). The core and the
+whole test suite need only NumPy — no GPU, no ROOT, no FairShip; optional-stack
+tests auto-skip when their dependency is absent, so `python -m pytest -q` works
+in either environment. On lxplus, place the FairShip clone/symlink under
+`FairShip/` (see `FairShip/README.md`).
+
+## Controlled Density Lab
+
+A modular, reproducible laboratory for fitting and evaluating density models
+against the exact controlled targets **D0-D5** (numerical benchmarks, **not**
+SHiP physics — no background rate or FairShip speed-up is claimed). It provides
+exact D3-D5 targets (curved / heteroscedastic+skew / rare-tail, all with exact
+inverse and Jacobian and preserved `pz`), a train-only per-view feature
+pipeline with exact physical-space density accounting, diagonal/full Gaussian
+and Gaussian-mixture baselines plus a tested PyTorch affine-coupling flow behind
+one `DensityEstimator` registry, physical-space metrics (forward KL, importance
+ESS/N, C2ST, D5 rare-mode recovery, tail/exceedance errors), a resumable
+failure-isolating campaign runner with config-hash-derived run ids, and a
+report builder.
+
+```bash
+pip install -e .[dev,flow,lab]
+python scripts/run_density_lab.py --config configs/density_lab/smoke_v0.json
+python scripts/build_density_report.py --campaign-dir artifacts/density_lab/smoke_v0
+```
+
+See `docs/density_lab_execution_v0.md` and
+`docs/contracts/controlled_targets_d3_d5_v0.md`. Colab entrypoint:
+`notebooks/colab/density_lab_quickstart.ipynb`.
 
 ## Core Components
 
