@@ -41,7 +41,7 @@ FEATURE_VIEW_IDS = (
     SLOPE_LOGPZ_VIEW_ID,
 )
 
-# Predefined smoke configurations: (target_id, charge, n, seed). Frozen so
+# Predefined smoke configurations: (target_id, pdg_id, n, seed). Frozen so
 # that pz > 0 for every drawn row is a checked invariant, not a hope.
 SMOKE_CONFIGS = (
     ("D0", 13, 4096, 11),
@@ -79,27 +79,27 @@ def test_factory_rejects_unknown_targets(bad_id):
 def test_sample_rejects_invalid_n(bad_n):
     target = make_controlled_target("D0")
     with pytest.raises(ControlledTargetConfigError):
-        target.sample(n=bad_n, charge=13, seed=1)
+        target.sample(n=bad_n, pdg_id=13, seed=1)
 
 
-@pytest.mark.parametrize("bad_charge", [0, 11, -11, 13.0, "13"])
-def test_sample_rejects_invalid_charge(bad_charge):
+@pytest.mark.parametrize("bad_pdg_id", [0, 11, -11, 13.0, "13"])
+def test_sample_rejects_invalid_pdg_id(bad_pdg_id):
     target = make_controlled_target("D0")
     with pytest.raises(ControlledTargetConfigError):
-        target.sample(n=8, charge=bad_charge, seed=1)
+        target.sample(n=8, pdg_id=bad_pdg_id, seed=1)
 
 
 @pytest.mark.parametrize("bad_seed", [-1, 1.5, "1"])
 def test_sample_rejects_invalid_seed(bad_seed):
     target = make_controlled_target("D0")
     with pytest.raises(ControlledTargetConfigError):
-        target.sample(n=8, charge=13, seed=bad_seed)
+        target.sample(n=8, pdg_id=13, seed=bad_seed)
 
 
 def test_log_prob_rejects_bad_shape():
     target = make_controlled_target("D0")
     with pytest.raises(ControlledTargetShapeError):
-        target.log_prob(np.zeros((4, 4)), charge=13)
+        target.log_prob(np.zeros((4, 4)), pdg_id=13)
 
 
 def test_log_prob_rejects_non_finite_input():
@@ -107,13 +107,13 @@ def test_log_prob_rejects_non_finite_input():
     physical = np.zeros((4, 5))
     physical[0, 0] = np.nan
     with pytest.raises(ControlledTargetDomainError):
-        target.log_prob(physical, charge=13)
+        target.log_prob(physical, pdg_id=13)
 
 
-def test_log_prob_rejects_invalid_charge():
+def test_log_prob_rejects_invalid_pdg_id():
     target = make_controlled_target("D0")
     with pytest.raises(ControlledTargetConfigError):
-        target.log_prob(np.zeros((4, 5)), charge=7)
+        target.log_prob(np.zeros((4, 5)), pdg_id=7)
 
 
 def test_gaussian_component_rejects_bad_mean_shape():
@@ -229,8 +229,8 @@ def test_controlled_target_rejects_mixture_weights_not_summing_to_one():
         ControlledTarget(
             target_id="BAD_WEIGHTS",
             description="t",
-            charge_parameterization="shared_across_charges",
-            components_by_charge={13: (good, other), -13: (good, other)},
+            pdg_id_parameterization="shared_across_pdg_ids",
+            components_by_pdg_id={13: (good, other), -13: (good, other)},
         )
 
 
@@ -242,8 +242,35 @@ def test_controlled_target_rejects_insufficient_pz_margin():
         ControlledTarget(
             target_id="BAD_MARGIN",
             description="t",
-            charge_parameterization="shared_across_charges",
-            components_by_charge={13: (low_margin,), -13: (low_margin,)},
+            pdg_id_parameterization="shared_across_pdg_ids",
+            components_by_pdg_id={13: (low_margin,), -13: (low_margin,)},
+        )
+
+
+@pytest.mark.parametrize(
+    "components_by_pdg_id",
+    [
+        {13: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),)},
+        {
+            13: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
+            -13: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
+            211: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
+        },
+        {
+            211: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
+            -211: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
+        },
+    ],
+)
+def test_controlled_target_rejects_component_mapping_not_exactly_supported_pdg_ids(
+    components_by_pdg_id,
+):
+    with pytest.raises(ControlledTargetConfigError):
+        ControlledTarget(
+            target_id="BAD_PDG_ID_MAPPING",
+            description="t",
+            pdg_id_parameterization="shared_across_pdg_ids",
+            components_by_pdg_id=components_by_pdg_id,
         )
 
 
@@ -252,26 +279,26 @@ def test_controlled_target_rejects_insufficient_pz_margin():
 
 def test_fixed_seed_is_bitwise_deterministic():
     target = make_controlled_target("D0")
-    batch1 = target.sample(n=256, charge=13, seed=11)
-    batch2 = target.sample(n=256, charge=13, seed=11)
+    batch1 = target.sample(n=256, pdg_id=13, seed=11)
+    batch2 = target.sample(n=256, pdg_id=13, seed=11)
     np.testing.assert_array_equal(batch1.physical, batch2.physical)
     np.testing.assert_array_equal(batch1.component_id, batch2.component_id)
 
 
 def test_different_seeds_produce_different_samples():
     target = make_controlled_target("D0")
-    batch1 = target.sample(n=256, charge=13, seed=11)
-    batch2 = target.sample(n=256, charge=13, seed=12)
+    batch1 = target.sample(n=256, pdg_id=13, seed=11)
+    batch2 = target.sample(n=256, pdg_id=13, seed=12)
     assert not np.array_equal(batch1.physical, batch2.physical)
 
 
 # --- 5. Smoke shape/dtype/finiteness/contiguity/pz domain -------------------
 
 
-@pytest.mark.parametrize("target_id,charge,n,seed", SMOKE_CONFIGS)
-def test_smoke_sample_shape_dtype_and_domain(target_id, charge, n, seed):
+@pytest.mark.parametrize("target_id,pdg_id,n,seed", SMOKE_CONFIGS)
+def test_smoke_sample_shape_dtype_and_domain(target_id, pdg_id, n, seed):
     target = make_controlled_target(target_id)
-    batch = target.sample(n=n, charge=charge, seed=seed)
+    batch = target.sample(n=n, pdg_id=pdg_id, seed=seed)
 
     assert batch.physical.shape == (n, 5)
     assert batch.physical.dtype == np.float64
@@ -279,14 +306,14 @@ def test_smoke_sample_shape_dtype_and_domain(target_id, charge, n, seed):
     assert np.isfinite(batch.physical).all()
     assert batch.component_id.shape == (n,)
     assert np.issubdtype(batch.component_id.dtype, np.integer)
-    assert batch.charge == charge
+    assert batch.pdg_id == pdg_id
     assert batch.target_id == target_id
     assert batch.seed == seed
 
     if np.any(batch.physical[:, 2] <= 0.0):
         raise AssertionError(
             "frozen smoke config {} produced pz <= 0 rows".format(
-                (target_id, charge, n, seed)
+                (target_id, pdg_id, n, seed)
             )
         )
 
@@ -305,7 +332,7 @@ def test_d0_log_density_matches_manual_diagonal_formula():
         -0.5 * np.log(2 * np.pi * std**2) - 0.5 * ((physical - mean) / std) ** 2,
         axis=1,
     )
-    actual = target.log_prob(physical, charge=13)
+    actual = target.log_prob(physical, pdg_id=13)
     np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
 
 
@@ -329,7 +356,7 @@ def test_d1_log_density_matches_manual_multivariate_formula():
     expected = -0.5 * (
         5 * np.log(2 * np.pi) + logdet + np.einsum("ij,jk,ik->i", diff, inv_cov, diff)
     )
-    actual = target.log_prob(points, charge=-13)
+    actual = target.log_prob(points, pdg_id=-13)
     np.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-10)
 
 
@@ -351,16 +378,16 @@ def test_d1_covariance_is_symmetric_positive_definite_and_correlated():
 
 def test_d2_component_labels_are_valid():
     target = make_controlled_target("D2")
-    batch = target.sample(n=512, charge=13, seed=3)
+    batch = target.sample(n=512, pdg_id=13, seed=3)
     assert set(np.unique(batch.component_id)).issubset({0, 1})
 
 
-@pytest.mark.parametrize("charge", [13, -13])
-def test_d2_component_fractions_match_declared_weights(charge):
+@pytest.mark.parametrize("pdg_id", [13, -13])
+def test_d2_component_fractions_match_declared_weights(pdg_id):
     target = make_controlled_target("D2")
     n = 20000
-    batch = target.sample(n=n, charge=charge, seed=3)
-    weights = np.array(target.manifest()["mixture_weights"][str(charge)])
+    batch = target.sample(n=n, pdg_id=pdg_id, seed=3)
+    weights = np.array(target.manifest()["mixture_weights"][str(pdg_id)])
     fractions = np.array(
         [np.mean(batch.component_id == k) for k in range(len(weights))]
     )
@@ -403,17 +430,17 @@ def test_d2_log_density_matches_manual_logsumexp():
         max_term + np.log(np.sum(np.exp(log_terms - max_term), axis=1, keepdims=True))
     ).squeeze(1)
 
-    actual = target.log_prob(points, charge=13)
+    actual = target.log_prob(points, pdg_id=13)
     np.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-10)
 
 
 # --- 12. Charges are observably distinct ------------------------------------
 
 
-def test_d2_charge_distributions_are_observably_distinct():
+def test_d2_pdg_id_distributions_are_observably_distinct():
     target = make_controlled_target("D2")
-    batch_pos = target.sample(n=2048, charge=13, seed=3)
-    batch_neg = target.sample(n=2048, charge=-13, seed=3)
+    batch_pos = target.sample(n=2048, pdg_id=13, seed=3)
+    batch_neg = target.sample(n=2048, pdg_id=-13, seed=3)
     assert not np.allclose(
         batch_pos.physical.mean(axis=0), batch_neg.physical.mean(axis=0), atol=0.2
     )
@@ -436,9 +463,9 @@ def test_manifest_and_hash_are_deterministic(target_id):
         "target_description",
         "density_coordinate",
         "physical_columns",
-        "supported_charges",
-        "charge_parameterization",
-        "component_count_by_charge",
+        "supported_pdg_ids",
+        "pdg_id_parameterization",
+        "component_count_by_pdg_id",
         "mixture_weights",
         "means",
         "covariance_matrices",
@@ -527,14 +554,14 @@ def test_config_hash_changes_when_parameters_differ():
     target_a = ControlledTarget(
         target_id="HASH_TEST",
         description="t",
-        charge_parameterization="shared_across_charges",
-        components_by_charge={13: (base,), -13: (base,)},
+        pdg_id_parameterization="shared_across_pdg_ids",
+        components_by_pdg_id={13: (base,), -13: (base,)},
     )
     target_b = ControlledTarget(
         target_id="HASH_TEST",
         description="t",
-        charge_parameterization="shared_across_charges",
-        components_by_charge={13: (changed,), -13: (changed,)},
+        pdg_id_parameterization="shared_across_pdg_ids",
+        components_by_pdg_id={13: (changed,), -13: (changed,)},
     )
     assert target_a.config_hash() != target_b.config_hash()
 
@@ -547,7 +574,7 @@ def test_embed_physical_to_raw_preserves_values_and_sets_metadata():
         [[1.0, 2.0, 50.0, 0.5, -0.5], [2.0, -1.0, 60.0, 0.1, 0.2]]
     )
     original = physical.copy()
-    raw = embed_physical_to_raw(physical, charge=13, plane_z=28.905)
+    raw = embed_physical_to_raw(physical, pdg_id=13, plane_z=28.905)
 
     np.testing.assert_array_equal(raw[:, 0:5], physical)
     np.testing.assert_array_equal(raw[:, 5], np.full(2, 28.905))
@@ -556,30 +583,30 @@ def test_embed_physical_to_raw_preserves_values_and_sets_metadata():
     np.testing.assert_array_equal(physical, original)
 
 
-def test_embed_physical_to_raw_rejects_invalid_charge():
+def test_embed_physical_to_raw_rejects_invalid_pdg_id():
     physical = np.zeros((2, 5))
     with pytest.raises(ControlledTargetConfigError):
-        embed_physical_to_raw(physical, charge=7, plane_z=0.0)
+        embed_physical_to_raw(physical, pdg_id=7, plane_z=0.0)
 
 
 def test_embed_physical_to_raw_rejects_bad_shape():
     with pytest.raises(ControlledTargetShapeError):
-        embed_physical_to_raw(np.zeros((3, 4)), charge=13, plane_z=0.0)
+        embed_physical_to_raw(np.zeros((3, 4)), pdg_id=13, plane_z=0.0)
 
 
 def test_embed_physical_to_raw_rejects_non_finite_input():
     physical = np.zeros((2, 5))
     physical[0, 0] = np.inf
     with pytest.raises(ControlledTargetDomainError):
-        embed_physical_to_raw(physical, charge=13, plane_z=0.0)
+        embed_physical_to_raw(physical, pdg_id=13, plane_z=0.0)
 
 
 def test_sample_batch_to_raw_matches_helper():
     target = make_controlled_target("D0")
-    batch = target.sample(n=16, charge=13, seed=11)
+    batch = target.sample(n=16, pdg_id=13, seed=11)
     np.testing.assert_array_equal(
         batch.to_raw(plane_z=1.5),
-        embed_physical_to_raw(batch.physical, charge=13, plane_z=1.5),
+        embed_physical_to_raw(batch.physical, pdg_id=13, plane_z=1.5),
     )
 
 
@@ -589,9 +616,9 @@ def test_sample_batch_to_raw_matches_helper():
 @pytest.mark.parametrize("view_id", FEATURE_VIEW_IDS)
 def test_feature_view_arms_recover_physical_log_prob(view_id):
     target = make_controlled_target("D0")
-    batch = target.sample(n=256, charge=13, seed=11)
+    batch = target.sample(n=256, pdg_id=13, seed=11)
     raw_rows = batch.to_raw(plane_z=28.905)
-    physical_log_prob = target.log_prob(batch.physical, charge=13)
+    physical_log_prob = target.log_prob(batch.physical, pdg_id=13)
 
     view = FeatureView(view_id)
     features = view.forward(raw_rows)

@@ -11,8 +11,11 @@ parses arguments, calls into ``src/``, and writes:
 Example
 -------
     python scripts/generate_controlled_target.py \
-        --target D0 --charge 13 --n 4096 --seed 11 --plane-z 0.0 \
+        --target D0 --pdg-id 13 --n 4096 --seed 11 --plane-z 0.0 \
         --output-dir artifacts/controlled_targets/d0_seed11
+
+``--pdg-id`` takes a PDG particle id, not an electric charge value:
+``13`` = mu-, ``-13`` = mu+.
 """
 
 from __future__ import annotations
@@ -37,7 +40,13 @@ from ship_muon_bg.data_contracts import dataset_hash  # noqa: E402
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, choices=["D0", "D1", "D2"])
-    parser.add_argument("--charge", required=True, type=int, choices=[13, -13])
+    parser.add_argument(
+        "--pdg-id",
+        required=True,
+        type=int,
+        choices=[13, -13],
+        help="PDG particle id, not electric charge: 13 = mu-, -13 = mu+.",
+    )
     parser.add_argument("--n", required=True, type=int)
     parser.add_argument("--seed", required=True, type=int)
     parser.add_argument("--plane-z", required=True, type=float)
@@ -53,8 +62,8 @@ def main(argv=None):
     args = parse_args(argv)
 
     target = make_controlled_target(args.target)
-    batch = target.sample(n=args.n, charge=args.charge, seed=args.seed)
-    physical_log_prob = target.log_prob(batch.physical, charge=args.charge)
+    batch = target.sample(n=args.n, pdg_id=args.pdg_id, seed=args.seed)
+    physical_log_prob = target.log_prob(batch.physical, pdg_id=args.pdg_id)
     raw_rows = batch.to_raw(plane_z=args.plane_z)
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -81,7 +90,7 @@ def main(argv=None):
     sample_manifest = {
         "target_id": args.target,
         "target_config_hash": target.config_hash(),
-        "charge": args.charge,
+        "pdg_id": args.pdg_id,
         "n": args.n,
         "seed": args.seed,
         "plane_z": args.plane_z,

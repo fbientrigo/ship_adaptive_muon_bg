@@ -12,6 +12,9 @@ plus a versioned, hashable manifest. See
 ``docs/contracts/controlled_targets_v0.md`` for the normative definitions and
 ``docs/contracts/density_problem_contract_v0.md`` section 7 for the D0-D2
 curriculum this module implements.
+
+Targets are conditioned on ``pdg_id``, a PDG particle id -- not an electric
+charge value: ``pdg_id = 13`` is mu- and ``pdg_id = -13`` is mu+.
 """
 
 from __future__ import annotations
@@ -29,7 +32,9 @@ from ..data_contracts.feature_views import N_DENSITY_FEATURES, PHYSICAL_STATE_CO
 
 TARGET_SCHEMA_VERSION = "0"
 SUPPORTED_TARGET_IDS: Tuple[str, ...] = ("D0", "D1", "D2")
-SUPPORTED_CHARGES: Tuple[int, ...] = (13, -13)
+
+# PDG IDs, not electric charges: 13 = mu-, -13 = mu+.
+SUPPORTED_PDG_IDS: Tuple[int, ...] = (13, -13)
 
 N_PHYSICAL_DIMS = N_DENSITY_FEATURES
 PHYSICAL_COLUMNS = PHYSICAL_STATE_COLUMNS
@@ -111,17 +116,17 @@ def _validate_n(n: Any) -> int:
     return int(n)
 
 
-def _validate_charge(charge: Any) -> int:
-    if isinstance(charge, bool) or not isinstance(charge, (int, np.integer)):
+def _validate_pdg_id(pdg_id: Any) -> int:
+    if isinstance(pdg_id, bool) or not isinstance(pdg_id, (int, np.integer)):
         raise ControlledTargetConfigError(
-            "charge must be an integer PDG id, got {!r}".format(charge)
+            "pdg_id must be an integer PDG id, got {!r}".format(pdg_id)
         )
-    charge = int(charge)
-    if charge not in SUPPORTED_CHARGES:
+    pdg_id = int(pdg_id)
+    if pdg_id not in SUPPORTED_PDG_IDS:
         raise ControlledTargetConfigError(
-            "charge must be one of {}, got {}".format(SUPPORTED_CHARGES, charge)
+            "pdg_id must be one of {}, got {}".format(SUPPORTED_PDG_IDS, pdg_id)
         )
-    return charge
+    return pdg_id
 
 
 def _validate_seed(seed: Any) -> int:
@@ -255,69 +260,77 @@ class SampleBatch:
 
     physical: np.ndarray
     component_id: np.ndarray
-    charge: int
+    pdg_id: int
     target_id: str
     seed: int
 
     def to_raw(self, *, plane_z: float = 0.0) -> np.ndarray:
         """Embed ``physical`` into the existing raw 8-column schema."""
 
-        return embed_physical_to_raw(self.physical, charge=self.charge, plane_z=plane_z)
+        return embed_physical_to_raw(self.physical, pdg_id=self.pdg_id, plane_z=plane_z)
 
 
 class ControlledTarget:
-    """A charge-conditioned exact Gaussian/Gaussian-mixture density target."""
+    """A PDG-id-conditioned exact Gaussian/Gaussian-mixture density target."""
 
     def __init__(
         self,
         *,
         target_id: str,
         description: str,
-        charge_parameterization: str,
-        components_by_charge: Mapping[int, Sequence[GaussianComponent]],
+        pdg_id_parameterization: str,
+        components_by_pdg_id: Mapping[int, Sequence[GaussianComponent]],
     ) -> None:
         normalized: Dict[int, Tuple[GaussianComponent, ...]] = {}
-        for charge, components in components_by_charge.items():
+        for pdg_id, components in components_by_pdg_id.items():
             components = tuple(components)
             if not components:
                 raise ControlledTargetConfigError(
-                    "charge {} must declare at least one component".format(charge)
+                    "pdg_id {} must declare at least one component".format(pdg_id)
                 )
             total_weight = sum(component.weight for component in components)
             if abs(total_weight - 1.0) > 1e-9:
                 raise ControlledTargetConfigError(
-                    "mixture weights for charge {} must sum to 1.0, got {}".format(
-                        charge, total_weight
+                    "mixture weights for pdg_id {} must sum to 1.0, got {}".format(
+                        pdg_id, total_weight
                     )
                 )
             for component in components:
                 _assert_pz_margin(
                     float(component.mean[_PZ_INDEX]),
                     component.marginal_std(_PZ_INDEX),
-                    "{} charge {}".format(target_id, charge),
+                    "{} pdg_id {}".format(target_id, pdg_id),
                 )
-            normalized[int(charge)] = components
+            normalized[int(pdg_id)] = components
+
+        if set(normalized.keys()) != set(SUPPORTED_PDG_IDS):
+            raise ControlledTargetConfigError(
+                "components_by_pdg_id must declare exactly the supported PDG "
+                "ids {}, got {}".format(
+                    sorted(SUPPORTED_PDG_IDS), sorted(normalized.keys())
+                )
+            )
 
         self.target_id = target_id
         self.description = description
-        self.charge_parameterization = charge_parameterization
-        self._components_by_charge = normalized
+        self.pdg_id_parameterization = pdg_id_parameterization
+        self._components_by_pdg_id = normalized
 
-    def _components_for(self, charge: int) -> Tuple[GaussianComponent, ...]:
+    def _components_for(self, pdg_id: int) -> Tuple[GaussianComponent, ...]:
         try:
-            return self._components_by_charge[charge]
+            return self._components_by_pdg_id[pdg_id]
         except KeyError as exc:
             raise ControlledTargetConfigError(
-                "target {} has no configuration for charge {}".format(
-                    self.target_id, charge
+                "target {} has no configuration for pdg_id {}".format(
+                    self.target_id, pdg_id
                 )
             ) from exc
 
-    def sample(self, n: int, *, charge: int, seed: int) -> SampleBatch:
+    def sample(self, n: int, *, pdg_id: int, seed: int) -> SampleBatch:
         n = _validate_n(n)
-        charge = _validate_charge(charge)
+        pdg_id = _validate_pdg_id(pdg_id)
         seed = _validate_seed(seed)
-        components = self._components_for(charge)
+        components = self._components_for(pdg_id)
 
         rng = np.random.default_rng(seed)
         n_components = len(components)
@@ -339,15 +352,15 @@ class ControlledTarget:
         return SampleBatch(
             physical=physical,
             component_id=component_id,
-            charge=charge,
+            pdg_id=pdg_id,
             target_id=self.target_id,
             seed=seed,
         )
 
-    def log_prob(self, physical: np.ndarray, *, charge: int) -> np.ndarray:
-        charge = _validate_charge(charge)
+    def log_prob(self, physical: np.ndarray, *, pdg_id: int) -> np.ndarray:
+        pdg_id = _validate_pdg_id(pdg_id)
         physical = _validate_physical_array(physical)
-        components = self._components_for(charge)
+        components = self._components_for(pdg_id)
 
         if len(components) == 1:
             return components[0].log_prob(physical)
@@ -368,9 +381,9 @@ class ControlledTarget:
         component_counts: Dict[str, Any] = {}
         pz_probabilities: Dict[str, Any] = {}
 
-        for charge in SUPPORTED_CHARGES:
-            components = self._components_by_charge[charge]
-            key = str(charge)
+        for pdg_id in SUPPORTED_PDG_IDS:
+            components = self._components_by_pdg_id[pdg_id]
+            key = str(pdg_id)
             means[key] = [component.mean.tolist() for component in components]
             covariances[key] = [component.covariance.tolist() for component in components]
             component_weights = [float(component.weight) for component in components]
@@ -390,9 +403,9 @@ class ControlledTarget:
             "target_description": self.description,
             "density_coordinate": "physical_px_py_pz_x_y",
             "physical_columns": list(PHYSICAL_COLUMNS),
-            "supported_charges": list(SUPPORTED_CHARGES),
-            "charge_parameterization": self.charge_parameterization,
-            "component_count_by_charge": component_counts,
+            "supported_pdg_ids": list(SUPPORTED_PDG_IDS),
+            "pdg_id_parameterization": self.pdg_id_parameterization,
+            "component_count_by_pdg_id": component_counts,
             "mixture_weights": weights,
             "means": means,
             "covariance_matrices": covariances,
@@ -408,17 +421,18 @@ class ControlledTarget:
 
 
 def embed_physical_to_raw(
-    physical: np.ndarray, *, charge: int, plane_z: float = 0.0
+    physical: np.ndarray, *, pdg_id: int, plane_z: float = 0.0
 ) -> np.ndarray:
     """Embed ``[px, py, pz, x, y]`` rows into the raw ``(N, 8)`` schema.
 
     ``z`` is set to the requested synthetic plane metadata, ``id`` to the
-    requested PDG charge, and ``w`` to ``1.0`` (no production-weight
+    requested PDG id (``13`` = mu-, ``-13`` = mu+; PDG ids, not electric
+    charge values), and ``w`` to ``1.0`` (no production-weight
     interpretation). The input array is never mutated.
     """
 
     physical = _validate_physical_array(physical)
-    charge = _validate_charge(charge)
+    pdg_id = _validate_pdg_id(pdg_id)
     plane_z = float(plane_z)
     if not math.isfinite(plane_z):
         raise ControlledTargetDomainError("plane_z must be finite")
@@ -427,7 +441,7 @@ def embed_physical_to_raw(
     raw = np.empty((n_rows, schema.N_COLUMNS), dtype=np.float64)
     raw[:, 0:N_PHYSICAL_DIMS] = physical
     raw[:, schema.COLUMN_INDEX["z"]] = plane_z
-    raw[:, schema.COLUMN_INDEX["id"]] = float(charge)
+    raw[:, schema.COLUMN_INDEX["id"]] = float(pdg_id)
     raw[:, schema.COLUMN_INDEX["w"]] = 1.0
     return raw
 
@@ -449,15 +463,15 @@ def _build_d0() -> ControlledTarget:
         covariance=_diag_covariance(_D0_V0_STD),
         weight=1.0,
     )
-    components_by_charge = {13: (component,), -13: (component,)}
+    components_by_pdg_id = {13: (component,), -13: (component,)}
     return ControlledTarget(
         target_id="D0",
         description=(
             "D0 v0: five-dimensional diagonal Gaussian in physical coordinates "
             "[px, py, pz, x, y]."
         ),
-        charge_parameterization="shared_across_charges",
-        components_by_charge=components_by_charge,
+        pdg_id_parameterization="shared_across_pdg_ids",
+        components_by_pdg_id=components_by_pdg_id,
     )
 
 
@@ -479,19 +493,19 @@ def _build_d1() -> ControlledTarget:
         covariance=np.asarray(_D1_V0_COVARIANCE, dtype=np.float64),
         weight=1.0,
     )
-    components_by_charge = {13: (component,), -13: (component,)}
+    components_by_pdg_id = {13: (component,), -13: (component,)}
     return ControlledTarget(
         target_id="D1",
         description=(
             "D1 v0: five-dimensional full-covariance Gaussian in physical "
             "coordinates [px, py, pz, x, y] with non-trivial correlations."
         ),
-        charge_parameterization="shared_across_charges",
-        components_by_charge=components_by_charge,
+        pdg_id_parameterization="shared_across_pdg_ids",
+        components_by_pdg_id=components_by_pdg_id,
     )
 
 
-# --- D2: charge-conditioned two-component Gaussian mixture ------------------
+# --- D2: PDG-id-conditioned two-component Gaussian mixture ------------------
 
 _D2_V0_PARAMS: Dict[int, Tuple[Dict[str, Any], ...]] = {
     13: (
@@ -522,9 +536,9 @@ _D2_V0_PARAMS: Dict[int, Tuple[Dict[str, Any], ...]] = {
 
 
 def _build_d2() -> ControlledTarget:
-    components_by_charge = {}
-    for charge, specs in _D2_V0_PARAMS.items():
-        components_by_charge[charge] = tuple(
+    components_by_pdg_id = {}
+    for pdg_id, specs in _D2_V0_PARAMS.items():
+        components_by_pdg_id[pdg_id] = tuple(
             GaussianComponent(
                 mean=np.asarray(spec["mean"], dtype=np.float64),
                 covariance=_diag_covariance(spec["std"]),
@@ -535,11 +549,11 @@ def _build_d2() -> ControlledTarget:
     return ControlledTarget(
         target_id="D2",
         description=(
-            "D2 v0: charge-conditioned two-component Gaussian mixture in "
+            "D2 v0: PDG-id-conditioned two-component Gaussian mixture in "
             "physical coordinates [px, py, pz, x, y]."
         ),
-        charge_parameterization="charge_conditioned_independent_mixtures",
-        components_by_charge=components_by_charge,
+        pdg_id_parameterization="pdg_id_conditioned_independent_mixtures",
+        components_by_pdg_id=components_by_pdg_id,
     )
 
 
