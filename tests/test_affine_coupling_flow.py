@@ -191,6 +191,24 @@ def test_save_load_equality(tmp_path):
     assert reloaded.checkpoint_hash() == save_manifest["checkpoint_hash"]
 
 
+@pytest.mark.slow
+def test_fit_is_deterministic_in_seed():
+    # Two independently-constructed flows fit on the same data with the same
+    # seed must produce identical densities (deterministic weight init + train).
+    x = _standardized("D3", n=1000)
+    val = _standardized("D3", n=500, seed=22)
+    point = _standardized("D0", n=64, seed=5)
+
+    def _fit_once():
+        flow = AffineCouplingFlow(
+            dimension=D, number_of_blocks=4, hidden_width=32, max_epochs=10, batch_size=256
+        )
+        flow.fit(x, x_validation=val, seed=11)
+        return flow.log_prob(point)
+
+    np.testing.assert_array_equal(_fit_once(), _fit_once())
+
+
 def test_registry_creates_flow():
     flow = create_density_estimator(
         {"family": "affine_coupling", "params": {"number_of_blocks": 2}},

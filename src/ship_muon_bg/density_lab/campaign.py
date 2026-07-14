@@ -8,6 +8,7 @@ resume is keyed on the canonical config hash embedded in ``run_id``.
 
 from __future__ import annotations
 
+import dataclasses
 import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -243,12 +244,17 @@ def run_campaign(
             continue
         if not _selected(run_spec.seed, seeds):
             continue
+        # Materialize the effective device into the run identity so run_id /
+        # config_hash / experiment_config.json reflect the device actually used;
+        # a CPU-forced run of an "auto" config cannot then be skipped or
+        # overwritten by a later differing-device run.
+        run_spec = dataclasses.replace(run_spec, device=device)
         record = run_single(
             run_spec,
             store,
             force=force,
             dataset_cache=dataset_cache,
-            device=device,
+            device=run_spec.device,
             tracker=tracker,
         )
         records.append(record)

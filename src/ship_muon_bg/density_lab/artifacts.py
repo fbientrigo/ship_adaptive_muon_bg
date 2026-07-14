@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -115,6 +116,15 @@ class ArtifactStore:
     ) -> RunPaths:
         paths = self.run_paths(run_spec)
         paths.run_dir.mkdir(parents=True, exist_ok=True)
+        # On a re-run (e.g. --force) that does not reproduce an optional
+        # artifact, remove the stale one so a later reader can never mix a
+        # previous run's samples/checkpoint with this attempt's metadata.
+        if not samples:
+            (paths.samples).unlink(missing_ok=True)
+        if save_manifest is None:
+            (paths.run_dir / "model_parameters.npz").unlink(missing_ok=True)
+            (paths.run_dir / "model_config.json").unlink(missing_ok=True)
+            shutil.rmtree(paths.run_dir / "checkpoint", ignore_errors=True)
         _write_json(paths.run_dir / "experiment_config.json", run_spec.to_dict())
         _write_json(paths.run_dir / "environment.json", environment)
         _write_json(paths.run_dir / "dataset_manifest.json", dataset_manifest)

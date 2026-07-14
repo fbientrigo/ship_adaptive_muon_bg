@@ -196,11 +196,18 @@ class AffineCouplingFlow:
         self.grad_clip_norm = grad_clip_norm
         self.weight_decay = float(weight_decay)
         self._module: Optional[_FlowModule] = None
-        self._build_module()
+        self._init_seed = 0
+        self._build_module(seed=self._init_seed)
 
-    def _build_module(self) -> None:
+    def _build_module(self, *, seed: int = 0) -> None:
+        # Seed Torch's global RNG before constructing so weight initialization
+        # is deterministic in ``seed``: two identical specs with the same seed
+        # start from identical hidden-layer weights (the final coupling layer is
+        # zero-initialized). ``fit`` re-seeds from the run seed before training.
+        self._init_seed = int(seed)
         prev = torch.get_default_dtype()
         torch.set_default_dtype(self.torch_dtype)
+        torch.manual_seed(int(seed))
         try:
             module = _FlowModule(
                 dim=self.dimension,
@@ -228,6 +235,9 @@ class AffineCouplingFlow:
             raise NotImplementedError(
                 "affine_coupling does not support sample_weight; pass None"
             )
+        # Reset weights deterministically from the run seed so identical
+        # RunSpecs with the same seed produce identical checkpoints/metrics.
+        self._build_module(seed=int(seed))
         from .trainer import train_flow
 
         return train_flow(self, x_train, x_validation, seed=int(seed))

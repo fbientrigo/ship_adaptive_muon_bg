@@ -84,6 +84,15 @@ def test_run_id_deterministic():
     assert derive_run_id(_run_spec()) == derive_run_id(_run_spec())
 
 
+def test_device_is_part_of_run_identity():
+    # A CPU-forced run of an "auto" config must not collide with an auto run.
+    cpu = _run_spec(device="cpu")
+    auto = _run_spec(device="auto")
+    assert cpu.config_hash() != auto.config_hash()
+    assert derive_run_id(cpu) != derive_run_id(auto)
+    assert cpu.to_dict()["device"] == "cpu"
+
+
 # --- datasets ---------------------------------------------------------------
 
 
@@ -157,3 +166,33 @@ def test_artifact_write_and_resume(tmp_path):
     # training history is valid JSONL
     lines = (paths.training_history).read_text().strip().splitlines()
     assert json.loads(lines[0])["step"] == 0
+
+
+def test_failed_rewrite_clears_stale_optional_artifacts(tmp_path):
+    store = ArtifactStore("t", root=tmp_path)
+    run_spec = _run_spec()
+    paths = store.run_paths(run_spec)
+    paths.run_dir.mkdir(parents=True, exist_ok=True)
+    # simulate a prior successful run leaving samples + model parameters
+    np.savez(paths.samples, model_samples_physical=np.zeros((3, 5)))
+    (paths.run_dir / "model_parameters.npz").write_bytes(b"stale")
+    (paths.run_dir / "checkpoint").mkdir()
+    (paths.run_dir / "checkpoint" / "state_dict.pt").write_bytes(b"stale")
+
+    # a failed re-attempt writes no samples and no save_manifest
+    store.write_run(
+        run_spec,
+        environment={},
+        dataset_manifest={},
+        feature_pipeline_manifest={},
+        model_manifest={},
+        fit_result={"status": "failed"},
+        metrics={"status": "error"},
+        training_history=[],
+        samples={},
+        status="failed",
+        run_id=derive_run_id(run_spec),
+    )
+    assert not paths.samples.exists()
+    assert not (paths.run_dir / "model_parameters.npz").exists()
+    assert not (paths.run_dir / "checkpoint").exists()
