@@ -281,6 +281,14 @@ class ControlledTarget:
         pdg_id_parameterization: str,
         components_by_pdg_id: Mapping[int, Sequence[GaussianComponent]],
     ) -> None:
+        if set(components_by_pdg_id.keys()) != set(SUPPORTED_PDG_IDS):
+            raise ControlledTargetConfigError(
+                "components_by_pdg_id must declare exactly the supported PDG "
+                "ids {}, got {}".format(
+                    sorted(SUPPORTED_PDG_IDS), sorted(components_by_pdg_id.keys())
+                )
+            )
+
         normalized: Dict[int, Tuple[GaussianComponent, ...]] = {}
         for pdg_id, components in components_by_pdg_id.items():
             components = tuple(components)
@@ -302,14 +310,6 @@ class ControlledTarget:
                     "{} pdg_id {}".format(target_id, pdg_id),
                 )
             normalized[int(pdg_id)] = components
-
-        if set(normalized.keys()) != set(SUPPORTED_PDG_IDS):
-            raise ControlledTargetConfigError(
-                "components_by_pdg_id must declare exactly the supported PDG "
-                "ids {}, got {}".format(
-                    sorted(SUPPORTED_PDG_IDS), sorted(normalized.keys())
-                )
-            )
 
         self.target_id = target_id
         self.description = description

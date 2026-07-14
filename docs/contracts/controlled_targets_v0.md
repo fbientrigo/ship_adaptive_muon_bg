@@ -149,8 +149,8 @@ float64, so `1.0 + erf(-z)` catastrophically cancels and silently returns
 exactly `0.0` regardless of the true (tiny, nonzero) tail mass. `erfc(z) = 1 -
 erf(z)` is evaluated directly by the C library without that cancellation, so
 `probability_pz_nonpositive` is a correct, strictly positive, finite value at
-every declared margin (on the order of `1e-24` to `1e-36` here) rather than a
-value that merely happens to underflow.
+every declared margin (on the order of `1e-24` to `1e-36` here), rather than
+the incorrectly cancelled value 0.0.
 
 The frozen smoke configurations below must draw zero `pz <= 0` rows; a
 violation is a test failure, not something to be repaired:

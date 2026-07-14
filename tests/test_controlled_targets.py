@@ -247,30 +247,54 @@ def test_controlled_target_rejects_insufficient_pz_margin():
         )
 
 
-@pytest.mark.parametrize(
-    "components_by_pdg_id",
-    [
-        {13: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),)},
-        {
-            13: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
-            -13: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
-            211: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
-        },
-        {
-            211: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
-            -211: (GaussianComponent(mean=np.zeros(5), covariance=np.eye(5)),),
-        },
-    ],
+_MAPPING_KEY_ERROR = (
+    r"components_by_pdg_id must declare exactly the supported PDG ids"
 )
-def test_controlled_target_rejects_component_mapping_not_exactly_supported_pdg_ids(
-    components_by_pdg_id,
-):
-    with pytest.raises(ControlledTargetConfigError):
+
+
+def _valid_pz_margin_component() -> GaussianComponent:
+    # mean_pz / std_pz = 50 here, well clear of the pz-margin check, so
+    # these mapping-key tests fail for the mapping reason, not because the
+    # component itself is invalid.
+    return GaussianComponent(
+        mean=np.array([0.0, 0.0, 50.0, 0.0, 0.0]), covariance=np.eye(5)
+    )
+
+
+def test_controlled_target_rejects_component_mapping_missing_required_pdg_id():
+    with pytest.raises(ControlledTargetConfigError, match=_MAPPING_KEY_ERROR):
         ControlledTarget(
             target_id="BAD_PDG_ID_MAPPING",
             description="t",
             pdg_id_parameterization="shared_across_pdg_ids",
-            components_by_pdg_id=components_by_pdg_id,
+            components_by_pdg_id={13: (_valid_pz_margin_component(),)},
+        )
+
+
+def test_controlled_target_rejects_component_mapping_with_extra_pdg_id():
+    with pytest.raises(ControlledTargetConfigError, match=_MAPPING_KEY_ERROR):
+        ControlledTarget(
+            target_id="BAD_PDG_ID_MAPPING",
+            description="t",
+            pdg_id_parameterization="shared_across_pdg_ids",
+            components_by_pdg_id={
+                13: (_valid_pz_margin_component(),),
+                -13: (_valid_pz_margin_component(),),
+                211: (_valid_pz_margin_component(),),
+            },
+        )
+
+
+def test_controlled_target_rejects_entirely_unsupported_pdg_id_mapping():
+    with pytest.raises(ControlledTargetConfigError, match=_MAPPING_KEY_ERROR):
+        ControlledTarget(
+            target_id="BAD_PDG_ID_MAPPING",
+            description="t",
+            pdg_id_parameterization="shared_across_pdg_ids",
+            components_by_pdg_id={
+                211: (_valid_pz_margin_component(),),
+                -211: (_valid_pz_margin_component(),),
+            },
         )
 
 
