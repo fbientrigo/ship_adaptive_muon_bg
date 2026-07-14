@@ -18,6 +18,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from .gates import ScientificGateSpec
+
 CONFIG_SCHEMA_VERSION = "0"
 
 PREDEFINED_SCIENTIFIC_SEEDS: Tuple[int, ...] = (11, 22, 33, 44, 55)
@@ -153,6 +155,7 @@ class RunSpec:
     dataset: DatasetSpec
     evaluation: EvaluationSpec
     device: str
+    scientific_gates: ScientificGateSpec = field(default_factory=ScientificGateSpec)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -166,7 +169,13 @@ class RunSpec:
             "dataset": self.dataset.to_dict(),
             "evaluation": self.evaluation.to_dict(),
             "device": self.device,
+            "scientific_gates": self.scientific_gates.to_dict(),
         }
+
+    def resolved_gate_spec(self) -> ScientificGateSpec:
+        """Gate spec with its ESS threshold resolved from the evaluation config."""
+
+        return self.scientific_gates.resolve(self.evaluation)
 
     def config_hash(self) -> str:
         return canonical_hash(self.to_dict())
@@ -184,6 +193,7 @@ class ExperimentConfig:
     evaluation: EvaluationSpec = field(default_factory=EvaluationSpec)
     tracking: TrackingSpec = field(default_factory=TrackingSpec)
     resources: ResourceSpec = field(default_factory=ResourceSpec)
+    scientific_gates: ScientificGateSpec = field(default_factory=ScientificGateSpec)
     description: str = ""
     schema_version: str = CONFIG_SCHEMA_VERSION
 
@@ -196,6 +206,12 @@ class ExperimentConfig:
         self.dataset.validate()
         self.tracking.validate()
         self.resources.validate()
+        # The ESS catastrophic threshold has one source of truth: EvaluationSpec.
+        # The gate spec may only leave it None (inherit) or set an equal value.
+        try:
+            self.scientific_gates.validate(self.evaluation)
+        except Exception as exc:  # normalize to ConfigError for callers
+            raise ConfigError(str(exc)) from exc
         for target in self.targets:
             target.validate()
         for model in self.models:
@@ -223,6 +239,7 @@ class ExperimentConfig:
                                     dataset=self.dataset,
                                     evaluation=self.evaluation,
                                     device=self.resources.device,
+                                    scientific_gates=self.scientific_gates,
                                 )
                             )
         return runs
@@ -241,6 +258,7 @@ class ExperimentConfig:
             "evaluation": self.evaluation.to_dict(),
             "tracking": self.tracking.to_dict(),
             "resources": self.resources.to_dict(),
+            "scientific_gates": self.scientific_gates.to_dict(),
         }
 
     def config_hash(self) -> str:
@@ -282,6 +300,9 @@ class ExperimentConfig:
                 ),
                 tracking=TrackingSpec(**payload.get("tracking", {})),
                 resources=ResourceSpec(**payload.get("resources", {})),
+                scientific_gates=ScientificGateSpec(
+                    **payload.get("scientific_gates", {})
+                ),
             )
         except KeyError as exc:
             raise ConfigError("missing required config key: {}".format(exc)) from exc

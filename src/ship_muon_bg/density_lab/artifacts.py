@@ -113,6 +113,7 @@ class ArtifactStore:
         save_manifest: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         hashes: Optional[Dict[str, Any]] = None,
+        scientific_status: Optional[str] = None,
     ) -> RunPaths:
         paths = self.run_paths(run_spec)
         paths.run_dir.mkdir(parents=True, exist_ok=True)
@@ -138,9 +139,18 @@ class ArtifactStore:
         _write_jsonl(paths.training_history, training_history or [])
         if samples:
             np.savez(paths.samples, **samples)
+        # "status" is retained for backward compatibility and keeps its original
+        # meaning: technical execution status (completed | failed). We add an
+        # explicit "technical_status" mirror plus a separate "scientific_status"
+        # so a technically completed run can still be scientifically
+        # catastrophic (or inconclusive) without being reported as a technical
+        # failure. scientific_status is None for technically failed runs and for
+        # runs that were not scientifically evaluated.
         status_payload = {
             "run_id": run_id,
             "status": status,
+            "technical_status": status,
+            "scientific_status": scientific_status,
             "config_hash": run_spec.config_hash(),
             "hashes": hashes or {},
             "save_manifest": save_manifest,
