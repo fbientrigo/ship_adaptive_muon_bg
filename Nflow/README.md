@@ -8,8 +8,11 @@ to produce Deep Inelastic Scattering (DIS).
 
 | Path | Status | Contents |
 | --- | --- | --- |
-| `interfaces.py` | contract | `DensityModel` (fit / log_prob / sample) and `BiasStrategy` (the A/B seam for biasing mechanisms). |
-| `legacy/` | quarantined, **untested** | The RealNVP trainer inherited from the `mferril/NFlow` fork: `deepflow.py` entry point, `config.yaml`, and `utils/` (flow model, training loop, HDF5 data handling, plotting, run management). |
+| `interfaces.py` | contract | `DensityModel`, plus the density-lab `DensityEstimator` protocol and `FitResult` (NumPy boundary). |
+| `registry.py` | tested | `create_density_estimator(model_spec, *, dimension, device)` — explicit dict factory; torch imported lazily only for `affine_coupling`. |
+| `baselines/` | tested | Diagonal/full Gaussian (analytic MLE) and Gaussian-mixture (sklearn-backed, explicit-parameter artifacts) estimators. |
+| `torch_models/` | tested (`flow` extra) | `affine_coupling.py` (RealNVP-style flow) and `trainer.py` (mini-batch NLL, early stopping). Imports torch; loaded lazily via the registry. |
+| `legacy/` | quarantined, **untested** | The RealNVP trainer inherited from the `mferril/NFlow` fork: `deepflow.py` entry point, `config.yaml`, and `utils/` (flow model, training loop, HDF5 data handling, plotting, run management). Not imported by tested code. |
 
 ## The `BiasStrategy` seam (A/B testing)
 
