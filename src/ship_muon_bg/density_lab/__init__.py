@@ -27,6 +27,12 @@ from .config import (
 from .datasets import ControlledDataset, build_controlled_dataset
 from .evaluator import evaluate_run
 from .feature_pipeline import FeaturePipelineError, FittedFeaturePipeline
+from .gates import (
+    GATE_SCHEMA_VERSION,
+    ScientificGateResult,
+    ScientificGateSpec,
+    evaluate_scientific_gates,
+)
 
 __all__ = [
     "FittedFeaturePipeline",
@@ -40,6 +46,10 @@ __all__ = [
     "EvaluationSpec",
     "TrackingSpec",
     "ResourceSpec",
+    "ScientificGateSpec",
+    "ScientificGateResult",
+    "evaluate_scientific_gates",
+    "GATE_SCHEMA_VERSION",
     "CONFIG_SCHEMA_VERSION",
     "PREDEFINED_SCIENTIFIC_SEEDS",
     "build_controlled_dataset",
