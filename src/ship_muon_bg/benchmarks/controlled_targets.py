@@ -79,9 +79,17 @@ def _logsumexp(log_terms: np.ndarray, axis: int = -1) -> np.ndarray:
 
 
 def _gaussian_cdf_at_zero(mean: float, std: float) -> float:
-    """Return ``P(X <= 0)`` for ``X ~ Normal(mean, std**2)``."""
+    """Return ``P(X <= 0)`` for ``X ~ Normal(mean, std**2)``.
 
-    return 0.5 * (1.0 + math.erf(-mean / (std * math.sqrt(2.0))))
+    Uses ``erfc`` rather than ``1 + erf(-z)``: for the large positive ``z``
+    values this module operates at (``mean / std`` in the 10-12.5 range),
+    ``erf(-z)`` is a value extremely close to ``-1``, so ``1.0 + erf(-z)``
+    catastrophically cancels and rounds to exactly ``0.0`` in float64.
+    ``erfc(z) = 1 - erf(z)`` is evaluated directly by the C library without
+    that cancellation and returns the correct, tiny, nonzero tail mass.
+    """
+
+    return 0.5 * math.erfc(mean / (std * math.sqrt(2.0)))
 
 
 def _assert_pz_margin(mean_pz: float, std_pz: float, label: str) -> None:

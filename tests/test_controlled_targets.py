@@ -7,6 +7,7 @@ variable, no event-level conservation, no proxy/utility logic.
 
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 import sys
@@ -389,12 +390,62 @@ def test_manifest_and_hash_are_deterministic(target_id):
 
 
 @pytest.mark.parametrize("target_id", SUPPORTED_TARGET_IDS)
-def test_probability_pz_nonpositive_is_negligible_given_margin(target_id):
+def test_probability_pz_nonpositive_is_positive_finite_and_negligible(target_id):
+    # Regression guard: the previous ``0.5 * (1 + erf(-z))`` formula
+    # catastrophically cancelled at these margins and silently reported
+    # exactly 0.0, which a merely "< 1e-15" assertion could not distinguish
+    # from a correct tiny nonzero tail mass. Require strictly positive and
+    # finite in addition to "negligible" so a regression to 0.0 fails loudly.
     manifest = make_controlled_target(target_id).manifest()
     for info in manifest["probability_pz_nonpositive"].values():
-        assert info["total"] < 1e-15
+        assert math.isfinite(info["total"])
+        assert info["total"] > 0.0
+        assert info["total"] < 1e-20
         for component_probability in info["components"]:
-            assert component_probability < 1e-15
+            assert math.isfinite(component_probability)
+            assert component_probability > 0.0
+            assert component_probability < 1e-20
+
+
+def _independent_erfc(z: float) -> float:
+    """Independent reference for ``erfc(z)`` at large ``z`` (z >= ~9).
+
+    Uses the standard asymptotic expansion
+    ``erfc(z) ~ exp(-z^2)/(z*sqrt(pi)) * sum_k (-1)^k (2k-1)!! / (2z^2)^k``,
+    a different algorithm from ``math.erfc`` (no libm call), truncated after
+    5 terms. At the z values exercised below (>= 10/sqrt(2)) this series
+    agrees with ``math.erfc`` to better than 1e-8 relative accuracy, which is
+    enough to catch a catastrophic-cancellation regression (which would be
+    wrong by 100%, i.e. exactly 0.0) while tolerating the series' own
+    truncation error.
+    """
+
+    series_sum = 1.0
+    term = 1.0
+    for k in range(1, 6):
+        term *= -(2 * k - 1) / (2.0 * z * z)
+        series_sum += term
+    return math.exp(-z * z) / (z * math.sqrt(math.pi)) * series_sum
+
+
+@pytest.mark.parametrize("ratio", [10.0, 11.25, 12.0, 12.5])
+def test_gaussian_tail_probability_matches_independent_erfc_reference(ratio):
+    std = 1.0
+    mean = np.array([ratio * std, 0.0, 50.0, 0.0, 0.0])
+    component = GaussianComponent(mean=mean, covariance=np.eye(5))
+
+    probability = component.probability_variable_nonpositive(0)
+    assert math.isfinite(probability)
+    assert probability > 0.0
+
+    z = ratio / math.sqrt(2.0)
+    independent_reference = 0.5 * _independent_erfc(z)
+    assert probability == pytest.approx(independent_reference, rel=1e-6)
+
+    # Also cross-check directly against the standard-library erfc, which is
+    # the corrected formula this module now uses internally.
+    stdlib_reference = 0.5 * math.erfc(z)
+    assert probability == pytest.approx(stdlib_reference, rel=1e-12)
 
 
 def test_config_hash_changes_when_parameters_differ():
