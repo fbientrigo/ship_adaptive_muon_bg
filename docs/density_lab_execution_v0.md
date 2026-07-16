@@ -72,9 +72,10 @@ Each run writes `artifacts/density_lab/<experiment_id>/<run_id>/`:
 `artifacts/` directory is gitignored.
 
 `metrics.json` carries the scientific gate block under `scientific_gates`
-(`scientific_status`, `scientific_failure_reasons`, `gate_results`,
-`gate_config_hash`). `run_status.json` records both `technical_status` and
-`scientific_status` (see below).
+(`scientific_status`, `decision_scope`, `scientific_failure_reasons`,
+`gate_results`, `gate_config_hash`). `run_status.json` records
+`technical_status`, `scientific_status` and `decision_scope` (see below —
+`decision_scope` bounds what a `pass` is allowed to claim).
 
 ## Build the report
 
@@ -115,11 +116,40 @@ The lab reports two **independent** statuses per run.
   field): did the run execute without an execution error? Values: `completed`
   or `failed`. A `failed` run raised an exception or its fit did not converge;
   its traceback is preserved.
-- **Scientific status** (`scientific_status`): is the fitted model
-  scientifically acceptable, given its metric bundle? Values: `pass`, `fail`,
-  `catastrophic`, `inconclusive`.
+- **Scientific status** (`scientific_status`): what do the currently active
+  scientific gates say about the fitted model, given its metric bundle? Values:
+  `pass`, `fail`, `catastrophic`, `inconclusive`.
 
-These are deliberately orthogonal. A run can be:
+### What `pass` means — and what it does not (`decision_scope`)
+
+Every result records a `decision_scope` (currently `active_gates_v0`) in
+`metrics.json` (under `scientific_gates`), in `run_status.json`, and in
+`scientific_gate_summary.{json,md}`. It bounds the claim exactly:
+
+```
+scientific_status = "pass"   means only:   all currently active gates passed
+```
+
+It does **not** mean any of:
+
+- sufficient rare-mode fidelity;
+- validated minimum capacity;
+- final scientific acceptance.
+
+The rare-region mass ratio is **report-only** under this scope, so a run can be
+`pass` while recovering far too little rare-region mass. The D5 capacity pilot's
+`affine_medium` result is exactly this case: **1 rare-region sample out of
+20,000**, a rare-region mass ratio of **≈ 0.05** (the model puts ~5% of the
+target's rare mass in the rare region). It is `pass` because the active gates —
+finiteness, the ESS floor, and D5 non-zero rare samples — all passed, and
+*because a ratio of 0.05 is not yet gated at all*. Read that `pass` as "no active
+gate fired", never as "the rare mode is adequately modelled"; on the physics it
+is a poor rare-mode fit. Promoting the rare-mass ratio to a real threshold is
+future work and deliberately out of scope here — adding one now would invent an
+unvalidated criterion. Bump the `decision_scope` suffix when the active gate set
+changes.
+
+Technical and scientific status are deliberately orthogonal. A run can be:
 
 ```
 technical_status = completed     (the code ran fine)
@@ -144,7 +174,7 @@ Default classifications:
 
 | gate | threshold class | status on trigger |
 | --- | --- | --- |
-| non-finite density/loss | `mathematical_invariant` | `catastrophic` |
+| non-finite density/loss **or any recorded non-finite row** | `mathematical_invariant` | `catastrophic` |
 | ESS/N below catastrophic floor | `catastrophic_guard` | `catastrophic` |
 | D5 zero generated rare-region samples | `catastrophic_guard` | `catastrophic` |
 | mandatory metric missing/malformed | (any) | `inconclusive` |
@@ -161,6 +191,39 @@ responsible `pass`/`fail` cannot be assigned.
 ESS boundary semantics: the catastrophic guard fires iff
 `ess_over_n < catastrophic_ess_threshold` (strict less-than). A value exactly at
 the threshold passes the guard, matching `metrics.importance_ess`.
+
+#### Density-finiteness evidence
+
+`metrics.held_out_nll` and `metrics.forward_kl` compute their scalar **over the
+finite rows only** and record the discarded rows in `non_finite_count`; the
+evaluator additionally writes a `non_finite_density` block. A finite aggregate
+therefore proves nothing on its own about the rows that were dropped. The
+finiteness gate consumes **all** of that evidence:
+
+| field | domain | positive value |
+| --- | --- | --- |
+| `held_out.held_out_nll`, `forward_kl.forward_kl` | finite real | non-finite → `catastrophic` |
+| `held_out.non_finite_count` | integer ≥ 0 | `> 0` → `catastrophic` |
+| `forward_kl.non_finite_count` | integer ≥ 0 | `> 0` → `catastrophic` |
+| `non_finite_density.non_finite_count` | integer ≥ 0 | `> 0` → `catastrophic` |
+| `non_finite_density.non_finite_density_rate` | real in [0, 1] | `> 0` → `catastrophic` |
+
+Decision order, catastrophe first:
+
+1. any non-finite aggregate, positive counter, or positive rate →
+   `catastrophic` (this wins over unrelated missing evidence);
+2. otherwise any missing, malformed or **impossible** evidence →
+   `inconclusive`;
+3. otherwise — finite aggregates and every counter/rate zero → `pass`.
+
+**Invariant for bad counters.** A counter must be a non-boolean integer ≥ 0 and a
+rate a non-boolean finite real in [0, 1]. A value outside its domain (negative
+count, rate > 1, non-finite rate, a bool used as a number, a string) is
+*impossible*, not merely unknown: the metric writer is broken, so the bundle can
+no longer certify finiteness. Impossible evidence is treated exactly like missing
+evidence — it can never yield `pass`, and it degrades the gate to `inconclusive`
+unless some other field independently proves a catastrophe. The gate never
+recomputes a density or a rate; it only classifies what was recorded.
 
 ### One source of truth for the ESS threshold
 

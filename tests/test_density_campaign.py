@@ -58,6 +58,51 @@ def test_baseline_run_writes_physical_metrics(tmp_path):
     assert "forward_kl" in metrics and "importance_ess" in metrics
 
 
+def test_real_evaluator_bundle_satisfies_the_finiteness_gate(tmp_path):
+    """A real, healthy run supplies the finiteness evidence the gate requires.
+
+    The gate only passes when the non-finite counters/rate are present and zero.
+    This pins that a bundle produced by the actual evaluator carries them, so the
+    stricter gate cannot silently turn healthy runs inconclusive.
+    """
+
+    store = ArtifactStore("itest", root=tmp_path)
+    rs = _run_spec(ModelSpec("full_gaussian", "full_gaussian", {}))
+    rec = run_single(rs, store, device="cpu")
+    assert rec["status"] == "completed"
+
+    metrics = json.loads((store.run_paths(rs).metrics).read_text())
+    # the evidence the gate consumes is actually written by the evaluator
+    assert metrics["held_out"]["non_finite_count"] == 0
+    assert metrics["forward_kl"]["non_finite_count"] == 0
+    assert metrics["non_finite_density"]["non_finite_count"] == 0
+    assert metrics["non_finite_density"]["non_finite_density_rate"] == 0.0
+
+    gate = next(
+        g
+        for g in metrics["scientific_gates"]["gate_results"]
+        if g["gate_id"] == "density_finiteness"
+    )
+    assert gate["outcome"] == "pass"
+    assert gate["threshold_class"] == "mathematical_invariant"
+
+
+def test_decision_scope_is_recorded_in_artifacts(tmp_path):
+    """`pass` is scoped in the artifact itself, not just in the docs."""
+
+    store = ArtifactStore("itest", root=tmp_path)
+    rs = _run_spec(ModelSpec("full_gaussian", "full_gaussian", {}))
+    rec = run_single(rs, store, device="cpu")
+    assert rec["status"] == "completed"
+
+    status = json.loads((store.run_paths(rs).run_status).read_text())
+    assert status["technical_status"] == "completed"
+    assert status["decision_scope"] == "active_gates_v0"
+
+    metrics = json.loads((store.run_paths(rs).metrics).read_text())
+    assert metrics["scientific_gates"]["decision_scope"] == "active_gates_v0"
+
+
 def test_failed_run_is_recorded_and_visible(tmp_path):
     store = ArtifactStore("itest", root=tmp_path)
     # An unknown model family raises inside run_single -> recorded as failed.

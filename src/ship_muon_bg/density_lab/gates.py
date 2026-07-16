@@ -44,10 +44,23 @@ import dataclasses
 import hashlib
 import json
 import math
+import numbers
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 GATE_SCHEMA_VERSION = "0"
+
+# What a ``scientific_status`` of "pass" is allowed to mean. Recorded verbatim on
+# every result (and in run_status.json) so a reader can never over-read it:
+#
+#     scientific_status = "pass"  <=>  every *currently active* gate passed.
+#
+# It does **not** assert sufficient rare-mode fidelity, a validated minimum
+# capacity, or final scientific acceptance. The rare-region mass ratio is
+# report-only under this scope, so a run whose rare mass is far below the target
+# still reads "pass"; that is a statement about the active gate set, not about
+# the physics. Bump the suffix when the active gate set changes.
+DECISION_SCOPE = "active_gates_v0"
 
 # -- threshold classes -------------------------------------------------------
 THRESHOLD_MATHEMATICAL_INVARIANT = "mathematical_invariant"
@@ -177,11 +190,14 @@ class ScientificGateResult:
     scientific_failure_reasons: List[Dict[str, Any]]
     gate_results: List[Dict[str, Any]]
     gate_config_hash: str
+    # Bounds what scientific_status is allowed to claim; see DECISION_SCOPE.
+    decision_scope: str = DECISION_SCOPE
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "gate_schema_version": self.gate_schema_version,
             "scientific_status": self.scientific_status,
+            "decision_scope": self.decision_scope,
             "scientific_failure_reasons": [dict(r) for r in self.scientific_failure_reasons],
             "gate_results": [dict(g) for g in self.gate_results],
             "gate_config_hash": self.gate_config_hash,
@@ -212,6 +228,49 @@ def _classify_number(value: Any) -> str:
     return "finite" if math.isfinite(float(value)) else "nonfinite"
 
 
+# Invariants for the non-finite *evidence* fields consumed by the density
+# finiteness gate. Both classifiers are total and return one of
+# ``positive`` / ``zero`` / ``impossible`` / ``missing``.
+#
+# Documented invariant: a counter is a non-boolean integer >= 0, and a rate is a
+# non-boolean finite real in [0, 1]. A value outside its domain (negative count,
+# rate above 1 or non-finite, a bool used as a number, a string) is *impossible*,
+# not merely unknown: it means the metric writer is broken and the bundle can no
+# longer certify finiteness. An impossible value is therefore treated exactly
+# like missing evidence -- it can never yield ``pass``, and it degrades the gate
+# to ``inconclusive`` unless some other field independently proves a catastrophe
+# (catastrophic evidence always takes precedence; see _density_finiteness_gate).
+#
+# numbers.Integral/Real are used instead of int/float so NumPy scalars (np.int64,
+# np.float64) validate identically without importing NumPy here.
+
+
+def _classify_count(value: Any) -> str:
+    """Classify a non-finite-row counter (non-bool integer >= 0)."""
+
+    if value is _MISSING or value is None:
+        return "missing"
+    if isinstance(value, bool) or not isinstance(value, numbers.Integral):
+        return "impossible"
+    count = int(value)
+    if count < 0:
+        return "impossible"
+    return "positive" if count > 0 else "zero"
+
+
+def _classify_rate(value: Any) -> str:
+    """Classify a non-finite-density rate (non-bool finite real in [0, 1])."""
+
+    if value is _MISSING or value is None:
+        return "missing"
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        return "impossible"
+    rate = float(value)
+    if not math.isfinite(rate) or not (0.0 <= rate <= 1.0):
+        return "impossible"
+    return "positive" if rate > 0.0 else "zero"
+
+
 def _gate(
     gate_id: str,
     threshold_class: str,
@@ -236,43 +295,110 @@ def _gate(
 # --- individual gates -------------------------------------------------------
 
 
+# Aggregate scalars. metrics.held_out_nll / metrics.forward_kl deliberately
+# average over the *finite subset* of rows, so a finite scalar here proves
+# nothing on its own about the discarded rows -- the counters below are what
+# make this gate sound.
+_FINITENESS_SCALARS = (
+    ("held_out.held_out_nll", ("held_out", "held_out_nll")),
+    ("forward_kl.forward_kl", ("forward_kl", "forward_kl")),
+)
+# Per-row non-finite evidence recorded alongside those aggregates. The evaluator
+# writes all three unconditionally, so a bundle lacking one cannot be certified.
+_FINITENESS_COUNTS = (
+    ("held_out.non_finite_count", ("held_out", "non_finite_count")),
+    ("forward_kl.non_finite_count", ("forward_kl", "non_finite_count")),
+    ("non_finite_density.non_finite_count", ("non_finite_density", "non_finite_count")),
+)
+_FINITENESS_RATES = (
+    (
+        "non_finite_density.non_finite_density_rate",
+        ("non_finite_density", "non_finite_density_rate"),
+    ),
+)
+
+
 def _density_finiteness_gate(metrics: Mapping[str, Any]) -> Dict[str, Any]:
-    """Non-finite density/loss is a mathematical-invariant catastrophe."""
+    """Non-finite density/loss is a mathematical-invariant catastrophe.
 
-    nll = _fetch(metrics, ("held_out", "held_out_nll"))
-    fkl = _fetch(metrics, ("forward_kl", "forward_kl"))
-    fields = {"held_out.held_out_nll": nll, "forward_kl.forward_kl": fkl}
-    classes = {name: _classify_number(v) for name, v in fields.items()}
+    The gate consumes *all* recorded finiteness evidence, not just the aggregate
+    scalars: ``metrics.held_out_nll`` and ``metrics.forward_kl`` compute their
+    scalar over the finite rows while separately recording ``non_finite_count``,
+    and the evaluator also writes a ``non_finite_density`` block. Checking only
+    the aggregates would let a model that assigns non-finite density to some
+    held-out rows report ``pass``, which is exactly what this mathematical
+    invariant exists to forbid.
 
-    missing = [n for n, c in classes.items() if c in ("missing", "malformed")]
-    if missing:
-        return _gate(
-            "density_finiteness",
-            THRESHOLD_MATHEMATICAL_INVARIANT,
-            OUTCOME_INCONCLUSIVE,
-            active=True,
-            value={n: (None if v is _MISSING else v) for n, v in fields.items()},
-            message="mandatory density/loss metric(s) missing or malformed: "
-            + ", ".join(sorted(missing)),
-        )
-    nonfinite = [n for n, c in classes.items() if c == "nonfinite"]
-    if nonfinite:
+    Decision order (catastrophic evidence always wins over missing evidence):
+
+    1. any non-finite aggregate, any positive counter, or a positive rate
+       -> ``catastrophic``;
+    2. otherwise any missing/malformed/impossible evidence -> ``inconclusive``;
+    3. otherwise (finite aggregates, all counters and the rate zero) -> ``pass``.
+
+    Counter/rate domains are defined by :func:`_classify_count` and
+    :func:`_classify_rate`. No density or statistic is recomputed here.
+    """
+
+    values: Dict[str, Any] = {}
+    catastrophic: List[str] = []
+    unusable: List[str] = []
+
+    def record(name: str, raw: Any) -> Any:
+        values[name] = None if raw is _MISSING else raw
+        return raw
+
+    for name, path in _FINITENESS_SCALARS:
+        raw = record(name, _fetch(metrics, path))
+        cls = _classify_number(raw)
+        if cls == "nonfinite":
+            catastrophic.append("{} is non-finite".format(name))
+        elif cls != "finite":
+            unusable.append("{} ({})".format(name, cls))
+
+    for name, path in _FINITENESS_COUNTS:
+        raw = record(name, _fetch(metrics, path))
+        cls = _classify_count(raw)
+        if cls == "positive":
+            catastrophic.append("{} = {}".format(name, int(raw)))
+        elif cls != "zero":
+            unusable.append("{} ({})".format(name, cls))
+
+    for name, path in _FINITENESS_RATES:
+        raw = record(name, _fetch(metrics, path))
+        cls = _classify_rate(raw)
+        if cls == "positive":
+            catastrophic.append("{} = {:.4g}".format(name, float(raw)))
+        elif cls != "zero":
+            unusable.append("{} ({})".format(name, cls))
+
+    if catastrophic:
         return _gate(
             "density_finiteness",
             THRESHOLD_MATHEMATICAL_INVARIANT,
             OUTCOME_CATASTROPHIC,
             active=True,
-            value=dict(fields),
+            value=values,
             message="non-finite density/loss (mathematical invariant violated): "
-            + ", ".join(sorted(nonfinite)),
+            + ", ".join(sorted(catastrophic)),
+        )
+    if unusable:
+        return _gate(
+            "density_finiteness",
+            THRESHOLD_MATHEMATICAL_INVARIANT,
+            OUTCOME_INCONCLUSIVE,
+            active=True,
+            value=values,
+            message="mandatory finiteness evidence missing, malformed or impossible: "
+            + ", ".join(sorted(unusable)),
         )
     return _gate(
         "density_finiteness",
         THRESHOLD_MATHEMATICAL_INVARIANT,
         OUTCOME_PASS,
         active=True,
-        value=dict(fields),
-        message="held-out NLL and forward KL are finite",
+        value=values,
+        message="held-out NLL and forward KL are finite; no non-finite density rows recorded",
     )
 
 
@@ -539,4 +665,5 @@ def evaluate_scientific_gates(
         scientific_failure_reasons=reasons,
         gate_results=gates,
         gate_config_hash=gate_spec.config_hash(),
+        decision_scope=DECISION_SCOPE,
     )

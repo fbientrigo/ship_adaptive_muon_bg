@@ -177,6 +177,7 @@ def run_single(
             save_manifest=save_manifest,
             hashes=hashes,
             scientific_status=gate_result.scientific_status,
+            decision_scope=gate_result.decision_scope,
         )
         if tracker is not None:
             try:

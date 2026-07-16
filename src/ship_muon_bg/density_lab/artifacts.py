@@ -114,6 +114,7 @@ class ArtifactStore:
         error: Optional[str] = None,
         hashes: Optional[Dict[str, Any]] = None,
         scientific_status: Optional[str] = None,
+        decision_scope: Optional[str] = None,
     ) -> RunPaths:
         paths = self.run_paths(run_spec)
         paths.run_dir.mkdir(parents=True, exist_ok=True)
@@ -146,11 +147,16 @@ class ArtifactStore:
         # catastrophic (or inconclusive) without being reported as a technical
         # failure. scientific_status is None for technically failed runs and for
         # runs that were not scientifically evaluated.
+        #
+        # decision_scope bounds what scientific_status claims: "pass" means every
+        # currently active gate passed -- not sufficient rare-mode fidelity, not a
+        # validated minimum capacity, not final scientific acceptance.
         status_payload = {
             "run_id": run_id,
             "status": status,
             "technical_status": status,
             "scientific_status": scientific_status,
+            "decision_scope": decision_scope,
             "config_hash": run_spec.config_hash(),
             "hashes": hashes or {},
             "save_manifest": save_manifest,

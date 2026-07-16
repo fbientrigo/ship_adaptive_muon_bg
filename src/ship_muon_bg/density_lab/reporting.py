@@ -89,6 +89,7 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
                 "scientific_failure_reasons", []
             )
             record["gate_config_hash"] = gate_block.get("gate_config_hash")
+            record["decision_scope"] = gate_block.get("decision_scope")
         else:
             record["scientific_failure_reasons"] = []
         records.append(record)
@@ -305,8 +306,15 @@ def build_scientific_gate_summary(
         if r.get("observed_q_rare_sample_count") == 0 and r.get("target_label", "").startswith("D5"):
             d5_zero_rare_runs.append(row)
 
+    scopes = sorted({r.get("decision_scope") for r in records if r.get("decision_scope")})
     summary = {
         "n_runs": len(records),
+        "decision_scope": scopes[0] if len(scopes) == 1 else scopes,
+        "decision_scope_meaning": (
+            "scientific_status='pass' means only that all currently active gates "
+            "passed. It does not assert sufficient rare-mode fidelity, a validated "
+            "minimum capacity, or final scientific acceptance."
+        ),
         "technical_status_counts": dict(technical_counts),
         "scientific_status_counts": dict(status_counts),
         "n_catastrophic": len(catastrophic_runs),
@@ -327,6 +335,15 @@ def build_scientific_gate_summary(
         "separately. A technically completed run can still be scientifically "
         "`catastrophic` or `inconclusive`; it is never relabeled a technical "
         "failure for failing a scientific gate."
+    )
+    lines.append("")
+    lines.append(
+        "**Decision scope (`{}`).** `scientific_status = pass` means **only** that "
+        "all currently active gates passed. It does **not** mean sufficient "
+        "rare-mode fidelity, validated minimum capacity, or final scientific "
+        "acceptance. The rare-region mass ratio is report-only under this scope.".format(
+            summary["decision_scope"] or "unknown"
+        )
     )
     lines.append("")
     lines.append("Technical status counts: {}".format(_fmt_counts(dict(technical_counts))))
