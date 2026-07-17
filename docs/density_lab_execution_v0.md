@@ -73,9 +73,28 @@ Each run writes `artifacts/density_lab/<experiment_id>/<run_id>/`:
 
 `metrics.json` carries the scientific gate block under `scientific_gates`
 (`scientific_status`, `decision_scope`, `scientific_failure_reasons`,
-`gate_results`, `gate_config_hash`). `run_status.json` records
-`technical_status`, `scientific_status` and `decision_scope` (see below —
-`decision_scope` bounds what a `pass` is allowed to claim).
+`gate_results`, `gate_config_hash`). `run_status.json` mirrors the parts of that
+verdict a resumed run needs without re-reading the (much larger) metric bundle:
+`technical_status`, `scientific_status`, `decision_scope`, and
+`scientific_failure_reasons` (see below — `decision_scope` bounds what a `pass`
+is allowed to claim).
+
+### Resume preserves the scientific verdict
+
+A skipped run (`status = "skipped_completed"`) is not scientifically
+unevaluated — it is a *previously* evaluated run whose artifact already exists.
+`run_single`/`run_campaign` load the persisted `run_status.json`
+(`ArtifactStore.read_run_status`) and report its `technical_status`,
+`scientific_status`, `scientific_failure_reasons` and `decision_scope` on the
+skip record, so `campaign_summary.json`'s `scientific_status_counts` describes
+the whole selected run matrix, not only runs executed in the current
+invocation. `read_run_status` never fabricates a status: if the persisted file
+is missing, unparsable, or was written for a different `run_spec`
+(`config_hash`/`run_id` mismatch), the run is treated as not complete and
+re-executed. If a stored `scientific_status` exists but is unreadable — absent,
+not a string, or not a known gate verdict — the skip record reports it as
+`"unavailable"`, which is counted as its own bucket and **never** folded into
+`"pass"`.
 
 ## Build the report
 
@@ -224,6 +243,27 @@ no longer certify finiteness. Impossible evidence is treated exactly like missin
 evidence — it can never yield `pass`, and it degrades the gate to `inconclusive`
 unless some other field independently proves a catastrophe. The gate never
 recomputes a density or a rate; it only classifies what was recorded.
+
+#### D5 rare-sample count validation
+
+`rare_mode.observed_q_rare_sample_count` is validated with the same counter
+invariant (non-boolean integer ≥ 0) instead of being coerced with `int()`. A
+negative or fractional count is **impossible**, not a real sample count, so it
+is `inconclusive`, never silently truncated into a "positive count" that would
+read `pass`.
+
+`require_d5_rare_metrics` only waives a *missing* `rare_mode` block (a target
+that legitimately has no rare-mode metrics) — it does not waive a present-but-
+malformed count. "You needn't supply rare metrics" is not "garbage is
+acceptable when supplied": a corrupt count is `inconclusive` and active
+regardless of the waiver setting.
+
+| `observed_q_rare_sample_count` | outcome (metric required) | outcome (waived) |
+| --- | --- | --- |
+| `0` | `catastrophic` | `catastrophic` |
+| positive integer | `pass` | `pass` |
+| negative / fractional / bool / non-finite / string | `inconclusive` | `inconclusive` |
+| missing (`rare_mode` block absent) | `inconclusive` | `pass` (report only) |
 
 ### One source of truth for the ESS threshold
 

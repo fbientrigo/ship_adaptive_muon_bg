@@ -74,6 +74,15 @@ STATUS_FAIL = "fail"
 STATUS_CATASTROPHIC = "catastrophic"
 STATUS_INCONCLUSIVE = "inconclusive"
 
+# Single source of truth for what a gate-produced scientific_status can be. Used
+# by campaign.py to recognize a persisted run_status.json value that is not a
+# real gate verdict (missing, corrupted, or from a schema this code doesn't
+# know) so it can be reported as "unavailable" instead of silently trusted.
+SCIENTIFIC_STATUSES = frozenset(
+    {STATUS_PASS, STATUS_FAIL, STATUS_CATASTROPHIC, STATUS_INCONCLUSIVE}
+)
+STATUS_UNAVAILABLE = "unavailable"
+
 # -- per-gate outcomes (a gate with outcome "report" never changes status) ---
 OUTCOME_PASS = "pass"
 OUTCOME_FAIL = "fail"
@@ -496,26 +505,52 @@ def _ess_catastrophic_gate(
 def _d5_zero_rare_gate(
     metrics: Mapping[str, Any], *, require_metrics: bool
 ) -> Dict[str, Any]:
-    """D5 producing zero generated rare-region samples is a catastrophic guard."""
+    """D5 producing zero generated rare-region samples is a catastrophic guard.
+
+    ``observed_q_rare_sample_count`` is a count and must satisfy the same
+    documented invariant as the finiteness counters: a non-boolean integer >= 0
+    (see :func:`_classify_count`). The value is never coerced with ``int()``
+    before validation — a malformed count (negative, fractional, a bool, a
+    string) must never be silently treated as a real sample count.
+
+    ``require_metrics`` controls the waiver for a *missing* ``rare_mode`` block
+    only (a target/run that legitimately has no rare-mode metrics). It does not
+    waive a *malformed* count: a rare_mode block that is present but corrupt is
+    always ``inconclusive`` and active, whether or not the metric is required,
+    because "rare metrics are optional here" is not "garbage is acceptable when
+    supplied".
+    """
 
     value = _fetch(metrics, ("rare_mode", "observed_q_rare_sample_count"))
-    cls = _classify_number(value)
-    if cls in ("missing", "malformed", "nonfinite"):
+    cls = _classify_count(value)
+
+    if cls == "missing":
         outcome = OUTCOME_INCONCLUSIVE if require_metrics else OUTCOME_REPORT
         return _gate(
             "d5_zero_rare_samples",
             THRESHOLD_CATASTROPHIC_GUARD,
             outcome,
             active=require_metrics,
-            value=None if value is _MISSING else value,
+            value=None,
             threshold=0,
             message=(
-                "D5 rare-mode metric missing or malformed"
+                "D5 rare-mode metric missing"
                 + ("" if require_metrics else "; not required for this run")
             ),
         )
+    if cls == "impossible":
+        return _gate(
+            "d5_zero_rare_samples",
+            THRESHOLD_CATASTROPHIC_GUARD,
+            OUTCOME_INCONCLUSIVE,
+            active=True,
+            value=value,
+            threshold=0,
+            message="observed_q_rare_sample_count malformed (must be a non-negative "
+            "integer): {!r}".format(value),
+        )
     count = int(value)
-    if count == 0:
+    if cls == "zero":
         return _gate(
             "d5_zero_rare_samples",
             THRESHOLD_CATASTROPHIC_GUARD,

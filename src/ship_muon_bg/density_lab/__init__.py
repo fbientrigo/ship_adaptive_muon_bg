@@ -30,6 +30,8 @@ from .feature_pipeline import FeaturePipelineError, FittedFeaturePipeline
 from .gates import (
     DECISION_SCOPE,
     GATE_SCHEMA_VERSION,
+    SCIENTIFIC_STATUSES,
+    STATUS_UNAVAILABLE,
     ScientificGateResult,
     ScientificGateSpec,
     evaluate_scientific_gates,
@@ -52,6 +54,8 @@ __all__ = [
     "evaluate_scientific_gates",
     "GATE_SCHEMA_VERSION",
     "DECISION_SCOPE",
+    "SCIENTIFIC_STATUSES",
+    "STATUS_UNAVAILABLE",
     "CONFIG_SCHEMA_VERSION",
     "PREDEFINED_SCIENTIFIC_SEEDS",
     "build_controlled_dataset",

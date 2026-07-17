@@ -86,15 +86,38 @@ class ArtifactStore:
             root=self.root, experiment_dir=self.experiment_dir, run_dir=run_dir
         )
 
-    def is_complete(self, run_spec) -> bool:
+    def read_run_status(self, run_spec) -> Optional[Dict[str, Any]]:
+        """Safely read and return this run's persisted ``run_status.json``.
+
+        Returns ``None`` (never fabricates a status) when: the file is absent;
+        it cannot be parsed (``OSError``/``json.JSONDecodeError``); the parsed
+        payload is not a mapping; or a stored identity field (``config_hash`` /
+        ``run_id``) is present but does not match this ``run_spec`` -- an
+        artifact written for a different configuration must never be read as
+        this run's status. Identity fields are only checked when present, so
+        artifacts written before a field existed still resume.
+        """
+
         status_path = self.run_paths(run_spec).run_status
         if not status_path.exists():
-            return False
+            return None
         try:
             status = json.loads(status_path.read_text())
         except (OSError, json.JSONDecodeError):
-            return False
-        return status.get("status") == STATUS_COMPLETED
+            return None
+        if not isinstance(status, dict):
+            return None
+        stored_hash = status.get("config_hash")
+        if stored_hash is not None and stored_hash != run_spec.config_hash():
+            return None
+        stored_run_id = status.get("run_id")
+        if stored_run_id is not None and stored_run_id != derive_run_id(run_spec):
+            return None
+        return status
+
+    def is_complete(self, run_spec) -> bool:
+        status = self.read_run_status(run_spec)
+        return bool(status) and status.get("status") == STATUS_COMPLETED
 
     def write_run(
         self,
@@ -115,6 +138,7 @@ class ArtifactStore:
         hashes: Optional[Dict[str, Any]] = None,
         scientific_status: Optional[str] = None,
         decision_scope: Optional[str] = None,
+        scientific_failure_reasons: Optional[list] = None,
     ) -> RunPaths:
         paths = self.run_paths(run_spec)
         paths.run_dir.mkdir(parents=True, exist_ok=True)
@@ -151,12 +175,16 @@ class ArtifactStore:
         # decision_scope bounds what scientific_status claims: "pass" means every
         # currently active gate passed -- not sufficient rare-mode fidelity, not a
         # validated minimum capacity, not final scientific acceptance.
+        # scientific_failure_reasons is persisted here (not only in metrics.json)
+        # so a resumed/skipped run can report why a stored run is catastrophic
+        # without re-reading the full metric bundle.
         status_payload = {
             "run_id": run_id,
             "status": status,
             "technical_status": status,
             "scientific_status": scientific_status,
             "decision_scope": decision_scope,
+            "scientific_failure_reasons": scientific_failure_reasons or [],
             "config_hash": run_spec.config_hash(),
             "hashes": hashes or {},
             "save_manifest": save_manifest,

@@ -162,6 +162,95 @@ def test_d5_missing_rare_metrics_can_be_waived():
     assert result.scientific_status == STATUS_PASS
 
 
+# --- regression: malformed D5 rare counts must never reach pass (Codex P2) ---
+#
+# _d5_zero_rare_gate used to classify observed_q_rare_sample_count with
+# _classify_number and then coerce with int(), so a negative or fractional
+# count was silently truncated to a "positive" integer and reported pass. This
+# pins the fix: the field is validated like any other counter (non-boolean
+# integer >= 0) and a malformed value is always inconclusive, never coerced.
+
+
+def _d5_gate(result):
+    return next(g for g in result.gate_results if g["gate_id"] == "d5_zero_rare_samples")
+
+
+@pytest.mark.parametrize(
+    "rare_count,expected_outcome,expected_status",
+    [
+        (0, "catastrophic", STATUS_CATASTROPHIC),
+        (1, "pass", STATUS_PASS),
+        (-1, "inconclusive", STATUS_INCONCLUSIVE),
+        (1.5, "inconclusive", STATUS_INCONCLUSIVE),
+        (True, "inconclusive", STATUS_INCONCLUSIVE),
+        (float("nan"), "inconclusive", STATUS_INCONCLUSIVE),
+        ("1", "inconclusive", STATUS_INCONCLUSIVE),
+        (None, "inconclusive", STATUS_INCONCLUSIVE),  # missing, required
+    ],
+)
+def test_d5_rare_count_validated_like_a_counter(
+    rare_count, expected_outcome, expected_status
+):
+    metrics = _healthy_metrics(ess=0.5, d5=True, rare_count=1, rare_ratio=1.0)
+    if rare_count is None:
+        del metrics["rare_mode"]["observed_q_rare_sample_count"]
+    else:
+        metrics["rare_mode"]["observed_q_rare_sample_count"] = rare_count
+    result = evaluate_scientific_gates(metrics, target_id="D5", gate_spec=_spec())
+
+    gate = _d5_gate(result)
+    assert gate["gate_id"] == "d5_zero_rare_samples"
+    assert gate["threshold_class"] == THRESHOLD_CATASTROPHIC_GUARD
+    assert gate["outcome"] == expected_outcome
+    assert result.scientific_status == expected_status
+    if expected_outcome != "pass":
+        reason = next(
+            r for r in result.scientific_failure_reasons
+            if r["gate_id"] == "d5_zero_rare_samples"
+        )
+        assert reason["outcome"] == expected_outcome
+        assert reason["threshold_class"] == THRESHOLD_CATASTROPHIC_GUARD
+
+
+def test_d5_malformed_rare_count_never_coerced_with_int():
+    # -1 and 1.5 used to pass int() coercion and read as "positive count".
+    for bad_value in (-1, 1.5):
+        metrics = _healthy_metrics(ess=0.5, d5=True, rare_count=1, rare_ratio=1.0)
+        metrics["rare_mode"]["observed_q_rare_sample_count"] = bad_value
+        result = evaluate_scientific_gates(metrics, target_id="D5", gate_spec=_spec())
+        assert result.scientific_status != STATUS_PASS, (
+            "malformed rare count {!r} must never reach pass".format(bad_value)
+        )
+        assert result.scientific_status == STATUS_INCONCLUSIVE
+
+
+def test_d5_missing_rare_metrics_waiver_is_unaffected():
+    # The missing-block waiver (require_d5_rare_metrics=False) is unchanged by
+    # the counter-validation fix: still report-only, still passes.
+    metrics = _healthy_metrics(ess=0.7)  # no rare_mode block at all
+    result = evaluate_scientific_gates(
+        metrics, target_id="D5", gate_spec=_spec(require_d5_rare_metrics=False)
+    )
+    gate = _d5_gate(result)
+    assert gate["outcome"] == "report"
+    assert gate["active"] is False
+    assert result.scientific_status == STATUS_PASS
+
+
+def test_d5_malformed_rare_count_not_waived_even_when_metric_not_required():
+    # The waiver covers a MISSING rare_mode block, not a present-but-corrupt one:
+    # "you needn't supply rare metrics" is not "garbage is fine when you do".
+    metrics = _healthy_metrics(ess=0.5, d5=True, rare_count=1, rare_ratio=1.0)
+    metrics["rare_mode"]["observed_q_rare_sample_count"] = -1
+    result = evaluate_scientific_gates(
+        metrics, target_id="D5", gate_spec=_spec(require_d5_rare_metrics=False)
+    )
+    gate = _d5_gate(result)
+    assert gate["outcome"] == "inconclusive"
+    assert gate["active"] is True
+    assert result.scientific_status == STATUS_INCONCLUSIVE
+
+
 # --- non-finite density / loss ----------------------------------------------
 
 
