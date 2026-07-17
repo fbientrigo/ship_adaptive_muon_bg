@@ -1,0 +1,50 @@
+{
+  "experiment_id": "capacity_pilot_d5_cpu_v0",
+  "description": "PROVISIONAL ENGINEERING CPU PILOT (not the final capacity frontier, not a physics result). A single-seed CPU-only probe of whether affine-coupling capacity removes the D5 rare_1e-3 zero-rare-mode failure and improves ESS/N, relative to a gmm_k4 baseline. Provisional engineering gates only; no preregistered physics criterion, no SHiP rate, no FairShip/GEANT4, no D7.",
+  "targets": [
+    {"target_id": "D5", "variant": "rare_1e-3"}
+  ],
+  "pdg_ids": [13],
+  "feature_views": [
+    {"view_id": "identity_cartesian_v0"}
+  ],
+  "models": [
+    {"name": "gmm_k4", "family": "gaussian_mixture", "params": {"n_components": 4, "n_init": 2}},
+    {
+      "name": "affine_tiny",
+      "family": "affine_coupling",
+      "training_budget_id": "tiny",
+      "params": {"number_of_blocks": 2, "hidden_width": 32, "hidden_depth": 1, "dtype": "float32", "learning_rate": 0.003, "batch_size": 256, "max_epochs": 80, "patience": 15}
+    },
+    {
+      "name": "affine_small",
+      "family": "affine_coupling",
+      "training_budget_id": "small",
+      "params": {"number_of_blocks": 4, "hidden_width": 64, "hidden_depth": 2, "dtype": "float32", "learning_rate": 0.002, "batch_size": 256, "max_epochs": 120, "patience": 20}
+    },
+    {
+      "name": "affine_medium",
+      "family": "affine_coupling",
+      "training_budget_id": "medium",
+      "params": {"number_of_blocks": 8, "hidden_width": 128, "hidden_depth": 2, "dtype": "float32", "learning_rate": 0.001, "batch_size": 256, "max_epochs": 160, "patience": 25}
+    }
+  ],
+  "seeds": [11],
+  "dataset": {"n_train": 65536, "n_validation": 8192, "n_test": 32768},
+  "evaluation": {
+    "ess_sample_count": 20000,
+    "c2st_sample_count": 4000,
+    "tail_quantiles": [0.9, 0.99, 0.999],
+    "exceedance_pz_thresholds": [60.0, 70.0],
+    "catastrophic_ess_threshold": 0.01,
+    "near_duplicate_atol": 1e-06
+  },
+  "scientific_gates": {
+    "gate_schema_version": "0",
+    "catastrophic_ess_threshold": null,
+    "require_d5_rare_metrics": true,
+    "rare_region_mass_ratio_provisional_floor": null
+  },
+  "tracking": {"mode": "local", "experiment_name": "controlled_density_lab"},
+  "resources": {"device": "cpu"}
+}

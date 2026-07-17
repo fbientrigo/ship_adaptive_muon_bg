@@ -25,6 +25,7 @@ from .datasets import build_controlled_dataset
 from .environment import capture_environment, utc_timestamp
 from .evaluator import evaluate_run
 from .feature_pipeline import FittedFeaturePipeline
+from .gates import SCIENTIFIC_STATUSES, STATUS_UNAVAILABLE, evaluate_scientific_gates
 
 DIMENSION = 5
 
@@ -33,6 +34,31 @@ def _make_feature_view(spec) -> FeatureView:
     if spec.pz_unit_gev is None:
         return FeatureView(spec.view_id)
     return FeatureView(spec.view_id, pz_unit_gev=spec.pz_unit_gev)
+
+
+def _skipped_record(run_id: str, stored_status: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build a skip-path record that preserves the persisted scientific verdict.
+
+    ``stored_status`` is the ``run_status.json`` payload for the already-complete
+    run (see ``ArtifactStore.read_run_status``). ``status="skipped_completed"``
+    describes what happened *this invocation*; ``technical_status`` and
+    ``scientific_status`` describe the persisted run. A scientific_status that is
+    missing, not a string, or not one of the known gate verdicts is reported as
+    ``STATUS_UNAVAILABLE`` -- it must never be silently counted as "pass".
+    """
+
+    stored_status = stored_status or {}
+    scientific_status = stored_status.get("scientific_status")
+    if not isinstance(scientific_status, str) or scientific_status not in SCIENTIFIC_STATUSES:
+        scientific_status = STATUS_UNAVAILABLE
+    return {
+        "run_id": run_id,
+        "status": "skipped_completed",
+        "technical_status": stored_status.get("technical_status", STATUS_COMPLETED),
+        "scientific_status": scientific_status,
+        "scientific_failure_reasons": stored_status.get("scientific_failure_reasons", []),
+        "decision_scope": stored_status.get("decision_scope"),
+    }
 
 
 def _dataset_key(run_spec) -> tuple:
@@ -62,7 +88,7 @@ def run_single(
 
     run_id = derive_run_id(run_spec)
     if not force and store.is_complete(run_spec):
-        return {"run_id": run_id, "status": "skipped_completed"}
+        return _skipped_record(run_id, store.read_run_status(run_spec))
 
     started_at = utc_timestamp()
     try:
@@ -138,6 +164,16 @@ def run_single(
         metrics["fit_wall_time_seconds"] = fit_result.wall_time_seconds
         metrics["ended_at"] = utc_timestamp()
 
+        # -- scientific gates (model-independent; consume the metric bundle) --
+        # This never affects the technical status: a technically completed model
+        # that fails a scientific gate stays technical_status=completed with a
+        # separate scientific_status (e.g. catastrophic).
+        gate_spec = run_spec.resolved_gate_spec()
+        gate_result = evaluate_scientific_gates(
+            metrics, target_id=run_spec.target.target_id, gate_spec=gate_spec
+        )
+        metrics["scientific_gates"] = gate_result.to_dict()
+
         paths = store.run_paths(run_spec)
         paths.run_dir.mkdir(parents=True, exist_ok=True)
         save_manifest = model.save(paths.run_dir)
@@ -165,6 +201,9 @@ def run_single(
             run_id=run_id,
             save_manifest=save_manifest,
             hashes=hashes,
+            scientific_status=gate_result.scientific_status,
+            decision_scope=gate_result.decision_scope,
+            scientific_failure_reasons=gate_result.scientific_failure_reasons,
         )
         if tracker is not None:
             try:
@@ -179,6 +218,10 @@ def run_single(
         return {
             "run_id": run_id,
             "status": STATUS_COMPLETED,
+            "technical_status": STATUS_COMPLETED,
+            "scientific_status": gate_result.scientific_status,
+            "scientific_failure_reasons": gate_result.scientific_failure_reasons,
+            "decision_scope": gate_result.decision_scope,
             "started_at": started_at,
         }
     except Exception as exc:  # isolate: record and continue the campaign
@@ -203,6 +246,16 @@ def run_single(
         except Exception:  # pragma: no cover - best-effort failure record
             pass
         return {"run_id": run_id, "status": STATUS_FAILED, "error": str(exc)}
+
+
+def _count_scientific(records: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for record in records:
+        status = record.get("scientific_status")
+        if status is None:
+            continue
+        counts[status] = counts.get(status, 0) + 1
+    return counts
 
 
 def _selected(value, selection) -> bool:
@@ -271,6 +324,7 @@ def run_campaign(
         "n_completed": sum(1 for r in records if r["status"] == STATUS_COMPLETED),
         "n_failed": sum(1 for r in records if r["status"] == STATUS_FAILED),
         "n_skipped": sum(1 for r in records if r["status"] == "skipped_completed"),
+        "scientific_status_counts": _count_scientific(records),
         "runs": records,
     }
     store.experiment_dir.mkdir(parents=True, exist_ok=True)
