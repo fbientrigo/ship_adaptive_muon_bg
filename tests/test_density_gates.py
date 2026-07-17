@@ -251,6 +251,31 @@ def test_d5_malformed_rare_count_not_waived_even_when_metric_not_required():
     assert result.scientific_status == STATUS_INCONCLUSIVE
 
 
+def test_d5_partial_rare_mode_block_not_waived_when_metric_not_required():
+    # Codex P2: the waiver covers a rare_mode block that is entirely ABSENT,
+    # not one that is present but omits the mandatory count key.
+    metrics = _healthy_metrics(ess=0.5, d5=True, rare_count=1, rare_ratio=1.0)
+    del metrics["rare_mode"]["observed_q_rare_sample_count"]
+    result = evaluate_scientific_gates(
+        metrics, target_id="D5", gate_spec=_spec(require_d5_rare_metrics=False)
+    )
+    gate = _d5_gate(result)
+    assert gate["outcome"] == "inconclusive"
+    assert gate["active"] is True
+    assert result.scientific_status == STATUS_INCONCLUSIVE
+
+
+def test_evaluate_scientific_gates_validates_spec_before_d5_activation():
+    # Codex P2: a hand-built gate_spec (e.g. a manually constructed RunSpec)
+    # bypasses ExperimentConfig.from_dict's bool check. evaluate_scientific_gates
+    # must validate the spec itself before require_d5_rare_metrics can gate D5
+    # activation.
+    bad_spec = ScientificGateSpec(require_d5_rare_metrics=None).resolve(_FakeEval(0.01))
+    metrics = _healthy_metrics(ess=0.7)  # no rare_mode block
+    with pytest.raises(GateConfigError, match="require_d5_rare_metrics must be a bool"):
+        evaluate_scientific_gates(metrics, target_id="D5", gate_spec=bad_spec)
+
+
 # --- non-finite density / loss ----------------------------------------------
 
 
