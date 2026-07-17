@@ -146,6 +146,8 @@ class ScientificGateSpec:
     def validate(self, evaluation: Any = None) -> None:
         if not isinstance(self.gate_schema_version, str) or not self.gate_schema_version:
             raise GateConfigError("gate_schema_version must be a non-empty string")
+        if not isinstance(self.require_d5_rare_metrics, bool):
+            raise GateConfigError("require_d5_rare_metrics must be a bool")
         ess = self.catastrophic_ess_threshold
         if ess is not None:
             if not isinstance(ess, (int, float)) or isinstance(ess, bool):

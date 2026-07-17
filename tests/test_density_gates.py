@@ -619,6 +619,40 @@ def test_gate_config_hash_changes_with_config():
     assert a != b
 
 
+# --- config: require_d5_rare_metrics must be an actual bool (Codex P2) -------
+#
+# bool is a subclass of int in Python, so a naive isinstance(x, bool) check (or
+# worse, truthiness) would silently accept 0/1 and coerce them to False/True.
+# This is a scientific gate: a malformed config must never silently become
+# "rare metrics not required".
+
+_VALID_REQUIRE_D5_RARE_METRICS = [True, False]
+_INVALID_REQUIRE_D5_RARE_METRICS = [None, 0, 1, 0.0, "true", "false", [], {}]
+
+
+@pytest.mark.parametrize("value", _VALID_REQUIRE_D5_RARE_METRICS)
+def test_require_d5_rare_metrics_accepts_valid_bool(value):
+    spec = ScientificGateSpec(require_d5_rare_metrics=value)
+    spec.validate(_FakeEval(0.01))  # no error
+
+
+@pytest.mark.parametrize("value", _INVALID_REQUIRE_D5_RARE_METRICS)
+def test_require_d5_rare_metrics_rejects_non_bool(value):
+    spec = ScientificGateSpec(require_d5_rare_metrics=value)
+    with pytest.raises(GateConfigError, match="require_d5_rare_metrics must be a bool"):
+        spec.validate(_FakeEval(0.01))
+
+
+# The True-keeps-mandatory / False-waives-missing-block semantics are already
+# pinned by test_d5_missing_rare_metrics_is_inconclusive_when_required and
+# test_d5_missing_rare_metrics_can_be_waived above; the hash-changes-with-value
+# semantics by test_gate_config_hash_changes_with_config. Together with the
+# bool-only validation above, no malformed value can reach gate activation
+# (validate() runs before resolve()/evaluate_scientific_gates() ever sees the
+# spec), and no malformed value can silently coerce to False: it is rejected
+# outright instead.
+
+
 # --- no heavy dependency imported by gates.py -------------------------------
 
 
