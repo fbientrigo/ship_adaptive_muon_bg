@@ -256,6 +256,29 @@ class ExperimentConfig:
             raise ConfigError("sampling_regimes must be non-empty")
         for sampling in self.sampling_regimes:
             sampling.validate()
+        if any(sampling.regime != "iid_target" for sampling in self.sampling_regimes):
+            from .targets import resolve_target
+
+            for target in self.targets:
+                try:
+                    resolved = resolve_target(
+                        target.target_id, variant=target.variant, stage=target.stage
+                    )
+                except (KeyError, ValueError) as exc:
+                    raise ConfigError(
+                        "cannot validate stratified sampling for target {!r}: {}".format(
+                            target.target_id, exc
+                        )
+                    ) from exc
+                if getattr(resolved, "rare_mass", None) is None or not callable(
+                    getattr(resolved, "rare_component_id", None)
+                ):
+                    raise ConfigError(
+                        "sampling regime is invalid for target {!r}: "
+                        "stratified sampling requires an explicitly labelled rare component".format(
+                            target.target_id
+                        )
+                    )
         # The ESS catastrophic threshold has one source of truth: EvaluationSpec.
         # The gate spec may only leave it None (inherit) or set an equal value.
         try:

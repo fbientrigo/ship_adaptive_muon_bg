@@ -314,7 +314,12 @@ python scripts/generate_d5_memorization_doe.py
 ```
 
 `configs/density_lab/doe_v0/` contains the canonical 24-point design (JSON and
-CSV), hash/distance manifest, full matrix, and bounded 9-run CPU smoke config.
+CSV), hash/distance manifest, separate D5 experimental and D3 IID-control
+matrices, and bounded 9-run CPU smoke config. The valid planned campaign is
+144 D5 runs plus 24 D3 IID-control runs, 168 total; no full campaign has been
+executed. The superseded combined expansion would have implied 24 models × 2
+invalid D3 stratified regimes = 48 invalid runs; those pairs are now rejected
+at config validation rather than silently skipped or deferred to dataset build.
 The blocks are ReLU/alternating, ReLU/fixed seeded permutation, and SiLU/fixed
 seeded permutation, with eight duplicate-free snapped maximin LHS points each.
 The explicit v0 bounds are: `number_of_blocks` integer 2–10; `hidden_width`
@@ -322,8 +327,10 @@ snapped to 32, 48, 64, 96, 128, or 192; `hidden_depth` integer 1–3;
 `log10_learning_rate` continuous -4.0 to -2.3; `max_log_scale` continuous
 1.0 to 5.0; and `batch_size` snapped to 128, 256, or 512.
 
-The controlled matrix separates D3, D5 `rare_1e-3` before the D4 skew/banana
-transform, and transformed D5. Regimes are `iid_target`,
+The D3 control target is IID-only because it has no labelled rare component.
+Rare-aware sampling applies only to targets with an explicit labelled rare
+component. The D5 matrix contains `rare_1e-3` before the D4 skew/banana
+transform and transformed D5. Its regimes are `iid_target`,
 `stratified_unweighted_diagnostic` (always `diagnostic_only`), and
 `stratified_self_normalized_provisional`. Its stratum weights are exactly
 `target_rare_mass / sampling_rare_fraction` and

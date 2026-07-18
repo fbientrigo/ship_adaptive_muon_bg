@@ -4,12 +4,12 @@
     "n_train": 65536,
     "n_validation": 8192
   },
-  "description": "D5 experimental matrix: 144 valid runs; no physics winner may be selected from one seed.",
+  "description": "D3 IID control matrix: 24 valid runs; D3 has no labelled rare component and is never paired with rare-aware sampling.",
   "doe_seed": 20260717,
   "evaluation": {
     "rare_sample_count": 100000
   },
-  "experiment_id": "d5_memorization_doe_v0",
+  "experiment_id": "d3_memorization_control_v0",
   "feature_views": [
     {
       "view_id": "identity_cartesian_v0"
@@ -578,14 +578,6 @@
   "sampling_regimes": [
     {
       "regime": "iid_target"
-    },
-    {
-      "regime": "stratified_unweighted_diagnostic",
-      "sampling_rare_fraction": 0.5
-    },
-    {
-      "regime": "stratified_self_normalized_provisional",
-      "sampling_rare_fraction": 0.5
     }
   ],
   "seeds": [
@@ -593,14 +585,7 @@
   ],
   "targets": [
     {
-      "stage": "base_before_d4",
-      "target_id": "D5",
-      "variant": "rare_1e-3"
-    },
-    {
-      "stage": "transformed",
-      "target_id": "D5",
-      "variant": "rare_1e-3"
+      "target_id": "D3"
     }
   ],
   "tracking": {

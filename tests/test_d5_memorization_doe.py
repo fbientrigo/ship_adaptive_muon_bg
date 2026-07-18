@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from ship_muon_bg.benchmarks import make_controlled_target
-from ship_muon_bg.density_lab.config import ExperimentConfig
+from ship_muon_bg.density_lab.config import ConfigError, ExperimentConfig
 from ship_muon_bg.density_lab.artifacts import derive_run_id
 from ship_muon_bg.density_lab.datasets import build_controlled_dataset
 from ship_muon_bg.density_lab.doe import generate_blocked_maximin_lhs
@@ -103,13 +103,63 @@ def test_blocked_doe_is_deterministic_maximin_and_duplicate_free():
 def test_versioned_matrix_and_smoke_configs_are_runnable_definitions():
     root = "configs/density_lab/doe_v0/"
     matrix = ExperimentConfig.from_json_file(root + "d5_memorization_matrix_v0.json")
+    control = ExperimentConfig.from_json_file(root + "d3_memorization_control_v0.json")
     smoke = ExperimentConfig.from_json_file(root + "d5_memorization_smoke_v0.json")
     assert len(matrix.models) == 24
-    assert [target.stage for target in matrix.targets] == [
-        "transformed", "base_before_d4", "transformed"
-    ]
+    assert [target.stage for target in matrix.targets] == ["base_before_d4", "transformed"]
+    assert {sampling.regime for sampling in matrix.sampling_regimes} == {
+        IID_TARGET, STRATIFIED_DIAGNOSTIC, STRATIFIED_SELF_NORMALIZED_PROVISIONAL,
+    }
+    assert [target.target_id for target in control.targets] == ["D3"]
+    assert [sampling.regime for sampling in control.sampling_regimes] == [IID_TARGET]
+    assert len(matrix.runs()) == 144
+    assert len(control.runs()) == 24
+    assert len(matrix.runs()) + len(control.runs()) == 168
     assert len(smoke.runs()) == 9
     assert smoke.evaluation.rare_sample_count == 2000
+
+
+def test_d3_stratified_pair_is_rejected_before_run_expansion():
+    target = make_controlled_target("D3")
+    assert getattr(target, "rare_mass", None) is None
+    with pytest.raises(ValueError, match="labelled rare component"):
+        sample_controlled(
+            target, pdg_id=13, n=8, seed=4,
+            regime=STRATIFIED_DIAGNOSTIC, sampling_rare_fraction=0.5,
+        )
+    payload = {
+        "experiment_id": "invalid_d3_stratified",
+        "targets": [{"target_id": "D3"}],
+        "pdg_ids": [13],
+        "feature_views": [{"view_id": "identity_cartesian_v0"}],
+        "models": [{"name": "a", "family": "affine_coupling"}],
+        "seeds": [1],
+        "sampling_regimes": [{"regime": STRATIFIED_DIAGNOSTIC, "sampling_rare_fraction": 0.5}],
+    }
+    with pytest.raises(ConfigError, match="explicitly labelled rare component"):
+        ExperimentConfig.from_dict(payload)
+
+
+@pytest.mark.parametrize(
+    "config_name", ["d5_memorization_matrix_v0.json", "d3_memorization_control_v0.json"]
+)
+def test_generated_target_sampling_pairs_construct_small_datasets(config_name):
+    config = ExperimentConfig.from_json_file("configs/density_lab/doe_v0/" + config_name)
+    pairs = {
+        (
+            run.target.target_id, run.target.variant, run.target.stage,
+            run.sampling.regime, run.sampling.sampling_rare_fraction,
+        )
+        for run in config.runs()
+    }
+    assert pairs
+    for target_id, variant, stage, regime, fraction in pairs:
+        dataset = build_controlled_dataset(
+            target_id=target_id, variant=variant, target_stage=stage, pdg_id=13,
+            n_train=8, n_validation=8, n_test=8, seed=4,
+            regime=regime, sampling_rare_fraction=fraction,
+        )
+        assert dataset.train.sampling_manifest["regime"] == regime
 
 
 def test_exact_binomial_interval_contains_observed_mass():

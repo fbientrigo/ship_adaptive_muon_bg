@@ -38,9 +38,11 @@ def _write_campaign_configs(payload, output_dir):
     matrix = dict(common)
     matrix.update({
         "experiment_id": "d5_memorization_doe_v0",
-        "description": "Controlled DOE only; no physics winner may be selected from one seed.",
+        "description": (
+            "D5 experimental matrix: 144 valid runs; no physics winner may be "
+            "selected from one seed."
+        ),
         "targets": [
-            {"target_id": "D3"},
             {"target_id": "D5", "variant": "rare_1e-3", "stage": "base_before_d4"},
             {"target_id": "D5", "variant": "rare_1e-3", "stage": "transformed"},
         ],
@@ -52,6 +54,19 @@ def _write_campaign_configs(payload, output_dir):
             {"regime": "stratified_unweighted_diagnostic", "sampling_rare_fraction": 0.5},
             {"regime": "stratified_self_normalized_provisional", "sampling_rare_fraction": 0.5},
         ],
+    })
+    d3_control = dict(common)
+    d3_control.update({
+        "experiment_id": "d3_memorization_control_v0",
+        "description": (
+            "D3 IID control matrix: 24 valid runs; D3 has no labelled rare "
+            "component and is never paired with rare-aware sampling."
+        ),
+        "targets": [{"target_id": "D3"}],
+        "models": [_model(row) for row in payload["configs"]],
+        "dataset": {"n_train": 65536, "n_validation": 8192, "n_test": 32768},
+        "evaluation": {"rare_sample_count": 100000},
+        "sampling_regimes": [{"regime": "iid_target"}],
     })
     first_by_block = [next(row for row in payload["configs"] if row["block"] == block) for block in "ABC"]
     smoke = dict(common)
@@ -69,7 +84,11 @@ def _write_campaign_configs(payload, output_dir):
         ],
     })
     paths = []
-    for name, config in (("d5_memorization_matrix_v0.json", matrix), ("d5_memorization_smoke_v0.json", smoke)):
+    for name, config in (
+        ("d5_memorization_matrix_v0.json", matrix),
+        ("d3_memorization_control_v0.json", d3_control),
+        ("d5_memorization_smoke_v0.json", smoke),
+    ):
         path = output_dir / name
         path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
         paths.append(path)

@@ -150,6 +150,21 @@ def write_doe(payload: Mapping[str, Any], output_dir: Path) -> List[Path]:
     manifest = {
         "schema_version": "0", "doe_seed": payload["doe_seed"],
         "config_count": len(payload["configs"]),
+        "campaign_matrices": {
+            "d5_memorization_matrix_v0.json": {
+                "target_count": 2,
+                "sampling_regime_count": 3,
+                "model_count": len(payload["configs"]),
+                "planned_run_count": 144,
+            },
+            "d3_memorization_control_v0.json": {
+                "target_count": 1,
+                "sampling_regime_count": 1,
+                "model_count": len(payload["configs"]),
+                "planned_run_count": 24,
+            },
+            "total_valid_planned_run_count": 168,
+        },
         "sampling_estimator_contract": payload["sampling_estimator_contract"],
         "canonical_hash": payload["canonical_hash"],
         "minimum_normalized_pairwise_distance_by_block": payload[
