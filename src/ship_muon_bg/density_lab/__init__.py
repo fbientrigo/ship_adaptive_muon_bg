@@ -40,7 +40,7 @@ from .gates import (
 from .sampling import (
     IID_TARGET,
     SAMPLING_REGIMES,
-    STRATIFIED_CORRECTED,
+    STRATIFIED_SELF_NORMALIZED_PROVISIONAL,
     STRATIFIED_DIAGNOSTIC,
     sample_controlled,
 )
@@ -77,7 +77,7 @@ __all__ = [
     "run_single",
     "IID_TARGET",
     "STRATIFIED_DIAGNOSTIC",
-    "STRATIFIED_CORRECTED",
+    "STRATIFIED_SELF_NORMALIZED_PROVISIONAL",
     "SAMPLING_REGIMES",
     "sample_controlled",
     "generate_blocked_maximin_lhs",

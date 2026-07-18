@@ -9,8 +9,8 @@ import numpy as np
 
 IID_TARGET = "iid_target"
 STRATIFIED_DIAGNOSTIC = "stratified_unweighted_diagnostic"
-STRATIFIED_CORRECTED = "stratified_importance_corrected"
-SAMPLING_REGIMES = (IID_TARGET, STRATIFIED_DIAGNOSTIC, STRATIFIED_CORRECTED)
+STRATIFIED_SELF_NORMALIZED_PROVISIONAL = "stratified_self_normalized_provisional"
+SAMPLING_REGIMES = (IID_TARGET, STRATIFIED_DIAGNOSTIC, STRATIFIED_SELF_NORMALIZED_PROVISIONAL)
 
 
 @dataclass(frozen=True)
@@ -86,8 +86,10 @@ def sample_controlled(
     """Sample a controlled target under an explicit component-label regime.
 
     Stratification is supported only for targets exposing ``rare_mass`` and
-    ``rare_component_id``. Importance weights are exact component-mass ratios;
-    they are not rescaled after assignment.
+    ``rare_component_id``. Provisional self-normalized weights are exact
+    component-mass ratios and are not rescaled after assignment. The trainer
+    still normalizes each minibatch by its own weight sum, so unbiased target-
+    risk estimation is not established by this regime.
     """
 
     if regime not in SAMPLING_REGIMES:
@@ -114,7 +116,7 @@ def sample_controlled(
             target, pdg_id=pdg_id, n=n, seed=seed, rare_id=rare_id,
             rare_fraction=sampling_mass,
         )
-        if regime == STRATIFIED_CORRECTED:
+        if regime == STRATIFIED_SELF_NORMALIZED_PROVISIONAL:
             weight = np.where(
                 component == rare_id,
                 float(target_mass) / sampling_mass,
@@ -133,7 +135,22 @@ def sample_controlled(
     digest.update(np.ascontiguousarray(component, dtype=np.int64).tobytes())
     manifest = {
         "regime": regime,
-        "diagnostic_only": regime == STRATIFIED_DIAGNOSTIC,
+            "diagnostic_only": regime == STRATIFIED_DIAGNOSTIC,
+            "estimator_family": (
+                "self_normalized_importance_weighted_minibatch"
+                if regime == STRATIFIED_SELF_NORMALIZED_PROVISIONAL
+                else ("unweighted_iid_target" if regime == IID_TARGET else "unweighted_stratified_diagnostic")
+            ),
+            "unbiasedness_status": (
+                "not_established"
+                if regime == STRATIFIED_SELF_NORMALIZED_PROVISIONAL
+                else "not_applicable"
+            ),
+            "scientific_scope": (
+                "provisional_target_estimator"
+                if regime == STRATIFIED_SELF_NORMALIZED_PROVISIONAL
+                else ("target_density" if regime == IID_TARGET else "diagnostic_capacity_only")
+            ),
         "target_stratum_masses": (
             None if target_mass is None else {"main": 1.0 - float(target_mass), "rare": float(target_mass)}
         ),
@@ -144,19 +161,19 @@ def sample_controlled(
         "sampling_rare_fraction": sampling_mass,
         "stratum_weights": {
             "main": None if target_mass is None or sampling_mass is None else (
-                1.0 if regime != STRATIFIED_CORRECTED else (1.0 - float(target_mass)) / (1.0 - sampling_mass)
+                1.0 if regime != STRATIFIED_SELF_NORMALIZED_PROVISIONAL else (1.0 - float(target_mass)) / (1.0 - sampling_mass)
             ),
             "rare": None if target_mass is None or sampling_mass is None else (
-                1.0 if regime != STRATIFIED_CORRECTED else float(target_mass) / sampling_mass
+                1.0 if regime != STRATIFIED_SELF_NORMALIZED_PROVISIONAL else float(target_mass) / sampling_mass
             ),
         },
         "rare_weight": (
             None if target_mass is None or sampling_mass is None else
-            (1.0 if regime != STRATIFIED_CORRECTED else float(target_mass) / sampling_mass)
+            (1.0 if regime != STRATIFIED_SELF_NORMALIZED_PROVISIONAL else float(target_mass) / sampling_mass)
         ),
         "main_weight": (
             None if target_mass is None or sampling_mass is None else
-            (1.0 if regime != STRATIFIED_CORRECTED else
+            (1.0 if regime != STRATIFIED_SELF_NORMALIZED_PROVISIONAL else
              (1.0 - float(target_mass)) / (1.0 - sampling_mass))
         ),
         "weight_normalization": "sum_weights",

@@ -20,8 +20,7 @@ Design constraints (enforced by the tests):
   - ``mathematical_invariant`` — a quantity that must be finite for the estimate
     to mean anything at all (non-finite density/loss);
   - ``catastrophic_guard`` — a hard, model-independent failure floor
-    (ESS/N below the configured catastrophic threshold; D5 producing zero
-    generated rare-region samples);
+    (ESS/N below the configured catastrophic threshold);
   - ``provisional_engineering_gate`` — a working engineering reference that is
     reported but does **not** decide scientific pass/fail by default;
   - ``preregistered_scientific_gate`` — where a preregistered physics criterion
@@ -507,7 +506,7 @@ def _ess_catastrophic_gate(
 def _d5_zero_rare_gate(
     metrics: Mapping[str, Any], *, require_metrics: bool
 ) -> Dict[str, Any]:
-    """D5 producing zero generated rare-region samples is a catastrophic guard.
+    """Classify zero D5 rare samples as low-power inconclusive evidence.
 
     ``observed_q_rare_sample_count`` is a count and must satisfy the same
     documented invariant as the finiteness counters: a non-boolean integer >= 0
@@ -568,12 +567,17 @@ def _d5_zero_rare_gate(
     if cls == "zero":
         return _gate(
             "d5_zero_rare_samples",
-            THRESHOLD_CATASTROPHIC_GUARD,
-            OUTCOME_CATASTROPHIC,
+            THRESHOLD_PROVISIONAL_ENGINEERING,
+            OUTCOME_INCONCLUSIVE,
             active=True,
             value=count,
             threshold=0,
-            message="D5 generated zero rare-region samples (mode collapse)",
+            message=(
+                "D5 generated zero rare-region samples; interpretation is "
+                "inconclusive_low_power for this sample budget. No explicitly "
+                "preregistered power rule is active, so zero count cannot imply "
+                "rare-mode collapse."
+            ),
         )
     return _gate(
         "d5_zero_rare_samples",

@@ -67,7 +67,10 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
             )
         if metrics and record["status"] == "completed":
             record["forward_kl"] = _dig(metrics, "forward_kl", "forward_kl")
-            record["held_out_nll"] = _dig(metrics, "held_out", "held_out_nll")
+            record["physical_space_held_out_nll"] = metrics.get(
+                "physical_space_held_out_nll", _dig(metrics, "held_out", "held_out_nll")
+            )
+            record["feature_space_held_out_nll"] = metrics.get("feature_space_held_out_nll")
             record["ess_over_n"] = _dig(metrics, "importance_ess", "ess_over_n")
             record["ess_catastrophic"] = _dig(metrics, "importance_ess", "catastrophic")
             record["c2st_accuracy"] = _dig(metrics, "c2st", "c2st_accuracy")
@@ -75,10 +78,18 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
             record["sampling_regime"] = metrics.get("sampling_regime")
             record["diagnostic_only"] = bool(metrics.get("diagnostic_only", False))
             record["fit_claim"] = metrics.get("fit_claim")
-            record["train_main_nll"] = metrics.get("train_main_nll")
-            record["train_rare_nll"] = metrics.get("train_rare_nll")
-            record["validation_main_nll"] = metrics.get("validation_main_nll")
-            record["validation_rare_nll"] = metrics.get("validation_rare_nll")
+            record["feature_space_train_nll"] = metrics.get("feature_space_train_nll", metrics.get("train_nll"))
+            record["feature_space_train_main_nll"] = metrics.get("feature_space_train_main_nll", metrics.get("train_main_nll"))
+            record["feature_space_train_rare_nll"] = metrics.get("feature_space_train_rare_nll", metrics.get("train_rare_nll"))
+            record["feature_space_validation_nll"] = metrics.get("feature_space_validation_nll", metrics.get("validation_nll"))
+            record["feature_space_validation_main_nll"] = metrics.get("feature_space_validation_main_nll", metrics.get("validation_main_nll"))
+            record["feature_space_validation_rare_nll"] = metrics.get("feature_space_validation_rare_nll", metrics.get("validation_rare_nll"))
+            record["estimator_family"] = metrics.get("estimator_family")
+            record["unbiasedness_status"] = metrics.get("unbiasedness_status")
+            record["scientific_scope"] = metrics.get("scientific_scope")
+            record["rare_mode_interpretation"] = (
+                "inconclusive_low_power" if _dig(metrics, "rare_mode", "zero_rare_samples_flag") else None
+            )
             record["fit_wall_time_seconds"] = metrics.get("fit_wall_time_seconds")
             record["q_rare_region_mass"] = _dig(metrics, "rare_mode", "q_rare_region_mass")
             record["target_rare_mass"] = _dig(metrics, "rare_mode", "target_rare_mass")
@@ -87,6 +98,16 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
             )
             record["observed_q_rare_sample_count"] = _dig(
                 metrics, "rare_mode", "observed_q_rare_sample_count"
+            )
+            record["q_rare_region_mass"] = _dig(metrics, "rare_mode", "q_rare_region_mass")
+            record["rare_mass_exact_binomial_interval_95"] = _dig(
+                metrics, "rare_mode", "rare_mass_exact_binomial_interval_95"
+            )
+            record["probability_of_zero_rare_samples_given_target_mass_and_n"] = _dig(
+                metrics, "rare_mode", "probability_of_zero_rare_samples_given_target_mass_and_n"
+            )
+            record["zero_rare_samples_flag"] = _dig(
+                metrics, "rare_mode", "zero_rare_samples_flag"
             )
             # Prefer the scientific status recorded in metrics.json's gate block;
             # fall back to run_status.json (kept in sync by the campaign).
@@ -132,10 +153,16 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
         "pdg_id", "feature_view", "model", "device", "seed",
         "technical_status", "scientific_status",
         "forward_kl", "ess_over_n", "ess_catastrophic", "c2st_accuracy",
-        "held_out_nll", "parameter_count", "fit_wall_time_seconds",
+        "physical_space_held_out_nll", "feature_space_held_out_nll",
+        "parameter_count", "fit_wall_time_seconds",
         "q_rare_region_mass", "target_rare_mass", "rare_region_mass_ratio",
-        "observed_q_rare_sample_count", "train_main_nll", "train_rare_nll",
-        "validation_main_nll", "validation_rare_nll",
+        "observed_q_rare_sample_count", "rare_mass_exact_binomial_interval_95",
+        "probability_of_zero_rare_samples_given_target_mass_and_n",
+        "zero_rare_samples_flag", "rare_mode_interpretation",
+        "feature_space_train_nll", "feature_space_train_main_nll",
+        "feature_space_train_rare_nll", "feature_space_validation_nll",
+        "feature_space_validation_main_nll", "feature_space_validation_rare_nll",
+        "estimator_family", "unbiasedness_status", "scientific_scope",
     ]
     # CSV (one row per run, failed runs included)
     with (out_dir / "benchmark_summary.csv").open("w", newline="") as handle:
@@ -163,7 +190,7 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
         groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])
     ):
         # Scientifically non-catastrophic rows only. A catastrophic run (e.g.
-        # ESS/N collapse or D5 zero-rare) must never be averaged together with a
+        # ESS/N collapse) must never be averaged together with a
         # passing run into an unqualified mean: the "clean" means below are
         # explicitly pass/inconclusive-only, and catastrophic runs stay counted
         # and visible.
@@ -181,10 +208,7 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
                 "sampling_regime": sampling_regime,
                 "diagnostic_only": diagnostic_only,
                 "target_stage": target_stage,
-                "fit_claim": (
-                    "diagnostic_only_not_a_fit_to_original_target_density"
-                    if diagnostic_only else "original_target_density"
-                ),
+                "fit_claim": rows[0].get("fit_claim"),
                 "n_seeds": len(rows),
                 "scientific_status_counts": dict(sci_counts),
                 "n_scientific_catastrophic": sci_counts.get("catastrophic", 0),
@@ -315,6 +339,13 @@ def build_scientific_gate_summary(
             "scientific_status": sci,
             "ess_over_n": r.get("ess_over_n"),
             "observed_q_rare_sample_count": r.get("observed_q_rare_sample_count"),
+            "q_rare_region_mass": r.get("q_rare_region_mass"),
+            "rare_mass_exact_binomial_interval_95": r.get("rare_mass_exact_binomial_interval_95"),
+            "probability_of_zero_rare_samples_given_target_mass_and_n": r.get(
+                "probability_of_zero_rare_samples_given_target_mass_and_n"
+            ),
+            "zero_rare_samples_flag": r.get("zero_rare_samples_flag"),
+            "rare_mode_interpretation": r.get("rare_mode_interpretation"),
             "rare_region_mass_ratio": r.get("rare_region_mass_ratio"),
             "scientific_failure_reasons": reasons,
         }
@@ -444,6 +475,8 @@ def write_limitations(records, out_dir: Path) -> None:
         "- Wall times mix CPU/GPU only within, never across, a single curve.",
         "- Provisional engineering gates are not preregistered physics criteria.",
         "- stratified_unweighted_diagnostic rows are diagnostic-only and are never a fit claim for the original target density.",
+        "- stratified_self_normalized_provisional is a self-normalized minibatch estimator; unbiasedness is not established.",
+        "- Zero rare-region samples at the bounded smoke budget are inconclusive_low_power, not demonstrated rare-mode collapse.",
     ]
     (out_dir / "limitations.md").write_text("\n".join(text) + "\n")
 

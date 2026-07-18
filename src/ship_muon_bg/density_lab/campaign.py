@@ -149,7 +149,7 @@ def run_single(
                     if getattr(target, "rare_mass", None) is not None else None
                 ),
             }
-        elif run_spec.sampling.regime == "stratified_importance_corrected":
+        elif run_spec.sampling.regime == "stratified_self_normalized_provisional":
             fit_kwargs = {"sample_weight": dataset.train.sample_weight}
         fit_result = model.fit(
             normalized_train, x_validation=normalized_val, seed=run_spec.seed,
@@ -191,15 +191,22 @@ def run_single(
         metrics["training_sampling"] = dataset.train.sampling_manifest
         metrics["sampling_regime"] = run_spec.sampling.regime
         metrics["diagnostic_only"] = bool(dataset.train.sampling_manifest.get("diagnostic_only", False))
+        for key in ("estimator_family", "unbiasedness_status", "scientific_scope"):
+            metrics[key] = dataset.train.sampling_manifest.get(key)
         metrics["fit_claim"] = (
             "diagnostic_only_not_a_fit_to_original_target_density"
-            if metrics["diagnostic_only"] else "original_target_density"
+            if metrics["diagnostic_only"] else (
+                "provisional_target_estimator_not_validated_as_original_target_density"
+                if metrics["estimator_family"] == "self_normalized_importance_weighted_minibatch"
+                else "fit_to_original_target_density"
+            )
         )
         if fit_result.train_history:
             final = fit_result.train_history[-1]
             for key in (
-                "train_nll", "train_main_nll", "train_rare_nll",
-                "validation_nll", "validation_main_nll", "validation_rare_nll",
+                "feature_space_train_nll", "feature_space_train_main_nll",
+                "feature_space_train_rare_nll", "feature_space_validation_nll",
+                "feature_space_validation_main_nll", "feature_space_validation_rare_nll",
             ):
                 metrics[key] = final.get(key)
         metrics["ended_at"] = utc_timestamp()

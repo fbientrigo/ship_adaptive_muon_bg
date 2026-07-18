@@ -58,15 +58,20 @@ def _state_hash(module) -> str:
 def _component_metrics(module, x, weight, labels, rare_id, prefix):
     with torch.no_grad():
         row_nll = -module.log_prob(x)
-    out = {prefix + "_nll": float(torch.sum(weight * row_nll) / torch.sum(weight))}
+    value = float(torch.sum(weight * row_nll) / torch.sum(weight))
+    feature_prefix = "feature_space_" + prefix
+    out = {feature_prefix + "_nll": value, prefix + "_nll": value}
     if labels is not None and rare_id is not None:
         rare = labels == int(rare_id)
         for name, mask in (("rare", rare), ("main", ~rare)):
             if bool(mask.any()):
-                out[prefix + "_{}_nll".format(name)] = float(
+                value = float(
                     torch.sum(weight[mask] * row_nll[mask]) / torch.sum(weight[mask])
                 )
+                out[feature_prefix + "_{}_nll".format(name)] = value
+                out[prefix + "_{}_nll".format(name)] = value
             else:
+                out[feature_prefix + "_{}_nll".format(name)] = None
                 out[prefix + "_{}_nll".format(name)] = None
     return out
 
@@ -165,7 +170,7 @@ def train_flow(
                     module, val_tensor, val_weight_tensor, val_labels_tensor,
                     rare_component_id, "validation",
                 ))
-                value = record["validation_nll"]
+                value = record["feature_space_validation_nll"]
                 if not np.isfinite(value):
                     raise NonFiniteLossError("non-finite validation loss at epoch {}".format(epoch))
                 if value < best_val - 1e-9:
@@ -174,7 +179,7 @@ def train_flow(
                 else:
                     stale += 1
             else:
-                value = record["train_nll"]
+                value = record["feature_space_train_nll"]
                 if value < best_val - 1e-9:
                     best_val, best_step = value, epoch
                     best_state = {k: v.detach().clone() for k, v in module.state_dict().items()}
@@ -197,7 +202,7 @@ def train_flow(
         status=FIT_STATUS_OK, seed=int(seed), train_history=history,
         best_step=(estimator.max_epochs - 1 if estimator.memorization_mode else best_step),
         best_validation_nll=(None if val_tensor is None else (
-            history[-1]["validation_nll"] if estimator.memorization_mode else best_val
+            history[-1]["feature_space_validation_nll"] if estimator.memorization_mode else best_val
         )),
         wall_time_seconds=time.perf_counter() - started, warnings=warnings,
     )

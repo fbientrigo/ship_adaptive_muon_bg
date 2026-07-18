@@ -13,7 +13,7 @@
       "mixing_mode": "fixed_random_permutation"
     }
   },
-  "canonical_hash": "22887fa90badaea605516574d0272df013c44abce63302cf60f1a1442b02091f",
+  "canonical_hash": "bd041ccd289fe24dfa41dec109657e1f8938295bb3a4b96028d6afea28a60430",
   "configs": [
     {
       "activation": "relu",
@@ -376,5 +376,12 @@
     "C": 0.87027745967846
   },
   "points_per_block": 8,
+  "sampling_estimator_contract": {
+    "diagnostic_only": false,
+    "estimator_family": "self_normalized_importance_weighted_minibatch",
+    "regime": "stratified_self_normalized_provisional",
+    "scientific_scope": "provisional_target_estimator",
+    "unbiasedness_status": "not_established"
+  },
   "schema_version": "0"
 }

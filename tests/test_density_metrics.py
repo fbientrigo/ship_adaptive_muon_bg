@@ -73,7 +73,9 @@ def test_ess_reference_two_point_case():
 
 def test_held_out_nll():
     lp = np.array([-1.0, -2.0, -3.0])
-    assert M.held_out_nll(lp)["held_out_nll"] == pytest.approx(2.0)
+    result = M.held_out_nll(lp)
+    assert result["held_out_nll"] == pytest.approx(2.0)
+    assert result["physical_space_held_out_nll"] == pytest.approx(2.0)
 
 
 def test_support_violation_rate_counts_nonpositive_pz():

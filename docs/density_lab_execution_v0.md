@@ -195,7 +195,7 @@ Default classifications:
 | --- | --- | --- |
 | non-finite density/loss **or any recorded non-finite row** | `mathematical_invariant` | `catastrophic` |
 | ESS/N below catastrophic floor | `catastrophic_guard` | `catastrophic` |
-| D5 zero generated rare-region samples | `catastrophic_guard` | `catastrophic` |
+| D5 zero generated rare-region samples at the bounded smoke budget | `provisional_engineering_gate` | `inconclusive_low_power` |
 | mandatory metric missing/malformed | (any) | `inconclusive` |
 | rare-region mass ratio | `provisional_engineering_gate` | reported only |
 | forward KL, C2ST | `preregistered_scientific_gate` | reported only |
@@ -213,7 +213,7 @@ the threshold passes the guard, matching `metrics.importance_ess`.
 
 #### Density-finiteness evidence
 
-`metrics.held_out_nll` and `metrics.forward_kl` compute their scalar **over the
+`metrics.physical_space_held_out_nll` and `metrics.forward_kl` compute their scalar **over the
 finite rows only** and record the discarded rows in `non_finite_count`; the
 evaluator additionally writes a `non_finite_density` block. A finite aggregate
 therefore proves nothing on its own about the rows that were dropped. The
@@ -221,7 +221,7 @@ finiteness gate consumes **all** of that evidence:
 
 | field | domain | positive value |
 | --- | --- | --- |
-| `held_out.held_out_nll`, `forward_kl.forward_kl` | finite real | non-finite → `catastrophic` |
+| `physical_space_held_out_nll`, `forward_kl.forward_kl` | finite real | non-finite → `catastrophic` |
 | `held_out.non_finite_count` | integer ≥ 0 | `> 0` → `catastrophic` |
 | `forward_kl.non_finite_count` | integer ≥ 0 | `> 0` → `catastrophic` |
 | `non_finite_density.non_finite_count` | integer ≥ 0 | `> 0` → `catastrophic` |
@@ -252,6 +252,12 @@ negative or fractional count is **impossible**, not a real sample count, so it
 is `inconclusive`, never silently truncated into a "positive count" that would
 read `pass`.
 
+Zero out of the bounded rare-region sample budget is retained as raw evidence,
+including its exact binomial interval and the probability of zero samples under
+the target mass. It is `inconclusive_low_power` here: this PR has no explicitly
+configured preregistered power rule, so zero count is not evidence of mode
+collapse. Such a catastrophic rule belongs to a later experiment.
+
 `require_d5_rare_metrics` only waives a *missing* `rare_mode` block (a target
 that legitimately has no rare-mode metrics) — it does not waive a present-but-
 malformed count. "You needn't supply rare metrics" is not "garbage is
@@ -260,7 +266,7 @@ regardless of the waiver setting.
 
 | `observed_q_rare_sample_count` | outcome (metric required) | outcome (waived) |
 | --- | --- | --- |
-| `0` | `catastrophic` | `catastrophic` |
+| `0` | `inconclusive_low_power` | `inconclusive_low_power` |
 | positive integer | `pass` | `pass` |
 | negative / fractional / bool / non-finite / string | `inconclusive` | `inconclusive` |
 | missing (`rare_mode` block absent) | `inconclusive` | `pass` (report only) |
@@ -276,7 +282,8 @@ artifact directory and resume/skip stays deterministic.
 
 ## D5 CPU capacity pilot (provisional engineering)
 
-`configs/density_lab/capacity_pilot_d5_cpu_v0.json` is a **provisional
+`configs/density_lab/capacity_pilot_d5_cpu_v0.json` is the frozen
+`D5_CAPACITY_PILOT_V0`, a **provisional
 engineering CPU pilot** — not the final capacity frontier and not a physics
 result. It probes, on CPU with a single seed, whether affine-coupling capacity
 removes the D5 `rare_1e-3` zero-rare-mode failure and improves ESS/N relative to
@@ -318,11 +325,17 @@ snapped to 32, 48, 64, 96, 128, or 192; `hidden_depth` integer 1–3;
 The controlled matrix separates D3, D5 `rare_1e-3` before the D4 skew/banana
 transform, and transformed D5. Regimes are `iid_target`,
 `stratified_unweighted_diagnostic` (always `diagnostic_only`), and
-`stratified_importance_corrected`. Corrected weights are exactly
+`stratified_self_normalized_provisional`. Its stratum weights are exactly
 `target_rare_mass / sampling_rare_fraction` and
 `(1-target_rare_mass) / (1-sampling_rare_fraction)` and are normalized only by
-their supplied sum in the NLL. Labels control sampling and diagnostic slices;
-they are not model inputs.
+their supplied sum inside each minibatch. This is a
+`self_normalized_importance_weighted_minibatch` estimator with
+`unbiasedness_status=not_established` and
+`scientific_scope=provisional_target_estimator`; it is not an already validated
+unbiased estimator or exact target-risk gradient. The unweighted stratified arm
+is diagnostic-only and never a fit to the original target density. Fixed-
+composition unbiased estimators are deferred to GitHub Issue #17. Labels
+control sampling and diagnostic slices; they are not model inputs.
 
 Memorization mode is a fixed-epoch, unregularized capacity diagnostic: zero
 weight decay/dropout, no augmentation/noise, no early stopping, deterministic

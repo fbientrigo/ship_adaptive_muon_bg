@@ -33,8 +33,10 @@ def held_out_nll(q_log_prob_on_test: np.ndarray) -> Dict[str, Any]:
 
     values = np.asarray(q_log_prob_on_test, dtype=np.float64)
     finite = np.isfinite(values)
+    nll = float(-np.mean(values[finite])) if finite.any() else float("nan")
     return {
-        "held_out_nll": float(-np.mean(values[finite])) if finite.any() else float("nan"),
+        "held_out_nll": nll,
+        "physical_space_held_out_nll": nll,
         "n_test": int(values.size),
         "non_finite_count": int((~finite).sum()),
     }

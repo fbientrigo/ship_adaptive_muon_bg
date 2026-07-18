@@ -15,7 +15,7 @@ from ship_muon_bg.density_lab.doe import generate_blocked_maximin_lhs
 from ship_muon_bg.density_lab.metrics import exact_binomial_interval
 from ship_muon_bg.density_lab.sampling import (
     IID_TARGET,
-    STRATIFIED_CORRECTED,
+    STRATIFIED_SELF_NORMALIZED_PROVISIONAL,
     STRATIFIED_DIAGNOSTIC,
     sample_controlled,
     validate_sample_weight,
@@ -23,7 +23,7 @@ from ship_muon_bg.density_lab.sampling import (
 from ship_muon_bg.density_lab.targets import resolve_target
 
 
-@pytest.mark.parametrize("regime", [STRATIFIED_DIAGNOSTIC, STRATIFIED_CORRECTED])
+@pytest.mark.parametrize("regime", [STRATIFIED_DIAGNOSTIC, STRATIFIED_SELF_NORMALIZED_PROVISIONAL])
 def test_exact_stratified_counts_weights_and_determinism(regime):
     target = make_controlled_target("D5", variant="rare_1e-3")
     kwargs = dict(
@@ -36,9 +36,12 @@ def test_exact_stratified_counts_weights_and_determinism(regime):
     assert np.count_nonzero(first.component_id == rare_id) == 200
     np.testing.assert_array_equal(first.physical, second.physical)
     np.testing.assert_array_equal(first.sample_weight, second.sample_weight)
-    if regime == STRATIFIED_CORRECTED:
+    if regime == STRATIFIED_SELF_NORMALIZED_PROVISIONAL:
         np.testing.assert_allclose(first.sample_weight[first.component_id == rare_id], 0.001 / 0.2)
         np.testing.assert_allclose(first.sample_weight[first.component_id != rare_id], 0.999 / 0.8)
+        assert first.manifest["estimator_family"] == "self_normalized_importance_weighted_minibatch"
+        assert first.manifest["unbiasedness_status"] == "not_established"
+        assert first.manifest["scientific_scope"] == "provisional_target_estimator"
     else:
         np.testing.assert_array_equal(first.sample_weight, np.ones(1000))
         assert first.manifest["diagnostic_only"] is True
@@ -50,10 +53,10 @@ def test_iid_and_partition_validation_never_use_stratified_validation():
     dataset = build_controlled_dataset(
         target_id="D5", variant="rare_1e-3", pdg_id=13,
         n_train=200, n_validation=100, n_test=100, seed=3,
-        regime=STRATIFIED_CORRECTED, sampling_rare_fraction=0.5,
+        regime=STRATIFIED_SELF_NORMALIZED_PROVISIONAL, sampling_rare_fraction=0.5,
     )
-    assert dataset.train.sampling_manifest["regime"] == STRATIFIED_CORRECTED
-    assert dataset.validation.sampling_manifest["regime"] == STRATIFIED_CORRECTED
+    assert dataset.train.sampling_manifest["regime"] == STRATIFIED_SELF_NORMALIZED_PROVISIONAL
+    assert dataset.validation.sampling_manifest["regime"] == STRATIFIED_SELF_NORMALIZED_PROVISIONAL
     assert dataset.test_nominal.sampling_manifest["regime"] == IID_TARGET
     assert dataset.manifest()["validation_no_leakage"] is True
 
@@ -130,7 +133,7 @@ def test_run_identity_includes_new_model_sampling_and_doe_factors():
     changed = dict(payload)
     changed["doe_seed"] = 11
     changed["models"] = [{"name": "a", "family": "affine_coupling", "params": {"mixing_mode": "fixed_random_permutation"}}]
-    changed["sampling_regimes"] = [{"regime": STRATIFIED_CORRECTED, "sampling_rare_fraction": 0.5}]
+    changed["sampling_regimes"] = [{"regime": STRATIFIED_SELF_NORMALIZED_PROVISIONAL, "sampling_rare_fraction": 0.5}]
     other = ExperimentConfig.from_dict(changed).runs()[0]
     assert base.config_hash() != other.config_hash()
     assert derive_run_id(base) != derive_run_id(other)
@@ -184,8 +187,10 @@ def test_memorization_mode_enforcement_and_epoch_metrics():
     )
     assert len(result.train_history) == 2
     required = {
-        "train_nll", "train_main_nll", "train_rare_nll", "validation_nll",
-        "validation_main_nll", "validation_rare_nll", "gradient_norm",
+        "feature_space_train_nll", "feature_space_train_main_nll",
+        "feature_space_train_rare_nll", "feature_space_validation_nll",
+        "feature_space_validation_main_nll", "feature_space_validation_rare_nll",
+        "gradient_norm",
         "max_abs_log_scale", "checkpoint_hash", "weight_normalization",
     }
     assert required <= result.train_history[-1].keys()

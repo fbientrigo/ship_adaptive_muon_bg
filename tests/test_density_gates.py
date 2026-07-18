@@ -120,15 +120,19 @@ def test_ess_error_dict_is_catastrophic():
     assert result.scientific_status == STATUS_CATASTROPHIC
 
 
-# --- D5 zero-rare catastrophe -----------------------------------------------
+# --- D5 zero-rare low-power interpretation ----------------------------------
 
 
-def test_d5_zero_rare_samples_is_catastrophic():
+def test_d5_zero_rare_samples_is_inconclusive_low_power():
     metrics = _healthy_metrics(ess=0.5, d5=True, rare_count=0, rare_ratio=0.0)
     result = evaluate_scientific_gates(metrics, target_id="D5", gate_spec=_spec())
-    assert result.scientific_status == STATUS_CATASTROPHIC
+    assert result.scientific_status == STATUS_INCONCLUSIVE
     reasons = [r["gate_id"] for r in result.scientific_failure_reasons]
     assert "d5_zero_rare_samples" in reasons
+    gate = _d5_gate(result)
+    assert gate["outcome"] == "inconclusive"
+    assert gate["threshold_class"] == THRESHOLD_PROVISIONAL_ENGINEERING
+    assert "inconclusive_low_power" in gate["message"]
 
 
 def test_d5_with_rare_samples_and_good_ess_passes():
@@ -178,7 +182,7 @@ def _d5_gate(result):
 @pytest.mark.parametrize(
     "rare_count,expected_outcome,expected_status",
     [
-        (0, "catastrophic", STATUS_CATASTROPHIC),
+        (0, "inconclusive", STATUS_INCONCLUSIVE),
         (1, "pass", STATUS_PASS),
         (-1, "inconclusive", STATUS_INCONCLUSIVE),
         (1.5, "inconclusive", STATUS_INCONCLUSIVE),
@@ -200,7 +204,9 @@ def test_d5_rare_count_validated_like_a_counter(
 
     gate = _d5_gate(result)
     assert gate["gate_id"] == "d5_zero_rare_samples"
-    assert gate["threshold_class"] == THRESHOLD_CATASTROPHIC_GUARD
+    assert gate["threshold_class"] == (
+        THRESHOLD_PROVISIONAL_ENGINEERING if rare_count == 0 else THRESHOLD_CATASTROPHIC_GUARD
+    )
     assert gate["outcome"] == expected_outcome
     assert result.scientific_status == expected_status
     if expected_outcome != "pass":
@@ -209,7 +215,9 @@ def test_d5_rare_count_validated_like_a_counter(
             if r["gate_id"] == "d5_zero_rare_samples"
         )
         assert reason["outcome"] == expected_outcome
-        assert reason["threshold_class"] == THRESHOLD_CATASTROPHIC_GUARD
+        assert reason["threshold_class"] == (
+            THRESHOLD_PROVISIONAL_ENGINEERING if rare_count == 0 else THRESHOLD_CATASTROPHIC_GUARD
+        )
 
 
 def test_d5_malformed_rare_count_never_coerced_with_int():

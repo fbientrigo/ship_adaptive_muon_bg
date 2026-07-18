@@ -103,7 +103,7 @@
       "sampling_rare_fraction": 0.5
     },
     {
-      "regime": "stratified_importance_corrected",
+      "regime": "stratified_self_normalized_provisional",
       "sampling_rare_fraction": 0.5
     }
   ],

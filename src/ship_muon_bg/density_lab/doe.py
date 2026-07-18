@@ -116,6 +116,13 @@ def generate_blocked_maximin_lhs(
         "schema_version": "0",
         "doe_seed": int(doe_seed),
         "points_per_block": int(points_per_block),
+        "sampling_estimator_contract": {
+            "regime": "stratified_self_normalized_provisional",
+            "estimator_family": "self_normalized_importance_weighted_minibatch",
+            "unbiasedness_status": "not_established",
+            "diagnostic_only": False,
+            "scientific_scope": "provisional_target_estimator",
+        },
         "factors": factors,
         "blocks": BLOCKS,
         "configs": rows,
@@ -143,6 +150,7 @@ def write_doe(payload: Mapping[str, Any], output_dir: Path) -> List[Path]:
     manifest = {
         "schema_version": "0", "doe_seed": payload["doe_seed"],
         "config_count": len(payload["configs"]),
+        "sampling_estimator_contract": payload["sampling_estimator_contract"],
         "canonical_hash": payload["canonical_hash"],
         "minimum_normalized_pairwise_distance_by_block": payload[
             "minimum_normalized_pairwise_distance_by_block"

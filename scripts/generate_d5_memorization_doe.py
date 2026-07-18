@@ -50,7 +50,7 @@ def _write_campaign_configs(payload, output_dir):
         "sampling_regimes": [
             {"regime": "iid_target"},
             {"regime": "stratified_unweighted_diagnostic", "sampling_rare_fraction": 0.5},
-            {"regime": "stratified_importance_corrected", "sampling_rare_fraction": 0.5},
+            {"regime": "stratified_self_normalized_provisional", "sampling_rare_fraction": 0.5},
         ],
     })
     first_by_block = [next(row for row in payload["configs"] if row["block"] == block) for block in "ABC"]
@@ -65,7 +65,7 @@ def _write_campaign_configs(payload, output_dir):
         "sampling_regimes": [
             {"regime": "iid_target"},
             {"regime": "stratified_unweighted_diagnostic", "sampling_rare_fraction": 0.5},
-            {"regime": "stratified_importance_corrected", "sampling_rare_fraction": 0.5},
+            {"regime": "stratified_self_normalized_provisional", "sampling_rare_fraction": 0.5},
         ],
     })
     paths = []

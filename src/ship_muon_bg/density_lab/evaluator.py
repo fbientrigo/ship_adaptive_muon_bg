@@ -75,6 +75,7 @@ def evaluate_run(
     p_log_on_test = target.log_prob(test_physical, pdg_id=pdg_id)
 
     results["held_out"] = M.held_out_nll(q_log_on_test)
+    results["physical_space_held_out_nll"] = results["held_out"]["held_out_nll"]
     results["forward_kl"] = M.forward_kl(p_log_on_test, q_log_on_test)
 
     # --- importance ESS on model samples (finite subset) ---
@@ -169,10 +170,11 @@ def evaluate_run(
         embed_physical_to_raw(test_physical, pdg_id=pdg_id, plane_z=0.0)
     )
     feature_lp = np.asarray(model.log_prob(normalized_test), dtype=np.float64)
-    results["debug_feature_space_nll"] = (
+    results["feature_space_held_out_nll"] = (
         float(-np.mean(feature_lp[np.isfinite(feature_lp)]))
         if np.isfinite(feature_lp).any()
         else float("nan")
     )
+    results["debug_feature_space_nll"] = results["feature_space_held_out_nll"]
 
     return results, physical_q
