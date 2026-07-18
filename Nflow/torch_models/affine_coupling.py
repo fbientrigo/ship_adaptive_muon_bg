@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from numbers import Real
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -36,6 +37,17 @@ _ACTIVATIONS = {
     "gelu": nn.GELU,
     "silu": nn.SiLU,
 }
+
+
+def _validate_unimplemented_neutral_float(name: str, value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError("{} must be a finite numeric value".format(name))
+    result = float(value)
+    if not np.isfinite(result):
+        raise ValueError("{} must be a finite numeric value".format(name))
+    if result != 0.0:
+        raise ValueError("{} is not implemented; use 0.0".format(name))
+    return result
 
 
 def _resolve_device(device: str) -> torch.device:
@@ -256,9 +268,15 @@ class AffineCouplingFlow:
         self.weight_decay = float(weight_decay)
         self.mixing_mode = mixing_mode
         self.memorization_mode = bool(memorization_mode)
-        self.dropout = float(dropout)
-        self.data_augmentation = bool(data_augmentation)
-        self.input_noise_std = float(input_noise_std)
+        self.dropout = _validate_unimplemented_neutral_float("dropout", dropout)
+        if not isinstance(data_augmentation, (bool, np.bool_)):
+            raise ValueError("data_augmentation must be a boolean")
+        if data_augmentation:
+            raise ValueError("data_augmentation is not implemented; use False")
+        self.data_augmentation = False
+        self.input_noise_std = _validate_unimplemented_neutral_float(
+            "input_noise_std", input_noise_std
+        )
         self.early_stopping = bool(early_stopping)
         self.checkpoint_interval = int(checkpoint_interval)
         if self.checkpoint_interval < 1:

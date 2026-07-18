@@ -57,6 +57,51 @@ def test_flow_is_density_estimator():
     assert isinstance(flow, DensityEstimator)
 
 
+@pytest.mark.parametrize(
+    "option,value",
+    [
+        ("dropout", 0.1),
+        ("data_augmentation", True),
+        ("input_noise_std", 0.1),
+    ],
+)
+@pytest.mark.parametrize("memorization_mode", [False, True])
+def test_unimplemented_options_reject_non_neutral_values(
+    option, value, memorization_mode
+):
+    with pytest.raises(ValueError, match="{} is not implemented".format(option)):
+        AffineCouplingFlow(
+            dimension=D, memorization_mode=memorization_mode, **{option: value}
+        )
+
+
+@pytest.mark.parametrize("option", ["dropout", "input_noise_std"])
+@pytest.mark.parametrize("value", ["bad", None, np.nan, np.inf, -np.inf, True])
+def test_unimplemented_numeric_options_reject_malformed_or_non_finite(option, value):
+    with pytest.raises(ValueError, match="{} must be a finite numeric value".format(option)):
+        AffineCouplingFlow(dimension=D, **{option: value})
+
+
+@pytest.mark.parametrize("value", [None, 0, "false"])
+def test_data_augmentation_rejects_non_boolean_values(value):
+    with pytest.raises(ValueError, match="data_augmentation must be a boolean"):
+        AffineCouplingFlow(dimension=D, data_augmentation=value)
+
+
+def test_neutral_unimplemented_options_remain_serialized_and_doe_compatible():
+    flow = AffineCouplingFlow(
+        dimension=D,
+        memorization_mode=True,
+        dropout=-0.0,
+        data_augmentation=False,
+        input_noise_std=0,
+        early_stopping=False,
+    )
+    assert flow.config()["dropout"] == 0.0
+    assert flow.config()["data_augmentation"] is False
+    assert flow.config()["input_noise_std"] == 0.0
+
+
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
 def test_forward_inverse_roundtrip(dtype):
     torch.manual_seed(0)

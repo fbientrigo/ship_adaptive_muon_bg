@@ -89,7 +89,9 @@ def sample_controlled(
     ``rare_component_id``. Provisional self-normalized weights are exact
     component-mass ratios and are not rescaled after assignment. The trainer
     still normalizes each minibatch by its own weight sum, so unbiased target-
-    risk estimation is not established by this regime.
+    risk estimation is not established by this regime. Component labels can
+    influence that loss indirectly through deterministic weight assignment;
+    the loss consumes the resulting weights, never the labels themselves.
     """
 
     if regime not in SAMPLING_REGIMES:
@@ -181,7 +183,17 @@ def sample_controlled(
         "effective_sample_size": ess,
         "ess_over_n": ess / n,
         "rare_count": rare_count,
-        "component_labels_used_for_loss": True,
+        "component_labels_used_for_sampling": regime != IID_TARGET,
+        "component_labels_used_for_weight_assignment": (
+            regime == STRATIFIED_SELF_NORMALIZED_PROVISIONAL
+        ),
+        "component_labels_used_for_diagnostic_slices": True,
+        "component_labels_directly_consumed_by_loss": False,
+        # Legacy field records indirect label influence through deterministic
+        # weights. The loss itself consumes weights, not component labels.
+        "component_labels_used_for_loss": (
+            regime == STRATIFIED_SELF_NORMALIZED_PROVISIONAL
+        ),
         "seed": int(seed),
         "dataset_hash": digest.hexdigest(),
     }
