@@ -515,18 +515,31 @@ def _d5_zero_rare_gate(
     before validation — a malformed count (negative, fractional, a bool, a
     string) must never be silently treated as a real sample count.
 
-    ``require_metrics`` controls the waiver for a *missing* ``rare_mode`` block
-    only (a target/run that legitimately has no rare-mode metrics). It does not
-    waive a *malformed* count: a rare_mode block that is present but corrupt is
-    always ``inconclusive`` and active, whether or not the metric is required,
-    because "rare metrics are optional here" is not "garbage is acceptable when
-    supplied".
+    ``require_metrics`` controls the waiver for a ``rare_mode`` block that is
+    *entirely absent* only (a target/run that legitimately has no rare-mode
+    metrics). It does not waive a *malformed* count, and it does not waive a
+    block that is present but omits the mandatory count key: a rare_mode block
+    that is present but corrupt or partial is always ``inconclusive`` and
+    active, whether or not the metric is required, because "rare metrics are
+    optional here" is not "garbage is acceptable when supplied".
     """
 
+    block_absent = _fetch(metrics, ("rare_mode",)) is _MISSING
     value = _fetch(metrics, ("rare_mode", "observed_q_rare_sample_count"))
     cls = _classify_count(value)
 
     if cls == "missing":
+        if not block_absent:
+            return _gate(
+                "d5_zero_rare_samples",
+                THRESHOLD_CATASTROPHIC_GUARD,
+                OUTCOME_INCONCLUSIVE,
+                active=True,
+                value=None,
+                threshold=0,
+                message="D5 rare_mode block present but missing "
+                "observed_q_rare_sample_count",
+            )
         outcome = OUTCOME_INCONCLUSIVE if require_metrics else OUTCOME_REPORT
         return _gate(
             "d5_zero_rare_samples",
@@ -640,10 +653,18 @@ def evaluate_scientific_gates(
     ``gate_spec`` must already be resolved (concrete ESS threshold); callers
     typically pass ``spec.resolve(evaluation)``. If ``catastrophic_ess_threshold``
     is ``None`` it falls back to ``0.01`` so the function is total.
+
+    ``gate_spec`` is validated here (not only by ``ExperimentConfig.from_dict``)
+    so a hand-built spec passed directly to this function -- e.g. through a
+    manually constructed ``RunSpec`` -- cannot smuggle a non-bool
+    ``require_d5_rare_metrics`` (or any other malformed field) past the D5 gate
+    activation check (Codex P2).
     """
 
     if not isinstance(metrics, Mapping):
         raise GateConfigError("metrics must be a mapping")
+
+    gate_spec.validate()
 
     threshold = gate_spec.catastrophic_ess_threshold
     if threshold is None:
