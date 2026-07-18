@@ -1,0 +1,12 @@
+{
+  "canonical_hash": "22887fa90badaea605516574d0272df013c44abce63302cf60f1a1442b02091f",
+  "canonical_json_sha256": "1e6ce8143434b133b40a82a2f08848a2fb57b03c9c128e1492257f8bc7e4cffc",
+  "config_count": 24,
+  "doe_seed": 20260717,
+  "minimum_normalized_pairwise_distance_by_block": {
+    "A": 0.8709776896608725,
+    "B": 0.8672648109482903,
+    "C": 0.87027745967846
+  },
+  "schema_version": "0"
+}

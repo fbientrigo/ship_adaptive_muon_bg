@@ -58,7 +58,19 @@ def _build_mlp(dim: int, width: int, depth: int, activation: str) -> nn.Sequenti
     for _ in range(depth):
         layers += [nn.Linear(width, width), act()]
     layers += [nn.Linear(width, 2 * dim)]
-    return nn.Sequential(*layers)
+    network = nn.Sequential(*layers)
+    for layer in network[:-1]:
+        if isinstance(layer, nn.Linear):
+            if activation == "relu":
+                nn.init.kaiming_uniform_(layer.weight, nonlinearity="relu")
+                with torch.no_grad():
+                    layer.weight.mul_(0.25)
+            elif activation == "silu":
+                nn.init.xavier_uniform_(layer.weight)
+                with torch.no_grad():
+                    layer.weight.mul_(0.25)
+            nn.init.zeros_(layer.bias)
+    return network
 
 
 class _CouplingLayer(nn.Module):
@@ -117,10 +129,16 @@ class _FlowModule(nn.Module):
         hidden_depth: int,
         activation: str,
         max_log_scale: float,
+        mixing_mode: str,
+        seed: int,
     ) -> None:
         super().__init__()
         self.dim = dim
+        if mixing_mode not in ("alternating_only", "fixed_random_permutation"):
+            raise ValueError("unknown mixing_mode {!r}".format(mixing_mode))
         layers = []
+        permutations = []
+        rng = np.random.default_rng(int(seed))
         for i in range(number_of_blocks):
             pattern = (torch.arange(dim) + i) % 2
             mask = pattern.to(torch.get_default_dtype())
@@ -129,22 +147,42 @@ class _FlowModule(nn.Module):
                     dim, mask, hidden_width, hidden_depth, activation, max_log_scale
                 )
             )
+            permutation = (
+                rng.permutation(dim) if mixing_mode == "fixed_random_permutation"
+                else np.arange(dim)
+            )
+            permutations.append(torch.as_tensor(permutation, dtype=torch.long))
         self.layers = nn.ModuleList(layers)
+        self.mixing_mode = mixing_mode
+        for index, permutation in enumerate(permutations):
+            self.register_buffer("permutation_{}".format(index), permutation)
         self._log_base_const = 0.5 * dim * float(np.log(2.0 * np.pi))
 
     def inverse(self, x: torch.Tensor):
         z = x
         total = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
-        for layer in self.layers:
+        for index, layer in enumerate(self.layers):
+            permutation = getattr(self, "permutation_{}".format(index))
+            z = z[:, permutation]
             z, ld = layer.inverse_map(z)
             total = total + ld
         return z, total
 
     def forward(self, z: torch.Tensor):
         x = z
-        for layer in reversed(self.layers):
+        for index in reversed(range(len(self.layers))):
+            layer = self.layers[index]
             x, _ = layer.forward_map(x)
+            permutation = getattr(self, "permutation_{}".format(index))
+            inverse_permutation = torch.argsort(permutation)
+            x = x[:, inverse_permutation]
         return x
+
+    def permutations(self):
+        return [
+            getattr(self, "permutation_{}".format(i)).detach().cpu().tolist()
+            for i in range(len(self.layers))
+        ]
 
     def base_log_prob(self, z: torch.Tensor) -> torch.Tensor:
         return -self._log_base_const - 0.5 * torch.sum(z * z, dim=-1)
@@ -152,6 +190,20 @@ class _FlowModule(nn.Module):
     def log_prob(self, x: torch.Tensor) -> torch.Tensor:
         z, log_det = self.inverse(x)
         return self.base_log_prob(z) + log_det
+
+    def max_abs_log_scale(self, x: torch.Tensor) -> torch.Tensor:
+        """Maximum absolute realized coupling log scale on ``x``."""
+
+        value = torch.zeros((), dtype=x.dtype, device=x.device)
+        current = x
+        with torch.no_grad():
+            for index, layer in enumerate(self.layers):
+                permutation = getattr(self, "permutation_{}".format(index))
+                current = current[:, permutation]
+                scale, _ = layer._s_t(current)
+                value = torch.maximum(value, torch.max(torch.abs(scale)))
+                current, _ = layer.inverse_map(current)
+        return value
 
 
 class AffineCouplingFlow:
@@ -176,6 +228,13 @@ class AffineCouplingFlow:
         patience: int = 10,
         grad_clip_norm: Optional[float] = 5.0,
         weight_decay: float = 0.0,
+        mixing_mode: str = "alternating_only",
+        memorization_mode: bool = False,
+        dropout: float = 0.0,
+        data_augmentation: bool = False,
+        input_noise_std: float = 0.0,
+        early_stopping: bool = True,
+        checkpoint_interval: int = 1,
     ) -> None:
         self.dimension = int(dimension)
         self.requested_device = device
@@ -195,6 +254,24 @@ class AffineCouplingFlow:
         self.patience = int(patience)
         self.grad_clip_norm = grad_clip_norm
         self.weight_decay = float(weight_decay)
+        self.mixing_mode = mixing_mode
+        self.memorization_mode = bool(memorization_mode)
+        self.dropout = float(dropout)
+        self.data_augmentation = bool(data_augmentation)
+        self.input_noise_std = float(input_noise_std)
+        self.early_stopping = bool(early_stopping)
+        self.checkpoint_interval = int(checkpoint_interval)
+        if self.checkpoint_interval < 1:
+            raise ValueError("checkpoint_interval must be >= 1")
+        if self.memorization_mode and any((
+            self.weight_decay != 0.0, self.dropout != 0.0,
+            self.data_augmentation, self.input_noise_std != 0.0,
+            self.early_stopping,
+        )):
+            raise ValueError(
+                "memorization_mode requires weight_decay=0, dropout=0, no "
+                "augmentation/noise, and early_stopping=False"
+            )
         self._module: Optional[_FlowModule] = None
         self._init_seed = 0
         self._build_module(seed=self._init_seed)
@@ -216,6 +293,8 @@ class AffineCouplingFlow:
                 hidden_depth=self.hidden_depth,
                 activation=self.activation,
                 max_log_scale=self.max_log_scale,
+                mixing_mode=self.mixing_mode,
+                seed=int(seed),
             )
         finally:
             torch.set_default_dtype(prev)
@@ -230,17 +309,24 @@ class AffineCouplingFlow:
         x_validation: Optional[np.ndarray] = None,
         seed: int = 0,
         sample_weight: Optional[np.ndarray] = None,
+        validation_sample_weight: Optional[np.ndarray] = None,
+        component_id: Optional[np.ndarray] = None,
+        validation_component_id: Optional[np.ndarray] = None,
+        rare_component_id: Optional[int] = None,
     ) -> FitResult:
-        if sample_weight is not None:
-            raise NotImplementedError(
-                "affine_coupling does not support sample_weight; pass None"
-            )
         # Reset weights deterministically from the run seed so identical
         # RunSpecs with the same seed produce identical checkpoints/metrics.
         self._build_module(seed=int(seed))
         from .trainer import train_flow
 
-        return train_flow(self, x_train, x_validation, seed=int(seed))
+        return train_flow(
+            self, x_train, x_validation, seed=int(seed),
+            sample_weight=sample_weight,
+            validation_sample_weight=validation_sample_weight,
+            component_id=component_id,
+            validation_component_id=validation_component_id,
+            rare_component_id=rare_component_id,
+        )
 
     def _to_tensor(self, x: np.ndarray) -> torch.Tensor:
         array = np.asarray(x, dtype=np.float64)
@@ -291,6 +377,13 @@ class AffineCouplingFlow:
             "patience": self.patience,
             "grad_clip_norm": self.grad_clip_norm,
             "weight_decay": self.weight_decay,
+            "mixing_mode": self.mixing_mode,
+            "memorization_mode": self.memorization_mode,
+            "dropout": self.dropout,
+            "data_augmentation": self.data_augmentation,
+            "input_noise_std": self.input_noise_std,
+            "early_stopping": self.early_stopping,
+            "checkpoint_interval": self.checkpoint_interval,
         }
 
     def manifest(self) -> Dict[str, Any]:
@@ -302,6 +395,10 @@ class AffineCouplingFlow:
                 "actual_device": str(self.device),
                 "torch_version": torch.__version__,
                 "cuda_available": bool(torch.cuda.is_available()),
+                "init_seed": self._init_seed,
+                "permutations": self._module.permutations(),
+                "permutation_log_abs_det": 0.0,
+                "loss_normalization": "sum_weights",
             }
         )
         return manifest
@@ -323,9 +420,11 @@ class AffineCouplingFlow:
         checkpoint_dir = output_dir / "checkpoint"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         torch.save(self._module.state_dict(), checkpoint_dir / "state_dict.pt")
-        (checkpoint_dir / "model_config.json").write_text(
-            json.dumps({"config": self.config(), "requested_device": self.requested_device}, indent=2)
-        )
+        (checkpoint_dir / "model_config.json").write_text(json.dumps({
+            "config": self.config(), "requested_device": self.requested_device,
+            "init_seed": self._init_seed,
+            "permutations": self._module.permutations(),
+        }, indent=2))
         checkpoint_hash = self.checkpoint_hash()
         (checkpoint_dir / "checkpoint_hash.txt").write_text(checkpoint_hash)
         return {
@@ -341,6 +440,7 @@ class AffineCouplingFlow:
         config = payload["config"]
         config.pop("family", None)
         model = cls(device=device, **config)
+        model._build_module(seed=int(payload.get("init_seed", 0)))
         state = torch.load(
             checkpoint_dir / "state_dict.pt", map_location=model.device
         )

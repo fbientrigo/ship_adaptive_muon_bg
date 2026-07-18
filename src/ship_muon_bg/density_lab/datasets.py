@@ -17,9 +17,10 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from ..benchmarks import embed_physical_to_raw, make_controlled_target
-from ..benchmarks.controlled_targets import TransformedControlledTarget
+from ..benchmarks import embed_physical_to_raw
 from ..data_contracts import dataset_hash
+from .sampling import IID_TARGET, sample_controlled
+from .targets import resolve_target
 
 
 def _partition_seeds(seed: int):
@@ -38,6 +39,8 @@ class DatasetPartition:
     seed: int
     raw_dataset_hash: str
     n_rows: int
+    sample_weight: np.ndarray
+    sampling_manifest: Dict[str, Any]
 
     def manifest(self) -> Dict[str, Any]:
         return {
@@ -52,6 +55,7 @@ class DatasetPartition:
                 if self.rare_region_mask is not None
                 else None
             ),
+            "sampling": self.sampling_manifest,
         }
 
 
@@ -67,12 +71,18 @@ class ControlledDataset:
     test_nominal: DatasetPartition
 
     def manifest(self) -> Dict[str, Any]:
+        hashes = [
+            self.train.raw_dataset_hash,
+            self.validation.raw_dataset_hash,
+            self.test_nominal.raw_dataset_hash,
+        ]
         return {
             "target_id": self.target_id,
             "target_variant": self.target_variant,
             "target_config_hash": self.target_config_hash,
             "pdg_id": self.pdg_id,
             "base_seed": self.base_seed,
+            "validation_no_leakage": len(set(hashes)) == 3,
             "partitions": {
                 "train": self.train.manifest(),
                 "validation": self.validation.manifest(),
@@ -82,10 +92,14 @@ class ControlledDataset:
 
 
 def _make_partition(
-    target, *, partition, pdg_id, n_rows, seed, region_id
+    target, *, partition, pdg_id, n_rows, seed, region_id, regime,
+    sampling_rare_fraction,
 ) -> DatasetPartition:
-    batch = target.sample(n_rows, pdg_id=pdg_id, seed=seed)
-    physical = batch.physical
+    sampled = sample_controlled(
+        target, pdg_id=pdg_id, n=n_rows, seed=seed, regime=regime,
+        sampling_rare_fraction=sampling_rare_fraction,
+    )
+    physical = sampled.physical
     raw = embed_physical_to_raw(physical, pdg_id=pdg_id, plane_z=0.0)
     rare_mask = None
     if region_id is not None:
@@ -93,11 +107,13 @@ def _make_partition(
     return DatasetPartition(
         partition=partition,
         physical=physical,
-        component_id=batch.component_id,
+        component_id=sampled.component_id,
         rare_region_mask=rare_mask,
         seed=seed,
         raw_dataset_hash=dataset_hash(raw),
         n_rows=int(n_rows),
+        sample_weight=sampled.sample_weight,
+        sampling_manifest=sampled.manifest,
     )
 
 
@@ -110,15 +126,18 @@ def build_controlled_dataset(
     n_validation: int,
     n_test: int,
     seed: int,
+    regime: str = IID_TARGET,
+    sampling_rare_fraction: Optional[float] = None,
+    target_stage: str = "transformed",
 ) -> ControlledDataset:
     """Build independent train/validation/test partitions for one target arm."""
 
-    target = make_controlled_target(target_id, variant=variant)
+    target = resolve_target(target_id, variant=variant, stage=target_stage)
     region_id = None
-    if isinstance(target, TransformedControlledTarget) and target.declared_regions():
+    if hasattr(target, "declared_regions") and target.declared_regions():
         region_id = target.declared_regions()[0]
     train_seed, val_seed, test_seed = _partition_seeds(seed)
-    return ControlledDataset(
+    dataset = ControlledDataset(
         target_id=target_id,
         target_variant=getattr(target, "target_variant", variant),
         target_config_hash=target.config_hash(),
@@ -131,6 +150,8 @@ def build_controlled_dataset(
             n_rows=n_train,
             seed=train_seed,
             region_id=region_id,
+            regime=regime,
+            sampling_rare_fraction=sampling_rare_fraction,
         ),
         validation=_make_partition(
             target,
@@ -139,6 +160,8 @@ def build_controlled_dataset(
             n_rows=n_validation,
             seed=val_seed,
             region_id=region_id,
+            regime=regime,
+            sampling_rare_fraction=sampling_rare_fraction,
         ),
         test_nominal=_make_partition(
             target,
@@ -147,5 +170,10 @@ def build_controlled_dataset(
             n_rows=n_test,
             seed=test_seed,
             region_id=region_id,
+            regime=IID_TARGET,
+            sampling_rare_fraction=None,
         ),
     )
+    if not dataset.manifest()["validation_no_leakage"]:
+        raise RuntimeError("train/validation/test dataset hash collision")
+    return dataset

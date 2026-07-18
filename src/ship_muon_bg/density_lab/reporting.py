@@ -59,6 +59,7 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
                     "model": config["model"]["name"],
                     "seed": config["seed"],
                     "device": config.get("device"),
+                    "target_stage": config["target"].get("stage", "transformed"),
                 }
             )
             record["target_label"] = _target_label(
@@ -71,6 +72,13 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
             record["ess_catastrophic"] = _dig(metrics, "importance_ess", "catastrophic")
             record["c2st_accuracy"] = _dig(metrics, "c2st", "c2st_accuracy")
             record["parameter_count"] = metrics.get("parameter_count")
+            record["sampling_regime"] = metrics.get("sampling_regime")
+            record["diagnostic_only"] = bool(metrics.get("diagnostic_only", False))
+            record["fit_claim"] = metrics.get("fit_claim")
+            record["train_main_nll"] = metrics.get("train_main_nll")
+            record["train_rare_nll"] = metrics.get("train_rare_nll")
+            record["validation_main_nll"] = metrics.get("validation_main_nll")
+            record["validation_rare_nll"] = metrics.get("validation_rare_nll")
             record["fit_wall_time_seconds"] = metrics.get("fit_wall_time_seconds")
             record["q_rare_region_mass"] = _dig(metrics, "rare_mode", "q_rare_region_mass")
             record["target_rare_mass"] = _dig(metrics, "rare_mode", "target_rare_mass")
@@ -120,12 +128,14 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     columns = [
-        "target_label", "pdg_id", "feature_view", "model", "device", "seed",
+        "target_label", "target_stage", "sampling_regime", "diagnostic_only",
+        "pdg_id", "feature_view", "model", "device", "seed",
         "technical_status", "scientific_status",
         "forward_kl", "ess_over_n", "ess_catastrophic", "c2st_accuracy",
         "held_out_nll", "parameter_count", "fit_wall_time_seconds",
         "q_rare_region_mass", "target_rare_mass", "rare_region_mass_ratio",
-        "observed_q_rare_sample_count",
+        "observed_q_rare_sample_count", "train_main_nll", "train_rare_nll",
+        "validation_main_nll", "validation_rare_nll",
     ]
     # CSV (one row per run, failed runs included)
     with (out_dir / "benchmark_summary.csv").open("w", newline="") as handle:
@@ -144,11 +154,12 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
         # seeds when a config is run once on CPU and once on CUDA/auto.
         key = (
             r.get("target_label"), r.get("pdg_id"), r.get("feature_view"),
-            r.get("model"), r.get("device"),
+            r.get("model"), r.get("device"), r.get("sampling_regime"),
+            r.get("diagnostic_only"), r.get("target_stage"),
         )
         groups[key].append(r)
     aggregate = []
-    for (target_label, pdg_id, view, model, device), rows in sorted(
+    for (target_label, pdg_id, view, model, device, sampling_regime, diagnostic_only, target_stage), rows in sorted(
         groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])
     ):
         # Scientifically non-catastrophic rows only. A catastrophic run (e.g.
@@ -167,6 +178,13 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
                 "feature_view": view,
                 "model": model,
                 "device": device,
+                "sampling_regime": sampling_regime,
+                "diagnostic_only": diagnostic_only,
+                "target_stage": target_stage,
+                "fit_claim": (
+                    "diagnostic_only_not_a_fit_to_original_target_density"
+                    if diagnostic_only else "original_target_density"
+                ),
                 "n_seeds": len(rows),
                 "scientific_status_counts": dict(sci_counts),
                 "n_scientific_catastrophic": sci_counts.get("catastrophic", 0),
@@ -290,6 +308,8 @@ def build_scientific_gate_summary(
             "target_label": r.get("target_label"),
             "model": r.get("model"),
             "seed": r.get("seed"),
+            "sampling_regime": r.get("sampling_regime"),
+            "diagnostic_only": r.get("diagnostic_only", False),
             "device": r.get("device"),
             "technical_status": tech,
             "scientific_status": sci,
@@ -423,6 +443,7 @@ def write_limitations(records, out_dir: Path) -> None:
         "  (pass/fail/catastrophic/inconclusive): a completed run may be catastrophic.",
         "- Wall times mix CPU/GPU only within, never across, a single curve.",
         "- Provisional engineering gates are not preregistered physics criteria.",
+        "- stratified_unweighted_diagnostic rows are diagnostic-only and are never a fit claim for the original target density.",
     ]
     (out_dir / "limitations.md").write_text("\n".join(text) + "\n")
 

@@ -182,6 +182,10 @@ See `docs/density_lab_execution_v0.md` and
 `docs/contracts/controlled_targets_d3_d5_v0.md`. Colab entrypoint:
 `notebooks/colab/density_lab_quickstart.ipynb`.
 
+The deterministic D5 memorization DOE definitions and bounded (unrun) smoke
+subset live in `configs/density_lab/doe_v0/`; regenerate them with
+`python scripts/generate_d5_memorization_doe.py`.
+
 ## Core Components
 
 ### Data Contracts

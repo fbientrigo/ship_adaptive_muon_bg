@@ -16,7 +16,6 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from ..benchmarks import embed_physical_to_raw
-from ..benchmarks.controlled_targets import TransformedControlledTarget
 from ..data_contracts.feature_views import PHYSICAL_STATE_COLUMNS
 from . import metrics as M
 
@@ -129,20 +128,30 @@ def evaluate_run(
 
     # --- rare-mode diagnostics (D5) ---
     if (
-        isinstance(target, TransformedControlledTarget)
+        hasattr(target, "declared_regions")
         and target.declared_regions()
         and test_rare_mask is not None
     ):
         region_id = target.declared_regions()[0]
+        rare_physical_q = physical_q
+        rare_sample_seconds = sample_seconds
+        if evaluation.rare_sample_count != n_samples:
+            rare_t0 = time.perf_counter()
+            rare_normalized = model.sample(
+                int(evaluation.rare_sample_count), seed=_derived_seed(seed, 3)
+            )
+            rare_physical_q = pipeline.inverse_to_physical(rare_normalized)
+            rare_sample_seconds = time.perf_counter() - rare_t0
         results["rare_mode"] = M.rare_mode_diagnostics(
             target,
             pdg_id=pdg_id,
             region_id=region_id,
-            q_samples_physical=physical_q,
+            q_samples_physical=rare_physical_q,
             q_log_prob_on_target_samples=q_log_on_test,
             p_log_prob_on_target_samples=p_log_on_test,
             target_rare_labels_mask=test_rare_mask,
         )
+        results["rare_mode"]["sample_seconds"] = float(rare_sample_seconds)
 
     # --- throughput / capacity ---
     results["throughput"] = {

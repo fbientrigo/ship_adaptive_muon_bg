@@ -292,3 +292,43 @@ resumable. The pilot answers engineering questions only (does affine capacity
 recover the rare mode? does ESS/N improve? does `gmm_k4` remain competitive?);
 it is not evidence about D7, FairShip, a proxy density, or any SHiP physics
 rate.
+
+The pilot's numeric results were reported in PR #13. This repository versions
+the pilot configuration and seed; generated run, checkpoint, and sample
+artifacts are under `artifacts/` and intentionally gitignored. The pilot config
+and reported numbers are not inputs to the memorization DOE.
+
+## D5 memorization DOE v0
+
+Generate or verify the versioned design without running models:
+
+```bash
+python scripts/generate_d5_memorization_doe.py
+```
+
+`configs/density_lab/doe_v0/` contains the canonical 24-point design (JSON and
+CSV), hash/distance manifest, full matrix, and bounded 9-run CPU smoke config.
+The blocks are ReLU/alternating, ReLU/fixed seeded permutation, and SiLU/fixed
+seeded permutation, with eight duplicate-free snapped maximin LHS points each.
+The explicit v0 bounds are: `number_of_blocks` integer 2–10; `hidden_width`
+snapped to 32, 48, 64, 96, 128, or 192; `hidden_depth` integer 1–3;
+`log10_learning_rate` continuous -4.0 to -2.3; `max_log_scale` continuous
+1.0 to 5.0; and `batch_size` snapped to 128, 256, or 512.
+
+The controlled matrix separates D3, D5 `rare_1e-3` before the D4 skew/banana
+transform, and transformed D5. Regimes are `iid_target`,
+`stratified_unweighted_diagnostic` (always `diagnostic_only`), and
+`stratified_importance_corrected`. Corrected weights are exactly
+`target_rare_mass / sampling_rare_fraction` and
+`(1-target_rare_mass) / (1-sampling_rare_fraction)` and are normalized only by
+their supplied sum in the NLL. Labels control sampling and diagnostic slices;
+they are not model inputs.
+
+Memorization mode is a fixed-epoch, unregularized capacity diagnostic: zero
+weight decay/dropout, no augmentation/noise, no early stopping, deterministic
+initialization/batches, bounded log scale, clipping, finite checks, and interval
+checkpoint hashes. It does not define or claim exact duplicate memorization.
+
+The smoke subset is wiring evidence only. One seed cannot establish a winner,
+a capacity frontier, rare-mode fidelity, or a physics conclusion. Do not run
+the full matrix without a separately reviewed budget and comparison plan.
