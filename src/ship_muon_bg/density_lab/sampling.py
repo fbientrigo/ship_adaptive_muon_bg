@@ -187,7 +187,7 @@ def sample_controlled(
         "component_labels_used_for_weight_assignment": (
             regime == STRATIFIED_SELF_NORMALIZED_PROVISIONAL
         ),
-        "component_labels_used_for_diagnostic_slices": True,
+        "component_labels_used_for_diagnostic_slices": target_mass is not None,
         "component_labels_directly_consumed_by_loss": False,
         # Legacy field records indirect label influence through deterministic
         # weights. The loss itself consumes weights, not component labels.

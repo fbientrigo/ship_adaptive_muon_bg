@@ -50,17 +50,20 @@ def test_exact_stratified_counts_weights_and_determinism(regime):
 
 
 @pytest.mark.parametrize(
-    "regime,sampling,weight_assignment,legacy_loss",
+    "target_id,regime,sampling,weight_assignment,diagnostic_slices,legacy_loss",
     [
-        (IID_TARGET, False, False, False),
-        (STRATIFIED_DIAGNOSTIC, True, False, False),
-        (STRATIFIED_SELF_NORMALIZED_PROVISIONAL, True, True, True),
+        ("D3", IID_TARGET, False, False, False, False),
+        ("D5", IID_TARGET, False, False, True, False),
+        ("D5", STRATIFIED_DIAGNOSTIC, True, False, True, False),
+        ("D5", STRATIFIED_SELF_NORMALIZED_PROVISIONAL, True, True, True, True),
     ],
 )
 def test_component_label_provenance_truth_table(
-    regime, sampling, weight_assignment, legacy_loss
+    target_id, regime, sampling, weight_assignment, diagnostic_slices, legacy_loss
 ):
-    target = make_controlled_target("D5", variant="rare_1e-3")
+    target = make_controlled_target(
+        target_id, **({"variant": "rare_1e-3"} if target_id == "D5" else {})
+    )
     kwargs = {}
     if regime != IID_TARGET:
         kwargs["sampling_rare_fraction"] = 0.2
@@ -72,9 +75,16 @@ def test_component_label_provenance_truth_table(
         manifest["component_labels_used_for_weight_assignment"]
         is weight_assignment
     )
-    assert manifest["component_labels_used_for_diagnostic_slices"] is True
+    assert manifest["component_labels_used_for_diagnostic_slices"] is diagnostic_slices
     assert manifest["component_labels_directly_consumed_by_loss"] is False
     assert manifest["component_labels_used_for_loss"] is legacy_loss
+    if regime == STRATIFIED_DIAGNOSTIC:
+        np.testing.assert_array_equal(
+            sample_controlled(
+                target, pdg_id=13, n=100, seed=17, regime=regime, **kwargs
+            ).sample_weight,
+            np.ones(100),
+        )
 
 
 def test_iid_and_partition_validation_never_use_stratified_validation():
