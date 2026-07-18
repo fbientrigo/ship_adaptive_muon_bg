@@ -14,11 +14,42 @@ import csv
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 
 import numpy as np
 
 TARGET_ORDER = ["D0", "D1", "D2", "D3", "D4", "D5"]
+
+
+class PlotSeriesKey(NamedTuple):
+    """Scientific scope that must never be merged into one plotted series."""
+
+    target_label: str
+    target_stage: str
+    sampling_regime: str
+    diagnostic_only: bool
+
+
+def _plot_series_key(record: Dict[str, Any]) -> PlotSeriesKey:
+    return PlotSeriesKey(
+        target_label=str(record.get("target_label") or "unknown"),
+        target_stage=str(record.get("target_stage") or "unspecified"),
+        sampling_regime=str(record.get("sampling_regime") or "unspecified"),
+        diagnostic_only=bool(record.get("diagnostic_only", False)),
+    )
+
+
+def _plot_series_label(key: PlotSeriesKey) -> str:
+    scope = "DIAGNOSTIC ONLY" if key.diagnostic_only else "non-diagnostic"
+    return "{} | stage={} | regime={} | {}".format(
+        key.target_label, key.target_stage, key.sampling_regime, scope
+    )
+
+
+def _plot_series_sort_key(key: PlotSeriesKey):
+    base = key.target_label.split("-")[0]
+    target_order = TARGET_ORDER.index(base) if base in TARGET_ORDER else 99
+    return (target_order, key.target_label, key.target_stage, key.sampling_regime, key.diagnostic_only)
 
 
 def _target_label(target_id: str, variant: Optional[str]) -> str:
@@ -180,13 +211,12 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
         # averaged together (backend-dependent metrics) or counted as extra
         # seeds when a config is run once on CPU and once on CUDA/auto.
         key = (
-            r.get("target_label"), r.get("pdg_id"), r.get("feature_view"),
-            r.get("model"), r.get("device"), r.get("sampling_regime"),
-            r.get("diagnostic_only"), r.get("target_stage"),
+            _plot_series_key(r), r.get("pdg_id"), r.get("feature_view"),
+            r.get("model"), r.get("device"),
         )
         groups[key].append(r)
     aggregate = []
-    for (target_label, pdg_id, view, model, device, sampling_regime, diagnostic_only, target_stage), rows in sorted(
+    for (series_key, pdg_id, view, model, device), rows in sorted(
         groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])
     ):
         # Scientifically non-catastrophic rows only. A catastrophic run (e.g.
@@ -200,14 +230,14 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
             sci_counts[r.get("scientific_status") or "unknown"] += 1
         aggregate.append(
             {
-                "target_label": target_label,
+                "target_label": series_key.target_label,
                 "pdg_id": pdg_id,
                 "feature_view": view,
                 "model": model,
                 "device": device,
-                "sampling_regime": sampling_regime,
-                "diagnostic_only": diagnostic_only,
-                "target_stage": target_stage,
+                "sampling_regime": series_key.sampling_regime,
+                "diagnostic_only": series_key.diagnostic_only,
+                "target_stage": series_key.target_stage,
                 "fit_claim": rows[0].get("fit_claim"),
                 "n_seeds": len(rows),
                 "scientific_status_counts": dict(sci_counts),
@@ -519,7 +549,12 @@ def _plot_quality_by_target(plt, rows, out_dir):
         ("ess_over_n", axes[1], "ESS/N (higher better)"),
     ):
         for pdg in sorted({r["pdg_id"] for r in rows}):
-            labels, means, stds = _by_target(rows, metric, pdg)
+            stats = _series_metric_stats(
+                [r for r in rows if r["pdg_id"] == pdg], metric
+            )
+            labels = [_plot_series_label(key) for key, _, _ in stats]
+            means = [mean for _, mean, _ in stats]
+            stds = [std for _, _, std in stats]
             ax.errorbar(labels, means, yerr=stds, marker="o", capsize=3, label="pdg {}".format(pdg))
         ax.set_title(title)
         ax.set_xlabel("target")
@@ -535,15 +570,21 @@ def _plot_quality_by_target(plt, rows, out_dir):
     return [str(path)]
 
 
-def _by_target(rows, metric, pdg):
+def _series_metric_stats(rows, metric):
+    """Aggregate one metric across seeds without crossing PlotSeriesKey."""
+
     grouped = defaultdict(list)
     for r in rows:
-        if r["pdg_id"] == pdg and isinstance(r.get(metric), (int, float)):
-            grouped[r["target_label"]].append(r[metric])
-    labels = sorted(grouped, key=lambda t: (TARGET_ORDER.index(t.split("-")[0]) if t.split("-")[0] in TARGET_ORDER else 99, t))
-    means = [float(np.mean(grouped[l])) for l in labels]
-    stds = [float(np.std(grouped[l])) if len(grouped[l]) > 1 else 0.0 for l in labels]
-    return labels, means, stds
+        if isinstance(r.get(metric), (int, float)):
+            grouped[_plot_series_key(r)].append(r[metric])
+    return [
+        (
+            key,
+            float(np.mean(grouped[key])),
+            float(np.std(grouped[key])) if len(grouped[key]) > 1 else 0.0,
+        )
+        for key in sorted(grouped, key=_plot_series_sort_key)
+    ]
 
 
 def _plot_rare_mode(plt, rows, out_dir):
@@ -551,11 +592,26 @@ def _plot_rare_mode(plt, rows, out_dir):
     if not rare:
         return []
     fig, ax = plt.subplots(figsize=(7, 6))
-    for r in rare:
-        target = r.get("target_rare_mass")
-        recovered = r.get("q_rare_region_mass")
-        marker = "x" if r.get("observed_q_rare_sample_count") == 0 else "o"
-        ax.scatter(target, recovered, marker=marker, s=60)
+    grouped = defaultdict(list)
+    for row in rare:
+        grouped[_plot_series_key(row)].append(row)
+    for key in sorted(grouped, key=_plot_series_sort_key):
+        counted = [r for r in grouped[key] if r.get("observed_q_rare_sample_count") != 0]
+        zero = [r for r in grouped[key] if r.get("observed_q_rare_sample_count") == 0]
+        label = _plot_series_label(key)
+        if counted:
+            ax.scatter(
+                [r.get("target_rare_mass") for r in counted],
+                [r.get("q_rare_region_mass") for r in counted],
+                marker="o", s=60, label=label,
+            )
+        if zero:
+            ax.scatter(
+                [r.get("target_rare_mass") for r in zero],
+                [r.get("q_rare_region_mass") for r in zero],
+                marker="x", s=60,
+                label="{} | zero count".format(label) if not counted else None,
+            )
     lims = [1e-4, 2e-2]
     ax.plot(lims, lims, "k--", alpha=0.5, label="ideal recovery")
     ax.set_xscale("log")
@@ -576,17 +632,21 @@ def _plot_feature_views(plt, rows, out_dir):
     if len(views) < 2:
         return []
     fig, ax = plt.subplots(figsize=(9, 5))
-    targets = sorted({r["target_label"] for r in rows}, key=lambda t: (TARGET_ORDER.index(t.split("-")[0]) if t.split("-")[0] in TARGET_ORDER else 99, t))
+    series_keys = sorted({_plot_series_key(r) for r in rows}, key=_plot_series_sort_key)
     width = 0.8 / len(views)
-    x = np.arange(len(targets))
+    x = np.arange(len(series_keys))
     for i, view in enumerate(views):
-        means = []
-        for t in targets:
-            vals = [r["forward_kl"] for r in rows if r["feature_view"] == view and r["target_label"] == t and isinstance(r.get("forward_kl"), (int, float))]
-            means.append(float(np.mean(vals)) if vals else np.nan)
-        ax.bar(x + i * width, means, width, label=view)
+        stats = {
+            key: (mean, std)
+            for key, mean, std in _series_metric_stats(
+                [r for r in rows if r["feature_view"] == view], "forward_kl"
+            )
+        }
+        means = [stats.get(key, (np.nan, 0.0))[0] for key in series_keys]
+        stds = [stats.get(key, (np.nan, 0.0))[1] for key in series_keys]
+        ax.bar(x + i * width, means, width, yerr=stds, capsize=3, label=view)
     ax.set_xticks(x + width * (len(views) - 1) / 2)
-    ax.set_xticklabels(targets)
+    ax.set_xticklabels([_plot_series_label(key) for key in series_keys])
     ax.set_ylabel("forward KL (physical space)")
     ax.set_title("Feature-view comparison (matched rows/model/seed/budget)")
     ax.legend()
@@ -602,14 +662,34 @@ def _plot_capacity(plt, rows, out_dir):
     if not pts:
         return []
     fig, ax = plt.subplots(figsize=(8, 5))
-    for target in sorted({r["target_label"] for r in pts}):
-        sub = sorted([r for r in pts if r["target_label"] == target], key=lambda r: r["parameter_count"])
-        ax.plot([r["parameter_count"] for r in sub], [r["ess_over_n"] for r in sub], marker="o", label=target)
+    curves = defaultdict(list)
+    for row in pts:
+        curves[(_plot_series_key(row), row.get("device"))].append(row)
+    for key, device in sorted(
+        curves, key=lambda item: (_plot_series_sort_key(item[0]), str(item[1]))
+    ):
+        by_capacity = defaultdict(list)
+        for row in curves[(key, device)]:
+            by_capacity[row["parameter_count"]].append(row["ess_over_n"])
+        capacities = sorted(by_capacity)
+        means = [float(np.mean(by_capacity[value])) for value in capacities]
+        errors = [
+            float(np.std(by_capacity[value])) if len(by_capacity[value]) > 1 else 0.0
+            for value in capacities
+        ]
+        ax.errorbar(
+            capacities, means, yerr=errors, marker="o", capsize=3,
+            label="{} | device={}".format(_plot_series_label(key), device),
+        )
     ax.set_xscale("log")
     ax.set_xlabel("parameter count")
     ax.set_ylabel("ESS/N")
     device_note = "hardware: see environment.json per run (CPU/GPU not mixed on one curve)"
-    ax.set_title("Capacity frontier\n{}".format(device_note))
+    ax.set_title(
+        "Capacity versus ESS/N (descriptive only; no architecture winner inference)\n{}".format(
+            device_note
+        )
+    )
     ax.legend()
     fig.tight_layout()
     path = out_dir / "capacity_frontier.png"

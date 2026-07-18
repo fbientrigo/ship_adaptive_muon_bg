@@ -49,6 +49,14 @@ def _weighted_moments(x: np.ndarray, weights: Optional[np.ndarray]):
     return mean, centered, total
 
 
+def _reject_unsupported_fit_arguments(family: str, **arguments: Any) -> None:
+    for name, value in arguments.items():
+        if value is not None:
+            raise NotImplementedError(
+                "{} does not support {}; pass None".format(family, name)
+            )
+
+
 class DiagonalGaussian:
     """Diagonal-covariance Gaussian with a configurable, recorded variance floor."""
 
@@ -69,7 +77,18 @@ class DiagonalGaussian:
         x_validation: Optional[np.ndarray] = None,
         seed: int = 0,
         sample_weight: Optional[np.ndarray] = None,
+        validation_sample_weight: Optional[np.ndarray] = None,
+        component_id: Optional[np.ndarray] = None,
+        validation_component_id: Optional[np.ndarray] = None,
+        rare_component_id: Optional[int] = None,
     ) -> FitResult:
+        _reject_unsupported_fit_arguments(
+            self.family,
+            validation_sample_weight=validation_sample_weight,
+            component_id=component_id,
+            validation_component_id=validation_component_id,
+            rare_component_id=rare_component_id,
+        )
         start = time.perf_counter()
         x = _validate_fit_array(x_train, self.dimension)
         mean, centered, total = _weighted_moments(x, sample_weight)
@@ -184,7 +203,18 @@ class FullGaussian:
         x_validation: Optional[np.ndarray] = None,
         seed: int = 0,
         sample_weight: Optional[np.ndarray] = None,
+        validation_sample_weight: Optional[np.ndarray] = None,
+        component_id: Optional[np.ndarray] = None,
+        validation_component_id: Optional[np.ndarray] = None,
+        rare_component_id: Optional[int] = None,
     ) -> FitResult:
+        _reject_unsupported_fit_arguments(
+            self.family,
+            validation_sample_weight=validation_sample_weight,
+            component_id=component_id,
+            validation_component_id=validation_component_id,
+            rare_component_id=rare_component_id,
+        )
         start = time.perf_counter()
         x = _validate_fit_array(x_train, self.dimension)
         mean, centered, total = _weighted_moments(x, sample_weight)
