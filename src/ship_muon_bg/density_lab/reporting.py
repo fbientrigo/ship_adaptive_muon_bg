@@ -543,7 +543,13 @@ def build_plots(records, out_dir: Path) -> List[str]:
 def _plot_quality_by_target(plt, rows, out_dir):
     if not rows:
         return []
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    series = sorted(
+        {(_plot_series_key(r), r["pdg_id"]) for r in rows},
+        key=lambda item: (_plot_series_sort_key(item[0]), item[1]),
+    )
+    positions = {item: index for index, item in enumerate(series)}
+    short_labels = ["S{}".format(index + 1) for index in range(len(series))]
+    fig, axes = plt.subplots(1, 2, figsize=(14, 7))
     for metric, ax, title in (
         ("forward_kl", axes[0], "Forward KL (lower better)"),
         ("ess_over_n", axes[1], "ESS/N (higher better)"),
@@ -553,24 +559,34 @@ def _plot_quality_by_target(plt, rows, out_dir):
                 [r for r in rows if r["pdg_id"] == pdg], metric
             )
             for key, mean, std in stats:
-                label = _plot_series_label(key)
+                position = positions[(key, pdg)]
+                series_id = short_labels[position]
                 ax.errorbar(
-                    [label],
+                    [position],
                     [mean],
                     yerr=[std],
                     marker="o",
                     linestyle="none",
                     capsize=3,
-                    label="{} | pdg={}".format(label, pdg),
+                    label=(
+                        "{}: {} | pdg={}".format(
+                            series_id, _plot_series_label(key), pdg
+                        )
+                        if metric == "forward_kl"
+                        else "_nolegend_"
+                    ),
                 )
         ax.set_title(title)
-        ax.set_xlabel("target")
+        ax.set_xlabel("scoped series")
         ax.set_ylabel(metric)
-        ax.legend()
+        ax.set_xticks(range(len(series)))
+        ax.set_xticklabels(short_labels)
         if metric == "forward_kl":
             ax.set_yscale("symlog")
     fig.suptitle("Quality by target (exact controlled benchmarks; not SHiP physics)")
-    fig.tight_layout()
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=1, fontsize=7)
+    fig.tight_layout(rect=(0, 0.18, 1, 0.96))
     path = out_dir / "quality_by_target.png"
     fig.savefig(path, dpi=110)
     plt.close(fig)
@@ -598,14 +614,15 @@ def _plot_rare_mode(plt, rows, out_dir):
     rare = [r for r in rows if isinstance(r.get("q_rare_region_mass"), (int, float))]
     if not rare:
         return []
-    fig, ax = plt.subplots(figsize=(7, 6))
+    fig, ax = plt.subplots(figsize=(12, 6))
     grouped = defaultdict(list)
     for row in rare:
         grouped[_plot_series_key(row)].append(row)
-    for key in sorted(grouped, key=_plot_series_sort_key):
+    series_keys = sorted(grouped, key=_plot_series_sort_key)
+    for index, key in enumerate(series_keys, start=1):
         counted = [r for r in grouped[key] if r.get("observed_q_rare_sample_count") != 0]
         zero = [r for r in grouped[key] if r.get("observed_q_rare_sample_count") == 0]
-        label = _plot_series_label(key)
+        label = "S{}: {}".format(index, _plot_series_label(key))
         if counted:
             ax.scatter(
                 [r.get("target_rare_mass") for r in counted],
@@ -626,7 +643,7 @@ def _plot_rare_mode(plt, rows, out_dir):
     ax.set_xlabel("target rare mass")
     ax.set_ylabel("recovered rare-region mass (x = zero count)")
     ax.set_title("Rare-mode recovery (D5)")
-    ax.legend()
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=7)
     fig.tight_layout()
     path = out_dir / "rare_mode_recovery.png"
     fig.savefig(path, dpi=110)
@@ -638,7 +655,7 @@ def _plot_feature_views(plt, rows, out_dir):
     views = sorted({r["feature_view"] for r in rows})
     if len(views) < 2:
         return []
-    fig, ax = plt.subplots(figsize=(9, 5))
+    fig, ax = plt.subplots(figsize=(12, 6))
     series_keys = sorted({_plot_series_key(r) for r in rows}, key=_plot_series_sort_key)
     width = 0.8 / len(views)
     x = np.arange(len(series_keys))
@@ -662,10 +679,10 @@ def _plot_feature_views(plt, rows, out_dir):
                 label="{} | view={}".format(_plot_series_label(key), view),
             )
     ax.set_xticks(x + width * (len(views) - 1) / 2)
-    ax.set_xticklabels([_plot_series_label(key) for key in series_keys])
+    ax.set_xticklabels(["S{}".format(i + 1) for i in range(len(series_keys))])
     ax.set_ylabel("forward KL (physical space)")
     ax.set_title("Feature-view comparison (matched rows/model/seed/budget)")
-    ax.legend()
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=7)
     fig.tight_layout()
     path = out_dir / "feature_view_comparison.png"
     fig.savefig(path, dpi=110)
@@ -677,13 +694,14 @@ def _plot_capacity(plt, rows, out_dir):
     pts = [r for r in rows if isinstance(r.get("parameter_count"), (int, float)) and isinstance(r.get("ess_over_n"), (int, float))]
     if not pts:
         return []
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(12, 6))
     curves = defaultdict(list)
     for row in pts:
         curves[(_plot_series_key(row), row.get("device"))].append(row)
-    for key, device in sorted(
+    scoped_curves = sorted(
         curves, key=lambda item: (_plot_series_sort_key(item[0]), str(item[1]))
-    ):
+    )
+    for index, (key, device) in enumerate(scoped_curves, start=1):
         by_capacity = defaultdict(list)
         for row in curves[(key, device)]:
             by_capacity[row["parameter_count"]].append(row["ess_over_n"])
@@ -695,7 +713,9 @@ def _plot_capacity(plt, rows, out_dir):
         ]
         ax.errorbar(
             capacities, means, yerr=errors, marker="o", capsize=3,
-            label="{} | device={}".format(_plot_series_label(key), device),
+            label="S{}: {} | device={}".format(
+                index, _plot_series_label(key), device
+            ),
         )
     ax.set_xscale("log")
     ax.set_xlabel("parameter count")
@@ -706,7 +726,7 @@ def _plot_capacity(plt, rows, out_dir):
             device_note
         )
     )
-    ax.legend()
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=7)
     fig.tight_layout()
     path = out_dir / "capacity_frontier.png"
     fig.savefig(path, dpi=110)
