@@ -183,14 +183,23 @@ def _registry_spec(family):
     return {"family": family, "params": params}
 
 
+def _require_registry_family_dependency(family):
+    if family == "gaussian_mixture":
+        pytest.importorskip("sklearn")
+    elif family == "affine_coupling":
+        pytest.importorskip("torch")
+
+
 @pytest.mark.parametrize("family", SUPPORTED_MODEL_FAMILIES)
 def test_registry_family_exposes_canonical_fit_keywords(family):
+    _require_registry_family_dependency(family)
     model = create_density_estimator(_registry_spec(family), dimension=D)
     assert CANONICAL_FIT_KEYWORDS <= set(inspect.signature(model.fit).parameters)
 
 
 @pytest.mark.parametrize("family", SUPPORTED_MODEL_FAMILIES)
 def test_neutral_fit_keywords_preserve_results_configs_and_hashes(family):
+    _require_registry_family_dependency(family)
     x = _train(n=64)
     validation = x[:16]
     legacy = create_density_estimator(_registry_spec(family), dimension=D)
@@ -237,6 +246,7 @@ def test_unsupported_non_none_fit_arguments_raise_deliberately(family, argument)
 
 
 def test_affine_canonical_fit_arguments_remain_supported():
+    pytest.importorskip("torch")
     x = _train(n=32)
     validation = x[:8]
     model = create_density_estimator(_registry_spec("affine_coupling"), dimension=D)

@@ -552,10 +552,17 @@ def _plot_quality_by_target(plt, rows, out_dir):
             stats = _series_metric_stats(
                 [r for r in rows if r["pdg_id"] == pdg], metric
             )
-            labels = [_plot_series_label(key) for key, _, _ in stats]
-            means = [mean for _, mean, _ in stats]
-            stds = [std for _, _, std in stats]
-            ax.errorbar(labels, means, yerr=stds, marker="o", capsize=3, label="pdg {}".format(pdg))
+            for key, mean, std in stats:
+                label = _plot_series_label(key)
+                ax.errorbar(
+                    [label],
+                    [mean],
+                    yerr=[std],
+                    marker="o",
+                    linestyle="none",
+                    capsize=3,
+                    label="{} | pdg={}".format(label, pdg),
+                )
         ax.set_title(title)
         ax.set_xlabel("target")
         ax.set_ylabel(metric)
@@ -642,9 +649,18 @@ def _plot_feature_views(plt, rows, out_dir):
                 [r for r in rows if r["feature_view"] == view], "forward_kl"
             )
         }
-        means = [stats.get(key, (np.nan, 0.0))[0] for key in series_keys]
-        stds = [stats.get(key, (np.nan, 0.0))[1] for key in series_keys]
-        ax.bar(x + i * width, means, width, yerr=stds, capsize=3, label=view)
+        for j, key in enumerate(series_keys):
+            if key not in stats:
+                continue
+            mean, std = stats[key]
+            ax.bar(
+                [x[j] + i * width],
+                [mean],
+                width,
+                yerr=[std],
+                capsize=3,
+                label="{} | view={}".format(_plot_series_label(key), view),
+            )
     ax.set_xticks(x + width * (len(views) - 1) / 2)
     ax.set_xticklabels([_plot_series_label(key) for key in series_keys])
     ax.set_ylabel("forward KL (physical space)")
