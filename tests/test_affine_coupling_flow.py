@@ -9,6 +9,7 @@ importing ``Nflow`` does not import torch.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -17,6 +18,7 @@ import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
+from torch import nn
 
 from Nflow.interfaces import FIT_STATUS_OK, DensityEstimator
 from Nflow.registry import create_density_estimator
@@ -267,3 +269,203 @@ def test_registry_creates_flow():
 def test_device_auto_resolves():
     flow = AffineCouplingFlow(dimension=D, device="auto")
     assert str(flow.device) in ("cpu", "cuda")
+
+
+# -- initializer_mode ---------------------------------------------------------
+
+
+def test_default_initializer_mode_is_legacy_torch_default():
+    flow = AffineCouplingFlow(dimension=D)
+    assert flow.initializer_mode == "legacy_torch_default"
+    assert flow.config()["initializer_mode"] == "legacy_torch_default"
+
+
+def test_legacy_initializer_matches_historical_construction():
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=1, hidden_width=16, hidden_depth=1,
+        activation="relu", initializer_mode="legacy_torch_default",
+    )
+    flow._build_module(seed=42)
+    actual = [p.clone() for p in flow._module.layers[0].net.parameters()]
+
+    # Historical (pre-PR #15) construction: plain torch.nn.Linear defaults,
+    # no manual reinitialization, except the final layer which
+    # ``_CouplingLayer`` always zero-initializes regardless of mode.
+    torch.manual_seed(42)
+    expected_net = nn.Sequential(
+        nn.Linear(D, 16), nn.ReLU(),
+        nn.Linear(16, 16), nn.ReLU(),
+        nn.Linear(16, 2 * D),
+    )
+    nn.init.zeros_(expected_net[-1].weight)
+    nn.init.zeros_(expected_net[-1].bias)
+
+    for a, e in zip(actual, expected_net.parameters()):
+        torch.testing.assert_close(a, e)
+
+
+def test_scaled_initializer_is_deterministic():
+    a = AffineCouplingFlow(
+        dimension=D, number_of_blocks=2, hidden_width=16,
+        initializer_mode="scaled_activation_aware",
+    )
+    a._build_module(seed=5)
+    b = AffineCouplingFlow(
+        dimension=D, number_of_blocks=2, hidden_width=16,
+        initializer_mode="scaled_activation_aware",
+    )
+    b._build_module(seed=5)
+    for pa, pb in zip(a._module.parameters(), b._module.parameters()):
+        torch.testing.assert_close(pa, pb)
+
+
+def test_legacy_and_scaled_initializers_produce_different_parameters():
+    legacy = AffineCouplingFlow(
+        dimension=D, number_of_blocks=1, hidden_width=16, activation="relu",
+        initializer_mode="legacy_torch_default",
+    )
+    legacy._build_module(seed=3)
+    scaled = AffineCouplingFlow(
+        dimension=D, number_of_blocks=1, hidden_width=16, activation="relu",
+        initializer_mode="scaled_activation_aware",
+    )
+    scaled._build_module(seed=3)
+    legacy_weight = legacy._module.layers[0].net[0].weight
+    scaled_weight = scaled._module.layers[0].net[0].weight
+    assert not torch.allclose(legacy_weight, scaled_weight)
+
+
+@pytest.mark.parametrize("mode", ["legacy_torch_default", "scaled_activation_aware"])
+def test_initializer_mode_round_trips_through_save_load(tmp_path, mode):
+    flow = AffineCouplingFlow(dimension=D, number_of_blocks=2, initializer_mode=mode)
+    flow.save(tmp_path)
+    reloaded = AffineCouplingFlow.load(tmp_path)
+    assert reloaded.initializer_mode == mode
+    assert reloaded.config()["initializer_mode"] == mode
+
+
+def test_unknown_initializer_mode_fails_early():
+    with pytest.raises(ValueError, match="unknown initializer_mode"):
+        AffineCouplingFlow(dimension=D, initializer_mode="bogus_mode")
+
+
+# -- checkpoint compatibility --------------------------------------------------
+
+
+def _write_checkpoint(checkpoint_dir, state, config, init_seed, permutations=None):
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(state, checkpoint_dir / "state_dict.pt")
+    payload = {"config": config, "requested_device": "cpu", "init_seed": init_seed}
+    if permutations is not None:
+        payload["permutations"] = permutations
+    (checkpoint_dir / "model_config.json").write_text(json.dumps(payload))
+
+
+def test_pre_permutation_checkpoint_loads(tmp_path):
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1
+    )
+    old_config = flow.config()
+    old_config.pop("mixing_mode")
+    old_config.pop("initializer_mode")
+    state = flow._module.state_dict()
+    assert not any(k.startswith("permutation_") for k in state)
+    _write_checkpoint(tmp_path / "checkpoint", state, old_config, flow._init_seed)
+
+    reloaded = AffineCouplingFlow.load(tmp_path)
+    assert reloaded.mixing_mode == "alternating_only"
+    assert reloaded.initializer_mode == "legacy_torch_default"
+    x = np.random.default_rng(0).standard_normal((8, D))
+    np.testing.assert_allclose(reloaded.log_prob(x), flow.log_prob(x))
+
+
+def test_interim_checkpoint_with_persistent_permutation_keys_loads(tmp_path):
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=3, hidden_width=8, hidden_depth=1,
+        mixing_mode="fixed_random_permutation",
+    )
+    state = flow._module.state_dict()
+    for i in range(len(flow._module.layers)):
+        state["permutation_{}".format(i)] = getattr(
+            flow._module, "permutation_{}".format(i)
+        ).clone()
+    _write_checkpoint(
+        tmp_path / "checkpoint", state, flow.config(), flow._init_seed,
+        permutations=flow._module.permutations(),
+    )
+
+    reloaded = AffineCouplingFlow.load(tmp_path)
+    x = np.random.default_rng(1).standard_normal((8, D))
+    np.testing.assert_allclose(reloaded.log_prob(x), flow.log_prob(x))
+
+
+def test_interim_checkpoint_permutation_mismatch_fails(tmp_path):
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1,
+        mixing_mode="fixed_random_permutation",
+    )
+    state = flow._module.state_dict()
+    for i in range(len(flow._module.layers)):
+        state["permutation_{}".format(i)] = getattr(
+            flow._module, "permutation_{}".format(i)
+        ).clone()
+    state["permutation_0"] = torch.flip(state["permutation_0"], dims=[0])
+    _write_checkpoint(
+        tmp_path / "checkpoint", state, flow.config(), flow._init_seed,
+    )
+
+    with pytest.raises(ValueError, match="does not match"):
+        AffineCouplingFlow.load(tmp_path)
+
+
+@pytest.mark.parametrize("mixing_mode", ["alternating_only", "fixed_random_permutation"])
+def test_checkpoint_round_trip_preserves_log_prob(tmp_path, mixing_mode):
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=3, hidden_width=8, hidden_depth=1,
+        mixing_mode=mixing_mode,
+    )
+    flow._build_module(seed=7)
+    x = np.random.default_rng(2).standard_normal((16, D))
+    before = flow.log_prob(x)
+    flow.save(tmp_path)
+    reloaded = AffineCouplingFlow.load(tmp_path)
+    after = reloaded.log_prob(x)
+    np.testing.assert_allclose(after, before, rtol=1e-6, atol=1e-6)
+
+
+def test_reconstructed_permutation_matches_config_and_seed():
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=4, mixing_mode="fixed_random_permutation"
+    )
+    flow._build_module(seed=13)
+    expected = flow._module.permutations()
+
+    other = AffineCouplingFlow(
+        dimension=D, number_of_blocks=4, mixing_mode="fixed_random_permutation"
+    )
+    other._build_module(seed=13)
+    assert other._module.permutations() == expected
+
+
+def test_missing_learned_parameter_fails_to_load(tmp_path):
+    flow = AffineCouplingFlow(dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1)
+    flow.save(tmp_path)
+    state_path = tmp_path / "checkpoint" / "state_dict.pt"
+    state = torch.load(state_path)
+    del state[next(iter(state))]
+    torch.save(state, state_path)
+
+    with pytest.raises(RuntimeError):
+        AffineCouplingFlow.load(tmp_path)
+
+
+def test_unexpected_non_permutation_key_fails_to_load(tmp_path):
+    flow = AffineCouplingFlow(dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1)
+    flow.save(tmp_path)
+    state_path = tmp_path / "checkpoint" / "state_dict.pt"
+    state = torch.load(state_path)
+    state["totally_unexpected_key"] = torch.zeros(1)
+    torch.save(state, state_path)
+
+    with pytest.raises(RuntimeError):
+        AffineCouplingFlow.load(tmp_path)

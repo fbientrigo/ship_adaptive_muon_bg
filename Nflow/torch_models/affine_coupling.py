@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from numbers import Real
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -37,6 +38,10 @@ _ACTIVATIONS = {
     "gelu": nn.GELU,
     "silu": nn.SiLU,
 }
+
+_INITIALIZER_MODES = ("legacy_torch_default", "scaled_activation_aware")
+
+_LEGACY_PERMUTATION_KEY_RE = re.compile(r"^permutation_(\d+)$")
 
 
 def _validate_unimplemented_neutral_float(name: str, value: Any) -> float:
@@ -58,11 +63,19 @@ def _resolve_device(device: str) -> torch.device:
     raise ValueError("device must be 'cpu', 'cuda' or 'auto', got {!r}".format(device))
 
 
-def _build_mlp(dim: int, width: int, depth: int, activation: str) -> nn.Sequential:
+def _build_mlp(
+    dim: int, width: int, depth: int, activation: str, initializer_mode: str
+) -> nn.Sequential:
     if activation not in _ACTIVATIONS:
         raise ValueError(
             "unknown activation {!r}; expected one of {}".format(
                 activation, sorted(_ACTIVATIONS)
+            )
+        )
+    if initializer_mode not in _INITIALIZER_MODES:
+        raise ValueError(
+            "unknown initializer_mode {!r}; expected one of {}".format(
+                initializer_mode, _INITIALIZER_MODES
             )
         )
     act = _ACTIVATIONS[activation]
@@ -71,17 +84,18 @@ def _build_mlp(dim: int, width: int, depth: int, activation: str) -> nn.Sequenti
         layers += [nn.Linear(width, width), act()]
     layers += [nn.Linear(width, 2 * dim)]
     network = nn.Sequential(*layers)
-    for layer in network[:-1]:
-        if isinstance(layer, nn.Linear):
-            if activation == "relu":
-                nn.init.kaiming_uniform_(layer.weight, nonlinearity="relu")
-                with torch.no_grad():
-                    layer.weight.mul_(0.25)
-            elif activation == "silu":
-                nn.init.xavier_uniform_(layer.weight)
-                with torch.no_grad():
-                    layer.weight.mul_(0.25)
-            nn.init.zeros_(layer.bias)
+    if initializer_mode == "scaled_activation_aware":
+        for layer in network[:-1]:
+            if isinstance(layer, nn.Linear):
+                if activation == "relu":
+                    nn.init.kaiming_uniform_(layer.weight, nonlinearity="relu")
+                    with torch.no_grad():
+                        layer.weight.mul_(0.25)
+                elif activation == "silu":
+                    nn.init.xavier_uniform_(layer.weight)
+                    with torch.no_grad():
+                        layer.weight.mul_(0.25)
+                nn.init.zeros_(layer.bias)
     return network
 
 
@@ -96,10 +110,11 @@ class _CouplingLayer(nn.Module):
         depth: int,
         activation: str,
         max_log_scale: float,
+        initializer_mode: str,
     ) -> None:
         super().__init__()
         self.register_buffer("mask", mask)
-        self.net = _build_mlp(dim, width, depth, activation)
+        self.net = _build_mlp(dim, width, depth, activation, initializer_mode)
         self.max_log_scale = float(max_log_scale)
         # zero-init the final layer so the flow starts near identity.
         final = self.net[-1]
@@ -143,11 +158,18 @@ class _FlowModule(nn.Module):
         max_log_scale: float,
         mixing_mode: str,
         seed: int,
+        initializer_mode: str = "scaled_activation_aware",
     ) -> None:
         super().__init__()
         self.dim = dim
         if mixing_mode not in ("alternating_only", "fixed_random_permutation"):
             raise ValueError("unknown mixing_mode {!r}".format(mixing_mode))
+        if initializer_mode not in _INITIALIZER_MODES:
+            raise ValueError(
+                "unknown initializer_mode {!r}; expected one of {}".format(
+                    initializer_mode, _INITIALIZER_MODES
+                )
+            )
         layers = []
         permutations = []
         rng = np.random.default_rng(int(seed))
@@ -156,7 +178,8 @@ class _FlowModule(nn.Module):
             mask = pattern.to(torch.get_default_dtype())
             layers.append(
                 _CouplingLayer(
-                    dim, mask, hidden_width, hidden_depth, activation, max_log_scale
+                    dim, mask, hidden_width, hidden_depth, activation, max_log_scale,
+                    initializer_mode,
                 )
             )
             permutation = (
@@ -167,7 +190,9 @@ class _FlowModule(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.mixing_mode = mixing_mode
         for index, permutation in enumerate(permutations):
-            self.register_buffer("permutation_{}".format(index), permutation)
+            self.register_buffer(
+                "permutation_{}".format(index), permutation, persistent=False
+            )
         self._log_base_const = 0.5 * dim * float(np.log(2.0 * np.pi))
 
     def inverse(self, x: torch.Tensor):
@@ -241,6 +266,7 @@ class AffineCouplingFlow:
         grad_clip_norm: Optional[float] = 5.0,
         weight_decay: float = 0.0,
         mixing_mode: str = "alternating_only",
+        initializer_mode: str = "legacy_torch_default",
         memorization_mode: bool = False,
         dropout: float = 0.0,
         data_augmentation: bool = False,
@@ -267,6 +293,13 @@ class AffineCouplingFlow:
         self.grad_clip_norm = grad_clip_norm
         self.weight_decay = float(weight_decay)
         self.mixing_mode = mixing_mode
+        if initializer_mode not in _INITIALIZER_MODES:
+            raise ValueError(
+                "unknown initializer_mode {!r}; expected one of {}".format(
+                    initializer_mode, _INITIALIZER_MODES
+                )
+            )
+        self.initializer_mode = initializer_mode
         self.memorization_mode = bool(memorization_mode)
         self.dropout = _validate_unimplemented_neutral_float("dropout", dropout)
         if not isinstance(data_augmentation, (bool, np.bool_)):
@@ -313,6 +346,7 @@ class AffineCouplingFlow:
                 max_log_scale=self.max_log_scale,
                 mixing_mode=self.mixing_mode,
                 seed=int(seed),
+                initializer_mode=self.initializer_mode,
             )
         finally:
             torch.set_default_dtype(prev)
@@ -396,6 +430,7 @@ class AffineCouplingFlow:
             "grad_clip_norm": self.grad_clip_norm,
             "weight_decay": self.weight_decay,
             "mixing_mode": self.mixing_mode,
+            "initializer_mode": self.initializer_mode,
             "memorization_mode": self.memorization_mode,
             "dropout": self.dropout,
             "data_augmentation": self.data_augmentation,
@@ -462,5 +497,26 @@ class AffineCouplingFlow:
         state = torch.load(
             checkpoint_dir / "state_dict.pt", map_location=model.device
         )
-        model._module.load_state_dict(state)
+
+        # Interim PR #15 checkpoints registered the deterministic permutation
+        # tensors as persistent buffers; the module no longer expects them in
+        # its state dict (they are reconstructed from config + init_seed), so
+        # strip only keys that exactly match the legacy permutation naming and
+        # cross-check their values against the reconstruction when possible.
+        # Old (pre-permutation) and new checkpoints simply have none of these
+        # keys and load unchanged.
+        legacy_keys = [k for k in state if _LEGACY_PERMUTATION_KEY_RE.match(k)]
+        for key in legacy_keys:
+            index = int(_LEGACY_PERMUTATION_KEY_RE.match(key).group(1))
+            if index < len(model._module.layers):
+                reconstructed = getattr(model._module, key)
+                if not torch.equal(state[key].to(reconstructed.device), reconstructed):
+                    raise ValueError(
+                        "checkpoint permutation {!r} does not match the "
+                        "permutation reconstructed from config and init_seed"
+                        .format(key)
+                    )
+            del state[key]
+
+        model._module.load_state_dict(state, strict=True)
         return model

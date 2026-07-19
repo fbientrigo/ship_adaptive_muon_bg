@@ -24,6 +24,7 @@ def _model(row):
         "early_stopping": False, "max_epochs": 200,
         "checkpoint_interval": 10,
         "grad_clip_norm": 5.0,
+        "initializer_mode": "scaled_activation_aware",
     })
     return {"name": row["doe_id"], "family": "affine_coupling", "params": params}
 
