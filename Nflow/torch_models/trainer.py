@@ -183,9 +183,15 @@ def train_flow(
                 if value < best_val - 1e-9:
                     best_val, best_step = value, epoch
                     best_state = {k: v.detach().clone() for k, v in module.state_dict().items()}
-            # Hash every epoch so the history is auditable; checkpoint_interval
-            # remains the fixed persistence cadence for memorization runs.
-            record["checkpoint_hash"] = _state_hash(module)
+            # Hash every epoch so the history is auditable. This is a
+            # tensor-state-only hash (learned parameters), distinct from
+            # AffineCouplingFlow.checkpoint_hash(), which also fingerprints
+            # the functional config, init_seed and reconstructed
+            # permutations at save time. checkpoint_interval must be 1:
+            # only the final state is ever persisted as a checkpoint
+            # artifact; this per-epoch value is an audit-only history, not
+            # periodic checkpoint persistence.
+            record["state_dict_hash"] = _state_hash(module)
             history.append(record)
             if estimator.early_stopping and val_tensor is not None and stale >= estimator.patience:
                 warnings.append("early stopped at epoch {} (patience {})".format(epoch, estimator.patience))

@@ -469,3 +469,100 @@ def test_unexpected_non_permutation_key_fails_to_load(tmp_path):
 
     with pytest.raises(RuntimeError):
         AffineCouplingFlow.load(tmp_path)
+
+
+# -- functional checkpoint fingerprint -----------------------------------------
+
+
+def test_identical_weights_different_permutations_produce_different_hash():
+    a = AffineCouplingFlow(
+        dimension=D, number_of_blocks=3, hidden_width=8, hidden_depth=1,
+        mixing_mode="fixed_random_permutation",
+    )
+    a._build_module(seed=9)
+    b = AffineCouplingFlow(
+        dimension=D, number_of_blocks=3, hidden_width=8, hidden_depth=1,
+        mixing_mode="fixed_random_permutation",
+    )
+    b._build_module(seed=9)
+    # Same seed => identical weights and permutations at this point.
+    assert a.checkpoint_hash() == b.checkpoint_hash()
+
+    # Mutate only b's permutation buffers in place; learned weights untouched.
+    with torch.no_grad():
+        b._module.permutation_0.copy_(torch.flip(b._module.permutation_0, dims=[0]))
+    for pa, pb in zip(a._module.parameters(), b._module.parameters()):
+        torch.testing.assert_close(pa, pb)
+    assert a.checkpoint_hash() != b.checkpoint_hash()
+
+
+def test_identical_config_seed_permutations_and_weights_produce_identical_hash():
+    def _build():
+        flow = AffineCouplingFlow(
+            dimension=D, number_of_blocks=3, hidden_width=8, hidden_depth=1,
+            mixing_mode="fixed_random_permutation", initializer_mode="scaled_activation_aware",
+        )
+        flow._build_module(seed=17)
+        return flow
+
+    assert _build().checkpoint_hash() == _build().checkpoint_hash()
+
+
+def test_manifest_carries_functional_checkpoint_hash():
+    flow = AffineCouplingFlow(dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1)
+    manifest = flow.manifest()
+    assert manifest["checkpoint_hash"] == flow.checkpoint_hash()
+    assert manifest["checkpoint_hash_schema"] == "functional_state_v2"
+
+
+def test_save_writes_functional_hash_schema(tmp_path):
+    flow = AffineCouplingFlow(dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1)
+    manifest = flow.save(tmp_path)
+    assert manifest["checkpoint_hash_schema"] == "functional_state_v2"
+    payload = json.loads((tmp_path / "checkpoint" / "model_config.json").read_text())
+    assert payload["hash_schema"] == "functional_state_v2"
+    recorded = (tmp_path / "checkpoint" / "checkpoint_hash.txt").read_text().strip()
+    assert recorded == manifest["checkpoint_hash"] == flow.checkpoint_hash()
+
+
+def test_changing_init_seed_after_save_is_detected_on_load(tmp_path):
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1,
+        mixing_mode="fixed_random_permutation",
+    )
+    flow.save(tmp_path)
+    config_path = tmp_path / "checkpoint" / "model_config.json"
+    payload = json.loads(config_path.read_text())
+    payload["init_seed"] = int(payload["init_seed"]) + 1
+    config_path.write_text(json.dumps(payload))
+
+    with pytest.raises(ValueError, match="checkpoint_hash verification failed"):
+        AffineCouplingFlow.load(tmp_path)
+
+
+def test_changing_functional_metadata_after_save_is_detected_on_load(tmp_path):
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1,
+        mixing_mode="alternating_only",
+    )
+    flow.save(tmp_path)
+    config_path = tmp_path / "checkpoint" / "model_config.json"
+    payload = json.loads(config_path.read_text())
+    payload["config"]["mixing_mode"] = "fixed_random_permutation"
+    config_path.write_text(json.dumps(payload))
+
+    with pytest.raises(ValueError, match="checkpoint_hash verification failed"):
+        AffineCouplingFlow.load(tmp_path)
+
+
+# -- checkpoint_interval --------------------------------------------------------
+
+
+def test_default_checkpoint_interval_is_one():
+    assert AffineCouplingFlow(dimension=D).checkpoint_interval == 1
+
+
+@pytest.mark.parametrize("value", [0, 2, 10, -1])
+def test_non_default_checkpoint_interval_rejected(value):
+    with pytest.raises(ValueError, match="checkpoint_interval must be 1"):
+        AffineCouplingFlow(dimension=D, checkpoint_interval=value)

@@ -22,7 +22,10 @@ def _model(row):
         "memorization_mode": True, "weight_decay": 0.0, "dropout": 0.0,
         "data_augmentation": False, "input_noise_std": 0.0,
         "early_stopping": False, "max_epochs": 200,
-        "checkpoint_interval": 10,
+        # Periodic checkpoint-artifact persistence is not implemented; only
+        # the final state is ever saved, so checkpoint_interval must be 1
+        # (AffineCouplingFlow rejects any other value).
+        "checkpoint_interval": 1,
         "grad_clip_norm": 5.0,
         "initializer_mode": "scaled_activation_aware",
     })

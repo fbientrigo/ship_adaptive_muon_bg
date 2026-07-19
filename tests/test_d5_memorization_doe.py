@@ -157,6 +157,17 @@ def test_versioned_matrix_and_smoke_configs_are_runnable_definitions():
     assert smoke.evaluation.rare_sample_count == 2000
 
 
+@pytest.mark.parametrize(
+    "config_name",
+    ["d5_memorization_matrix_v0.json", "d3_memorization_control_v0.json", "d5_memorization_smoke_v0.json"],
+)
+def test_generated_configs_use_checkpoint_interval_one(config_name):
+    config = ExperimentConfig.from_json_file("configs/density_lab/doe_v0/" + config_name)
+    assert config.models, "expected at least one model in {}".format(config_name)
+    for model in config.models:
+        assert model.params["checkpoint_interval"] == 1
+
+
 def test_d3_stratified_pair_is_rejected_before_run_expansion():
     target = make_controlled_target("D3")
     assert getattr(target, "rare_mass", None) is None
@@ -279,7 +290,7 @@ def test_memorization_mode_enforcement_and_epoch_metrics():
         "feature_space_train_rare_nll", "feature_space_validation_nll",
         "feature_space_validation_main_nll", "feature_space_validation_rare_nll",
         "gradient_norm",
-        "max_abs_log_scale", "checkpoint_hash", "weight_normalization",
+        "max_abs_log_scale", "state_dict_hash", "weight_normalization",
     }
     assert required <= result.train_history[-1].keys()
     assert result.best_step == 1

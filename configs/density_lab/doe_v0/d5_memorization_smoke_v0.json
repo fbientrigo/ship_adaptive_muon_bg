@@ -24,7 +24,7 @@
       "params": {
         "activation": "relu",
         "batch_size": 128,
-        "checkpoint_interval": 10,
+        "checkpoint_interval": 1,
         "data_augmentation": false,
         "dropout": 0.0,
         "early_stopping": false,
@@ -48,7 +48,7 @@
       "params": {
         "activation": "relu",
         "batch_size": 512,
-        "checkpoint_interval": 10,
+        "checkpoint_interval": 1,
         "data_augmentation": false,
         "dropout": 0.0,
         "early_stopping": false,
@@ -72,7 +72,7 @@
       "params": {
         "activation": "silu",
         "batch_size": 128,
-        "checkpoint_interval": 10,
+        "checkpoint_interval": 1,
         "data_augmentation": false,
         "dropout": 0.0,
         "early_stopping": false,

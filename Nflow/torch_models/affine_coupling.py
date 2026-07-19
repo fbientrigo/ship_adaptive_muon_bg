@@ -43,6 +43,13 @@ _INITIALIZER_MODES = ("legacy_torch_default", "scaled_activation_aware")
 
 _LEGACY_PERMUTATION_KEY_RE = re.compile(r"^permutation_(\d+)$")
 
+# Schema tag for the functional checkpoint fingerprint (state_dict + the
+# model-function config, init_seed and reconstructed permutations). Older
+# checkpoints have no "hash_schema" field and are not re-verified on load;
+# only the strict state_dict load (with the legacy permutation-key migration)
+# applies to them.
+_CHECKPOINT_HASH_SCHEMA = "functional_state_v2"
+
 
 def _validate_unimplemented_neutral_float(name: str, value: Any) -> float:
     if isinstance(value, bool) or not isinstance(value, Real):
@@ -312,8 +319,14 @@ class AffineCouplingFlow:
         )
         self.early_stopping = bool(early_stopping)
         self.checkpoint_interval = int(checkpoint_interval)
-        if self.checkpoint_interval < 1:
-            raise ValueError("checkpoint_interval must be >= 1")
+        if self.checkpoint_interval != 1:
+            raise ValueError(
+                "checkpoint_interval must be 1; periodic checkpoint "
+                "persistence (interval != 1) is not implemented, and only "
+                "the final state is ever saved, so other values would "
+                "change the config hash without changing training or "
+                "checkpoint artifacts"
+            )
         if self.memorization_mode and any((
             self.weight_decay != 0.0, self.dropout != 0.0,
             self.data_augmentation, self.input_noise_std != 0.0,
@@ -452,6 +465,8 @@ class AffineCouplingFlow:
                 "permutations": self._module.permutations(),
                 "permutation_log_abs_det": 0.0,
                 "loss_normalization": "sum_weights",
+                "checkpoint_hash": self.checkpoint_hash(),
+                "checkpoint_hash_schema": _CHECKPOINT_HASH_SCHEMA,
             }
         )
         return manifest
@@ -465,8 +480,30 @@ class AffineCouplingFlow:
         torch.save(self._module.state_dict(), buffer)
         return buffer.getvalue()
 
+    def _functional_fingerprint_payload(self) -> Dict[str, Any]:
+        # Only fields that change the model *function* (what log_prob/sample
+        # compute), not training-only knobs like learning_rate, max_epochs,
+        # device or checkpoint_interval.
+        return {
+            "schema": _CHECKPOINT_HASH_SCHEMA,
+            "state_dict_sha256": hashlib.sha256(self.state_dict_bytes()).hexdigest(),
+            "init_seed": self._init_seed,
+            "permutations": self._module.permutations(),
+            "mixing_mode": self.mixing_mode,
+            "initializer_mode": self.initializer_mode,
+            "dimension": self.dimension,
+            "number_of_blocks": self.number_of_blocks,
+            "hidden_width": self.hidden_width,
+            "hidden_depth": self.hidden_depth,
+            "activation": self.activation,
+            "max_log_scale": self.max_log_scale,
+            "dtype": self.dtype_name,
+        }
+
     def checkpoint_hash(self) -> str:
-        return hashlib.sha256(self.state_dict_bytes()).hexdigest()
+        payload = self._functional_fingerprint_payload()
+        blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()
 
     def save(self, output_dir: Path) -> Dict[str, Any]:
         output_dir = Path(output_dir)
@@ -477,6 +514,7 @@ class AffineCouplingFlow:
             "config": self.config(), "requested_device": self.requested_device,
             "init_seed": self._init_seed,
             "permutations": self._module.permutations(),
+            "hash_schema": _CHECKPOINT_HASH_SCHEMA,
         }, indent=2))
         checkpoint_hash = self.checkpoint_hash()
         (checkpoint_dir / "checkpoint_hash.txt").write_text(checkpoint_hash)
@@ -484,6 +522,7 @@ class AffineCouplingFlow:
             "family": self.family,
             "checkpoint_dir": "checkpoint",
             "checkpoint_hash": checkpoint_hash,
+            "checkpoint_hash_schema": _CHECKPOINT_HASH_SCHEMA,
         }
 
     @classmethod
@@ -519,4 +558,24 @@ class AffineCouplingFlow:
             del state[key]
 
         model._module.load_state_dict(state, strict=True)
+
+        # Checkpoints tagged with the functional hash schema are verified: a
+        # mismatch means the reconstructed model function (permutations,
+        # init_seed, or functional config) does not match what was saved,
+        # even though the learned tensors loaded successfully. Checkpoints
+        # without a "hash_schema" field (pre-fix and interim PR #15
+        # checkpoints) keep the previous behavior of no hash verification.
+        if payload.get("hash_schema") == _CHECKPOINT_HASH_SCHEMA:
+            hash_path = checkpoint_dir / "checkpoint_hash.txt"
+            if hash_path.exists():
+                recorded_hash = hash_path.read_text().strip()
+                recomputed_hash = model.checkpoint_hash()
+                if recorded_hash != recomputed_hash:
+                    raise ValueError(
+                        "checkpoint_hash verification failed: recorded {!r} "
+                        "!= recomputed {!r}; functional metadata, init_seed "
+                        "or permutations do not match the saved checkpoint"
+                        .format(recorded_hash, recomputed_hash)
+                    )
+
         return model
