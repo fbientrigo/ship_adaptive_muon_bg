@@ -120,6 +120,35 @@ def get_git_commit() -> str:
         return "unknown"
 
 
+def update_queue_state(artifact_dir, active_job=None, pid=None, completed=None, failed=None, pending=None):
+    queue_state_path = os.path.join(artifact_dir, "queue_state.json")
+    state = {}
+    if os.path.exists(queue_state_path):
+        try:
+            with open(queue_state_path, "r") as f:
+                state = json.load(f)
+        except Exception:
+            pass
+            
+    if active_job is not None:
+        state["active_job"] = active_job
+    if pid is not None:
+        state["pid"] = pid
+    if completed is not None:
+        state["completed_jobs"] = completed
+    if failed is not None:
+        state["failed_jobs"] = failed
+    if pending is not None:
+        state["pending_jobs"] = pending
+    state["heartbeat"] = time.time()
+    
+    try:
+        with open(queue_state_path, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception:
+        pass
+
+
 # --- Preprocessing scaling plots helper (Matplotlib) ---
 
 def generate_scaling_plots(raw_data, transformed_data, variant_id, output_dir):
@@ -802,6 +831,7 @@ def run_job_outer(job_name, args, target_hashes, git_commit):
     # Launch as independent python subprocess
     cmd = [
         sys.executable,
+        "-u",
         __file__,
         "--run-job", job_name,
         "--device", args.device,
@@ -809,21 +839,27 @@ def run_job_outer(job_name, args, target_hashes, git_commit):
         "--artifact-dir", args.artifact_dir
     ]
     
+    log_path = os.path.join(job_dir, "run.log")
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        # We query and stream stdout
-        while True:
-            line = proc.stdout.readline()
-            if not line and proc.poll() is not None:
-                break
-            if line:
-                print(f"  [Subprocess] {line.strip()}")
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            update_queue_state(args.artifact_dir, active_job=job_name, pid=proc.pid)
+            # We query and stream stdout
+            while True:
+                line = proc.stdout.readline()
+                if not line and proc.poll() is not None:
+                    break
+                if line:
+                    print(f"  [Subprocess] {line.strip()}", flush=True)
+                    log_file.write(line)
+                    log_file.flush()
+                    
+            stdout, stderr = proc.communicate()
+            if stdout:
+                log_file.write(stdout)
+                print(f"  [Subprocess] {stdout.strip()}", flush=True)
                 
-        stdout, stderr = proc.communicate()
-        if stderr:
-            print(f"  [Subprocess Error] {stderr.strip()}")
-            
-        ret_code = proc.poll()
+            ret_code = proc.poll()
         
         # Post cleanup wait
         time.sleep(1.0)
@@ -1136,41 +1172,87 @@ def main():
     print(f"Git commit: {git_commit}")
     print(f"Jobs in queue: {jobs_list}")
 
+    completed_jobs = []
+    failed_jobs = []
+    pending_jobs = list(jobs_list)
+    
+    update_queue_state(
+        args.artifact_dir,
+        active_job=None,
+        pid=None,
+        completed=completed_jobs,
+        failed=failed_jobs,
+        pending=pending_jobs
+    )
+
     for job in jobs_list:
-        # Check stop conditions/filter
+        pending_jobs.remove(job)
+        update_queue_state(
+            args.artifact_dir,
+            active_job=job,
+            pending=pending_jobs
+        )
+        
+        ok = False
         if job == "01_build_afterms_shards":
-            # Running shard builder directly or via subprocess
             if args.dry_run:
                 print(f"[DRY-RUN] Would run build_afterms_shards.py")
+                ok = True
             else:
                 ok = run_job_outer(job, args, target_hashes, git_commit)
-                if not ok:
-                    print("Queue halted due to job failure.")
-                    sys.exit(1)
         elif job == "12_memory_release_repeat_smoke":
             if args.dry_run:
                 print(f"[DRY-RUN] Would run memory_release_repeat_smoke")
+                ok = True
             else:
-                execute_job_12_memory_release(args, target_hashes, git_commit)
-                # Write standard status for job 12
-                status_path = os.path.join(args.artifact_dir, "jobs", job, "status.json")
-                with open(status_path, "w") as f:
-                    json.dump({"status": "completed", "job_name": job, "git_commit": git_commit}, f)
+                try:
+                    execute_job_12_memory_release(args, target_hashes, git_commit)
+                    status_path = os.path.join(args.artifact_dir, "jobs", job, "status.json")
+                    with open(status_path, "w") as f:
+                        json.dump({"status": "completed", "job_name": job, "git_commit": git_commit}, f)
+                    ok = True
+                except Exception as e:
+                    print(f"Job 12 failed: {e}")
+                    ok = False
         elif job == "13_build_nightly_report":
             if args.dry_run:
                 print(f"[DRY-RUN] Would build final report")
+                ok = True
             else:
-                build_final_nightly_report(args, git_commit, target_hashes)
-                status_path = os.path.join(args.artifact_dir, "jobs", job, "status.json")
-                with open(status_path, "w") as f:
-                    json.dump({"status": "completed", "job_name": job, "git_commit": git_commit}, f)
+                try:
+                    build_final_nightly_report(args, git_commit, target_hashes)
+                    status_path = os.path.join(args.artifact_dir, "jobs", job, "status.json")
+                    with open(status_path, "w") as f:
+                        json.dump({"status": "completed", "job_name": job, "git_commit": git_commit}, f)
+                    ok = True
+                except Exception as e:
+                    print(f"Job 13 failed: {e}")
+                    ok = False
         else:
-            # Neural / standard verification jobs
-            ok = run_job_outer(job, args, target_hashes, git_commit)
-            if not ok:
-                # Check if we should stop
-                print(f"Job {job} failed. Halting queue.")
-                sys.exit(1)
+            if args.dry_run:
+                print(f"[DRY-RUN] Job {job} would execute.")
+                ok = True
+            else:
+                ok = run_job_outer(job, args, target_hashes, git_commit)
+
+        if ok:
+            completed_jobs.append(job)
+            update_queue_state(
+                args.artifact_dir,
+                active_job=None,
+                pid=None,
+                completed=completed_jobs
+            )
+        else:
+            failed_jobs.append(job)
+            update_queue_state(
+                args.artifact_dir,
+                active_job=None,
+                pid=None,
+                failed=failed_jobs
+            )
+            print(f"Job {job} failed. Halting queue.")
+            sys.exit(1)
 
         # Stop after target job
         if args.stop_after and job == args.stop_after:
