@@ -280,15 +280,15 @@ def run_validate_afterms_shards(args, job_dir):
         
     shards_checked = []
     for shard in manifest.get("shards", []):
-        file_path = os.path.join(args.shard_dir, shard["file_name"])
-        indices_path = os.path.join(args.shard_dir, shard["indices_file_name"])
+        file_path = os.path.join(args.shard_dir, shard["npy_file"])
+        indices_path = os.path.join(args.shard_dir, shard["indices_file"])
         
         exists = os.path.exists(file_path)
         indices_exists = os.path.exists(indices_path)
         size = os.path.getsize(file_path) if exists else 0
         
         shards_checked.append({
-            "file_name": shard["file_name"],
+            "npy_file": shard["npy_file"],
             "exists": exists,
             "indices_exists": indices_exists,
             "size_bytes": size,
