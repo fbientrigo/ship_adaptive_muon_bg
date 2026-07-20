@@ -8,3 +8,4 @@ dist/
 # Run/campaign outputs (large data stays out of git)
 outputs/
 artifacts/
+graphify-out/cache
