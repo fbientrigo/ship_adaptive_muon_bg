@@ -761,8 +761,10 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
                     eval_metrics["finite_log_probability_rate"] = float(np.mean(np.isfinite(test_lp)))
                     
                     # Inverse round trip error
-                    features_back = pipeline.transform(np.column_stack((gen_feats, np.zeros((gen_feats.shape[0], 3)))))
-                    eval_metrics["inverse_round_trip_error"] = float(np.mean(np.abs(features_back - gen_scaled)))
+                    test_subset = test_data[:min(1000, test_data.shape[0])]
+                    test_scaled_subset = pipeline.transform(test_subset)
+                    test_back = pipeline.inverse(test_scaled_subset)
+                    eval_metrics["inverse_round_trip_error"] = float(np.mean(np.abs(test_back - test_subset[:, :5])))
                     
                     # Nearest Neighbor comparisons
                     eval_metrics["nn_train_generated"] = compute_nn_distances(gen_feats, train_data[:, :5])
