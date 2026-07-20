@@ -25,7 +25,8 @@ import traceback
 import shutil
 import numpy as np
 
-# Add src/ to path to allow importing ship_muon_bg
+# Add project root and src/ to path to allow importing ship_muon_bg and Nflow
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from ship_muon_bg.data_contracts import load_muon_pkl, dataset_hash, schema
@@ -230,9 +231,123 @@ def evaluate_generated_samples(test_data, q_samples, atol=1e-6):
         "exceedance_counts": exceedance_counts,
         "marginal_summaries": marginal_summaries,
     }
+def run_environment_and_dataset_smoke(args, job_dir):
+    import torch
+    import platform
+    
+    os.makedirs(job_dir, exist_ok=True)
+    
+    git_commit = get_git_commit()
+    
+    sys_info = {
+        "platform": platform.platform(),
+        "python_version": sys.version,
+        "torch_version": torch.__version__,
+        "cuda_available": torch.cuda.is_available(),
+        "cuda_version": torch.version.cuda if torch.cuda.is_available() else None,
+        "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        "available_disk_gb": shutil.disk_usage(".").free / (1024**3),
+    }
+    
+    pkl_file = "data/raw/nflow_releases/muonsFullMC_afterMS.pkl"
+    file_info = {}
+    if os.path.exists(pkl_file):
+        file_info["exists"] = True
+        file_info["size_bytes"] = os.path.getsize(pkl_file)
+        file_info["sha256"] = audit.file_sha256(pkl_file)
+    else:
+        file_info["exists"] = False
+        
+    out = {
+        "system_info": sys_info,
+        "dataset_file_info": file_info,
+        "git_commit": git_commit,
+    }
+    
+    with open(os.path.join(job_dir, "metrics.json"), "w") as f:
+        json.dump(out, f, indent=2)
+
+
+def run_validate_afterms_shards(args, job_dir):
+    os.makedirs(job_dir, exist_ok=True)
+    manifest_path = os.path.join(args.shard_dir, "shard_manifest.json")
+    
+    if not os.path.exists(manifest_path):
+        raise FileNotFoundError(f"Shard manifest not found at {manifest_path}")
+        
+    with open(manifest_path, "r") as f:
+        manifest = json.load(f)
+        
+    shards_checked = []
+    for shard in manifest.get("shards", []):
+        file_path = os.path.join(args.shard_dir, shard["file_name"])
+        indices_path = os.path.join(args.shard_dir, shard["indices_file_name"])
+        
+        exists = os.path.exists(file_path)
+        indices_exists = os.path.exists(indices_path)
+        size = os.path.getsize(file_path) if exists else 0
+        
+        shards_checked.append({
+            "file_name": shard["file_name"],
+            "exists": exists,
+            "indices_exists": indices_exists,
+            "size_bytes": size,
+            "row_count": shard["row_count"],
+        })
+        
+    with open(os.path.join(job_dir, "metrics.json"), "w") as f:
+        json.dump({
+            "manifest_checked": True,
+            "shards_checked": shards_checked,
+            "total_shards": len(shards_checked),
+        }, f, indent=2)
+
+
+def run_preprocessing_roundtrip_and_plots(args, job_dir):
+    os.makedirs(job_dir, exist_ok=True)
+    
+    train_file = os.path.join(args.shard_dir, "train_shard_000.npy")
+    if not os.path.exists(train_file):
+        raise FileNotFoundError(f"Train shard not found: {train_file}")
+        
+    train_data = np.load(train_file)
+    
+    results = {}
+    variants = ["identity_standardized_v0", "quantile_normal_v0", "cartesian_log1p_pz_v0"]
+    
+    for var_id in variants:
+        pipeline = PreprocessingPipeline(var_id, seed=20260720)
+        pipeline.fit(train_data)
+        
+        transformed = pipeline.transform(train_data)
+        reconstructed = pipeline.inverse(transformed)
+        
+        err = np.mean(np.abs(reconstructed - train_data[:, :5]))
+        
+        pz_check_err = None
+        if var_id == "cartesian_log1p_pz_v0":
+            bad_data = train_data[:10].copy()
+            bad_data[:, 2] = -1.0
+            try:
+                pipeline.transform(bad_data)
+                pz_check_err = "Failed to raise error on negative pz"
+            except ValueError:
+                pz_check_err = "Raised ValueError correctly on negative pz"
+                
+        results[var_id] = {
+            "roundtrip_mean_absolute_error": float(err),
+            "pz_check_negative": pz_check_err,
+        }
+        
+        plot_dir = os.path.join(args.artifact_dir, "plots")
+        generate_scaling_plots(train_data, transformed, var_id, plot_dir)
+        
+    with open(os.path.join(job_dir, "metrics.json"), "w") as f:
+        json.dump(results, f, indent=2)
 
 
 # --- Neural Training Subprocess Routines ---
+
 
 def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
     """Executes the training loop for a specific job name inside a clean python process."""
@@ -963,6 +1078,21 @@ def main():
             # Rename metrics to metrics_run2
             shutil.move(os.path.join(args.artifact_dir, "jobs", "12_memory_release_repeat_smoke", "metrics.json"),
                         os.path.join(args.artifact_dir, "jobs", "12_memory_release_repeat_smoke", "metrics_run2.json"))
+        elif args.run_job == "00_environment_and_dataset_smoke":
+            run_environment_and_dataset_smoke(args, os.path.join(args.artifact_dir, "jobs", args.run_job))
+        elif args.run_job == "01_build_afterms_shards":
+            cmd = [
+                sys.executable,
+                "scripts/build_afterms_shards.py",
+                "--raw-file", "data/raw/nflow_releases/muonsFullMC_afterMS.pkl",
+                "--shard-dir", args.shard_dir,
+                "--artifact-dir", args.artifact_dir
+            ]
+            subprocess.run(cmd, check=True)
+        elif args.run_job == "02_validate_afterms_shards":
+            run_validate_afterms_shards(args, os.path.join(args.artifact_dir, "jobs", args.run_job))
+        elif args.run_job == "03_preprocessing_roundtrip_and_plots":
+            run_preprocessing_roundtrip_and_plots(args, os.path.join(args.artifact_dir, "jobs", args.run_job))
         else:
             run_neural_training_subprocess(args.run_job, args.device, args.shard_dir, os.path.join(args.artifact_dir, "jobs", args.run_job))
         return 0
