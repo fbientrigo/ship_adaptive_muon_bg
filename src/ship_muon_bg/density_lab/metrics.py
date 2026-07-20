@@ -33,8 +33,10 @@ def held_out_nll(q_log_prob_on_test: np.ndarray) -> Dict[str, Any]:
 
     values = np.asarray(q_log_prob_on_test, dtype=np.float64)
     finite = np.isfinite(values)
+    nll = float(-np.mean(values[finite])) if finite.any() else float("nan")
     return {
-        "held_out_nll": float(-np.mean(values[finite])) if finite.any() else float("nan"),
+        "held_out_nll": nll,
+        "physical_space_held_out_nll": nll,
         "n_test": int(values.size),
         "non_finite_count": int((~finite).sum()),
     }
@@ -275,6 +277,50 @@ def duplicate_diagnostics(
 # --- 6, 7.3 rare-mode diagnostics -------------------------------------------
 
 
+def exact_binomial_interval(count: int, n: int, confidence: float = 0.95):
+    """Return the two-sided Clopper-Pearson interval without SciPy."""
+
+    import math
+
+    if not isinstance(count, (int, np.integer)) or not 0 <= int(count) <= int(n):
+        raise MetricError("count must be an integer in [0, n]")
+    if n < 1 or not 0.0 < confidence < 1.0:
+        raise MetricError("n and confidence must define a valid interval")
+    count, n = int(count), int(n)
+    alpha = 1.0 - float(confidence)
+
+    def cdf(k, probability):
+        if probability <= 0.0:
+            return 1.0
+        if probability >= 1.0:
+            return 0.0 if k < n else 1.0
+        logs = [
+            math.lgamma(n + 1) - math.lgamma(j + 1) - math.lgamma(n - j + 1)
+            + j * math.log(probability) + (n - j) * math.log1p(-probability)
+            for j in range(k + 1)
+        ]
+        maximum = max(logs)
+        return math.exp(maximum) * sum(math.exp(value - maximum) for value in logs)
+
+    def bisect(predicate):
+        low, high = 0.0, 1.0
+        for _ in range(64):
+            middle = (low + high) / 2.0
+            if predicate(middle):
+                high = middle
+            else:
+                low = middle
+        return (low + high) / 2.0
+
+    lower = 0.0 if count == 0 else bisect(
+        lambda p: 1.0 - cdf(count - 1, p) >= alpha / 2.0
+    )
+    upper = 1.0 if count == n else bisect(
+        lambda p: cdf(count, p) <= alpha / 2.0
+    )
+    return float(lower), float(upper)
+
+
 def rare_mode_diagnostics(
     target,
     *,
@@ -324,15 +370,16 @@ def rare_mode_diagnostics(
     if mask.any():
         rare_mean_log_q = float(np.mean(q_log[mask][np.isfinite(q_log[mask])]))
         diff = (p_log[mask] - q_log[mask])
-        rare_kl = float(np.mean(diff[np.isfinite(diff)]))
+        rare_conditional_kl = float(np.mean(diff[np.isfinite(diff)]))
     else:
         rare_mean_log_q = float("nan")
-        rare_kl = float("nan")
+        rare_conditional_kl = float("nan")
 
     # P(zero model rare samples | target mass, n): a model matching the target
     # mass would draw ~Binomial(n, target_rare_mass); the exact zero-count prob.
     n_q = q_samples.shape[0]
     prob_zero = float((1.0 - target_rare_mass) ** n_q)
+    interval_low, interval_high = exact_binomial_interval(observed_q_rare, n_q)
 
     return {
         "region_id": region_id,
@@ -344,8 +391,13 @@ def rare_mode_diagnostics(
         "observed_q_rare_sample_count": observed_q_rare,
         "soft_target_rare_posterior_mean_on_q_samples": soft_rare,
         "rare_target_rows_mean_log_q": rare_mean_log_q,
-        "rare_target_rows_forward_kl_contribution": rare_kl,
+        "rare_target_rows_conditional_forward_kl": rare_conditional_kl,
+        "rare_target_rows_forward_kl_contribution": (
+            target_rare_mass * rare_conditional_kl
+        ),
         "n_rare_target_rows": int(mask.sum()),
         "probability_of_zero_rare_samples_given_target_mass_and_n": prob_zero,
         "zero_rare_samples_flag": bool(observed_q_rare == 0),
+        "rare_mass_exact_binomial_interval_95": [interval_low, interval_high],
+        "rare_sample_budget": int(n_q),
     }

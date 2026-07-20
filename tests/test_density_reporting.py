@@ -7,10 +7,14 @@ The summary/limitations builders are NumPy-only; the plot builder is marked
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from ship_muon_bg.density_lab.reporting import (
+    PlotSeriesKey,
+    _plot_series_label,
+    _series_metric_stats,
     build_report,
     build_scientific_gate_summary,
     build_summary_tables,
@@ -32,6 +36,11 @@ def _write_run(
     scientific_status="pass",
     reasons=None,
     observed_rare=None,
+    target_stage="transformed",
+    sampling_regime="iid_target",
+    diagnostic_only=False,
+    feature_view="identity_cartesian_v0",
+    parameter_count=37416,
 ):
     run_dir = campaign_dir / run_id
     run_dir.mkdir(parents=True)
@@ -48,9 +57,13 @@ def _write_run(
     (run_dir / "experiment_config.json").write_text(
         json.dumps(
             {
-                "target": {"target_id": target_id, "variant": variant},
+                "target": {
+                    "target_id": target_id,
+                    "variant": variant,
+                    "stage": target_stage,
+                },
                 "pdg_id": 13,
-                "feature_view": {"view_id": "identity_cartesian_v0"},
+                "feature_view": {"view_id": feature_view},
                 "model": {"name": "affine_small"},
                 "seed": seed,
                 "device": device,
@@ -63,7 +76,9 @@ def _write_run(
             "held_out": {"held_out_nll": 1.0},
             "importance_ess": {"ess_over_n": ess, "catastrophic": ess < 0.01},
             "c2st": {"c2st_accuracy": 0.6},
-            "parameter_count": 37416,
+            "parameter_count": parameter_count,
+            "sampling_regime": sampling_regime,
+            "diagnostic_only": diagnostic_only,
             "scientific_gates": {
                 "gate_schema_version": "0",
                 "scientific_status": scientific_status,
@@ -230,3 +245,69 @@ def test_gate_config_hash_carried_into_records(tmp_path):
     _write_run(tmp_path, "r", device="cpu", seed=11)
     records = load_run_records(tmp_path)
     assert records[0]["gate_config_hash"] == "deadbeef"
+
+
+def test_plot_series_key_separates_scope_and_aggregates_only_matching_seeds(tmp_path):
+    common = {"device": "cpu", "target_id": "D5", "variant": "rare_1e-3"}
+    _write_run(tmp_path, "base_s11", seed=11, fkl=0.1, **common)
+    _write_run(tmp_path, "base_s22", seed=22, fkl=0.3, **common)
+    _write_run(
+        tmp_path, "before_d4", seed=11, fkl=0.4,
+        target_stage="base_before_d4", **common
+    )
+    _write_run(
+        tmp_path, "stratified", seed=11, fkl=0.5,
+        sampling_regime="exact_stratified", **common
+    )
+    _write_run(
+        tmp_path, "diagnostic", seed=11, fkl=0.6,
+        diagnostic_only=True, **common
+    )
+
+    records = load_run_records(tmp_path)
+    summary = build_summary_tables(records, tmp_path / "report")
+    assert len(summary["aggregate"]) == 4
+
+    base_key = PlotSeriesKey("D5-1e-3", "transformed", "iid_target", False)
+    stats = {key: (mean, std) for key, mean, std in _series_metric_stats(records, "forward_kl")}
+    assert len(stats) == 4
+    assert stats[base_key] == pytest.approx((0.2, 0.1))
+    assert "DIAGNOSTIC ONLY" in _plot_series_label(
+        PlotSeriesKey("D5-1e-3", "transformed", "iid_target", True)
+    )
+
+    base_aggregate = [
+        row for row in summary["aggregate"]
+        if (
+            row["target_label"], row["target_stage"], row["sampling_regime"],
+            row["diagnostic_only"],
+        ) == base_key
+    ]
+    assert len(base_aggregate) == 1
+    assert base_aggregate[0]["n_seeds"] == 2
+    assert base_aggregate[0]["forward_kl_mean_noncatastrophic"] == pytest.approx(0.2)
+
+
+@pytest.mark.lab
+def test_build_report_plots_all_use_scoped_series_without_error(tmp_path):
+    pytest.importorskip("matplotlib")
+    common = {
+        "device": "cpu",
+        "target_id": "D5",
+        "variant": "rare_1e-3",
+        "observed_rare": 10,
+    }
+    _write_run(tmp_path, "identity", seed=11, parameter_count=100, **common)
+    _write_run(
+        tmp_path, "cylindrical", seed=22, parameter_count=200,
+        feature_view="cylindrical_v0", diagnostic_only=True, **common
+    )
+
+    result = build_report(tmp_path, with_plots=True)
+    assert {Path(path).name for path in result["plots"]} == {
+        "quality_by_target.png",
+        "rare_mode_recovery.png",
+        "feature_view_comparison.png",
+        "capacity_frontier.png",
+    }
+    assert not (tmp_path / "report" / "plots_error.txt").exists()

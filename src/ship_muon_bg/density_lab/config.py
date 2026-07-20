@@ -54,16 +54,41 @@ class DatasetSpec:
 
 
 @dataclass(frozen=True)
+class SamplingSpec:
+    regime: str = "iid_target"
+    sampling_rare_fraction: Optional[float] = None
+
+    def validate(self) -> None:
+        from .sampling import SAMPLING_REGIMES
+
+        if self.regime not in SAMPLING_REGIMES:
+            raise ConfigError("unknown sampling regime {!r}".format(self.regime))
+        if self.regime != "iid_target":
+            value = self.sampling_rare_fraction
+            if value is None or not 0.0 < float(value) < 1.0:
+                raise ConfigError("stratified sampling requires 0 < sampling_rare_fraction < 1")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class TargetSpec:
     target_id: str
     variant: Optional[str] = None
+    stage: str = "transformed"
 
     def validate(self) -> None:
         if not isinstance(self.target_id, str) or not self.target_id:
             raise ConfigError("TargetSpec.target_id must be a non-empty string")
+        if self.stage not in ("transformed", "base_before_d4"):
+            raise ConfigError("TargetSpec.stage is invalid")
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"target_id": self.target_id, "variant": self.variant}
+        payload = {"target_id": self.target_id, "variant": self.variant}
+        if self.stage != "transformed":
+            payload["stage"] = self.stage
+        return payload
 
 
 @dataclass(frozen=True)
@@ -106,9 +131,20 @@ class EvaluationSpec:
     exceedance_pz_thresholds: Tuple[float, ...] = (60.0, 70.0)
     catastrophic_ess_threshold: float = 0.01
     near_duplicate_atol: float = 1e-6
+    rare_sample_count: int = 100000
+    _include_rare_sample_count: bool = field(default=True, repr=False, compare=False)
+
+    def validate(self) -> None:
+        for name in ("ess_sample_count", "c2st_sample_count", "rare_sample_count"):
+            value = getattr(self, name)
+            if not isinstance(value, int) or value < 1:
+                raise ConfigError("EvaluationSpec.{} must be an int >= 1".format(name))
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
+        include_rare = d.pop("_include_rare_sample_count")
+        if not include_rare:
+            d.pop("rare_sample_count")
         d["tail_quantiles"] = list(self.tail_quantiles)
         d["exceedance_pz_thresholds"] = list(self.exceedance_pz_thresholds)
         return d
@@ -156,9 +192,11 @@ class RunSpec:
     evaluation: EvaluationSpec
     device: str
     scientific_gates: ScientificGateSpec = field(default_factory=ScientificGateSpec)
+    sampling: SamplingSpec = field(default_factory=SamplingSpec)
+    doe_seed: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "schema_version": CONFIG_SCHEMA_VERSION,
             "experiment_id": self.experiment_id,
             "target": self.target.to_dict(),
@@ -171,6 +209,11 @@ class RunSpec:
             "device": self.device,
             "scientific_gates": self.scientific_gates.to_dict(),
         }
+        if self.sampling != SamplingSpec():
+            payload["sampling"] = self.sampling.to_dict()
+        if self.doe_seed is not None:
+            payload["doe_seed"] = int(self.doe_seed)
+        return payload
 
     def resolved_gate_spec(self) -> ScientificGateSpec:
         """Gate spec with its ESS threshold resolved from the evaluation config."""
@@ -194,6 +237,8 @@ class ExperimentConfig:
     tracking: TrackingSpec = field(default_factory=TrackingSpec)
     resources: ResourceSpec = field(default_factory=ResourceSpec)
     scientific_gates: ScientificGateSpec = field(default_factory=ScientificGateSpec)
+    sampling_regimes: List[SamplingSpec] = field(default_factory=lambda: [SamplingSpec()])
+    doe_seed: Optional[int] = None
     description: str = ""
     schema_version: str = CONFIG_SCHEMA_VERSION
 
@@ -204,8 +249,36 @@ class ExperimentConfig:
             if not getattr(self, group_name):
                 raise ConfigError("{} must be non-empty".format(group_name))
         self.dataset.validate()
+        self.evaluation.validate()
         self.tracking.validate()
         self.resources.validate()
+        if not self.sampling_regimes:
+            raise ConfigError("sampling_regimes must be non-empty")
+        for sampling in self.sampling_regimes:
+            sampling.validate()
+        if any(sampling.regime != "iid_target" for sampling in self.sampling_regimes):
+            from .targets import resolve_target
+
+            for target in self.targets:
+                try:
+                    resolved = resolve_target(
+                        target.target_id, variant=target.variant, stage=target.stage
+                    )
+                except (KeyError, ValueError) as exc:
+                    raise ConfigError(
+                        "cannot validate stratified sampling for target {!r}: {}".format(
+                            target.target_id, exc
+                        )
+                    ) from exc
+                if getattr(resolved, "rare_mass", None) is None or not callable(
+                    getattr(resolved, "rare_component_id", None)
+                ):
+                    raise ConfigError(
+                        "sampling regime is invalid for target {!r}: "
+                        "stratified sampling requires an explicitly labelled rare component".format(
+                            target.target_id
+                        )
+                    )
         # The ESS catastrophic threshold has one source of truth: EvaluationSpec.
         # The gate spec may only leave it None (inherit) or set an equal value.
         try:
@@ -228,24 +301,27 @@ class ExperimentConfig:
                 for view in self.feature_views:
                     for model in self.models:
                         for seed in self.seeds:
-                            runs.append(
-                                RunSpec(
-                                    experiment_id=self.experiment_id,
-                                    target=target,
-                                    pdg_id=int(pdg_id),
-                                    feature_view=view,
-                                    model=model,
-                                    seed=int(seed),
-                                    dataset=self.dataset,
-                                    evaluation=self.evaluation,
-                                    device=self.resources.device,
-                                    scientific_gates=self.scientific_gates,
+                            for sampling in self.sampling_regimes:
+                                runs.append(
+                                    RunSpec(
+                                        experiment_id=self.experiment_id,
+                                        target=target,
+                                        pdg_id=int(pdg_id),
+                                        feature_view=view,
+                                        model=model,
+                                        seed=int(seed),
+                                        dataset=self.dataset,
+                                        evaluation=self.evaluation,
+                                        device=self.resources.device,
+                                        scientific_gates=self.scientific_gates,
+                                        sampling=sampling,
+                                        doe_seed=self.doe_seed,
+                                    )
                                 )
-                            )
         return runs
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "experiment_id": self.experiment_id,
             "description": self.description,
@@ -260,6 +336,11 @@ class ExperimentConfig:
             "resources": self.resources.to_dict(),
             "scientific_gates": self.scientific_gates.to_dict(),
         }
+        if self.sampling_regimes != [SamplingSpec()]:
+            payload["sampling_regimes"] = [s.to_dict() for s in self.sampling_regimes]
+        if self.doe_seed is not None:
+            payload["doe_seed"] = int(self.doe_seed)
+        return payload
 
     def config_hash(self) -> str:
         return canonical_hash(self.to_dict())
@@ -269,11 +350,21 @@ class ExperimentConfig:
     @classmethod
     def from_dict(cls, payload: Dict[str, Any]) -> "ExperimentConfig":
         try:
+            evaluation_payload = {
+                k: (tuple(v) if isinstance(v, list) else v)
+                for k, v in payload.get("evaluation", {}).items()
+            }
+            if "rare_sample_count" not in evaluation_payload:
+                evaluation_payload["rare_sample_count"] = max(
+                    int(evaluation_payload.get("ess_sample_count", 20000)),
+                    int(evaluation_payload.get("c2st_sample_count", 4000)),
+                )
+                evaluation_payload["_include_rare_sample_count"] = False
             config = cls(
                 experiment_id=payload["experiment_id"],
                 description=payload.get("description", ""),
                 targets=[
-                    TargetSpec(t["target_id"], t.get("variant"))
+                    TargetSpec(t["target_id"], t.get("variant"), t.get("stage", "transformed"))
                     for t in payload["targets"]
                 ],
                 pdg_ids=[int(p) for p in payload["pdg_ids"]],
@@ -292,17 +383,17 @@ class ExperimentConfig:
                 ],
                 seeds=[int(s) for s in payload["seeds"]],
                 dataset=DatasetSpec(**payload.get("dataset", {})),
-                evaluation=EvaluationSpec(
-                    **{
-                        k: (tuple(v) if isinstance(v, list) else v)
-                        for k, v in payload.get("evaluation", {}).items()
-                    }
-                ),
+                evaluation=EvaluationSpec(**evaluation_payload),
                 tracking=TrackingSpec(**payload.get("tracking", {})),
                 resources=ResourceSpec(**payload.get("resources", {})),
                 scientific_gates=ScientificGateSpec(
                     **payload.get("scientific_gates", {})
                 ),
+                sampling_regimes=[
+                    SamplingSpec(**s)
+                    for s in payload.get("sampling_regimes", [{"regime": "iid_target"}])
+                ],
+                doe_seed=(None if payload.get("doe_seed") is None else int(payload["doe_seed"])),
             )
         except KeyError as exc:
             raise ConfigError("missing required config key: {}".format(exc)) from exc

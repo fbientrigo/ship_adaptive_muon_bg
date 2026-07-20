@@ -21,6 +21,7 @@ from .config import (
     ModelSpec,
     ResourceSpec,
     RunSpec,
+    SamplingSpec,
     TargetSpec,
     TrackingSpec,
 )
@@ -36,6 +37,14 @@ from .gates import (
     ScientificGateSpec,
     evaluate_scientific_gates,
 )
+from .sampling import (
+    IID_TARGET,
+    SAMPLING_REGIMES,
+    STRATIFIED_SELF_NORMALIZED_PROVISIONAL,
+    STRATIFIED_DIAGNOSTIC,
+    sample_controlled,
+)
+from .doe import generate_blocked_maximin_lhs
 
 __all__ = [
     "FittedFeaturePipeline",
@@ -49,6 +58,7 @@ __all__ = [
     "EvaluationSpec",
     "TrackingSpec",
     "ResourceSpec",
+    "SamplingSpec",
     "ScientificGateSpec",
     "ScientificGateResult",
     "evaluate_scientific_gates",
@@ -65,4 +75,10 @@ __all__ = [
     "derive_run_id",
     "run_campaign",
     "run_single",
+    "IID_TARGET",
+    "STRATIFIED_DIAGNOSTIC",
+    "STRATIFIED_SELF_NORMALIZED_PROVISIONAL",
+    "SAMPLING_REGIMES",
+    "sample_controlled",
+    "generate_blocked_maximin_lhs",
 ]

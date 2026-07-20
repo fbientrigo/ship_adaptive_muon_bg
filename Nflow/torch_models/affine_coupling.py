@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from numbers import Real
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -37,6 +39,28 @@ _ACTIVATIONS = {
     "silu": nn.SiLU,
 }
 
+_INITIALIZER_MODES = ("legacy_torch_default", "scaled_activation_aware")
+
+_LEGACY_PERMUTATION_KEY_RE = re.compile(r"^permutation_(\d+)$")
+
+# Schema tag for the functional checkpoint fingerprint (state_dict + the
+# model-function config, init_seed and reconstructed permutations). Older
+# checkpoints have no "hash_schema" field and are not re-verified on load;
+# only the strict state_dict load (with the legacy permutation-key migration)
+# applies to them.
+_CHECKPOINT_HASH_SCHEMA = "functional_state_v2"
+
+
+def _validate_unimplemented_neutral_float(name: str, value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError("{} must be a finite numeric value".format(name))
+    result = float(value)
+    if not np.isfinite(result):
+        raise ValueError("{} must be a finite numeric value".format(name))
+    if result != 0.0:
+        raise ValueError("{} is not implemented; use 0.0".format(name))
+    return result
+
 
 def _resolve_device(device: str) -> torch.device:
     if device == "auto":
@@ -46,11 +70,19 @@ def _resolve_device(device: str) -> torch.device:
     raise ValueError("device must be 'cpu', 'cuda' or 'auto', got {!r}".format(device))
 
 
-def _build_mlp(dim: int, width: int, depth: int, activation: str) -> nn.Sequential:
+def _build_mlp(
+    dim: int, width: int, depth: int, activation: str, initializer_mode: str
+) -> nn.Sequential:
     if activation not in _ACTIVATIONS:
         raise ValueError(
             "unknown activation {!r}; expected one of {}".format(
                 activation, sorted(_ACTIVATIONS)
+            )
+        )
+    if initializer_mode not in _INITIALIZER_MODES:
+        raise ValueError(
+            "unknown initializer_mode {!r}; expected one of {}".format(
+                initializer_mode, _INITIALIZER_MODES
             )
         )
     act = _ACTIVATIONS[activation]
@@ -58,7 +90,20 @@ def _build_mlp(dim: int, width: int, depth: int, activation: str) -> nn.Sequenti
     for _ in range(depth):
         layers += [nn.Linear(width, width), act()]
     layers += [nn.Linear(width, 2 * dim)]
-    return nn.Sequential(*layers)
+    network = nn.Sequential(*layers)
+    if initializer_mode == "scaled_activation_aware":
+        for layer in network[:-1]:
+            if isinstance(layer, nn.Linear):
+                if activation == "relu":
+                    nn.init.kaiming_uniform_(layer.weight, nonlinearity="relu")
+                    with torch.no_grad():
+                        layer.weight.mul_(0.25)
+                elif activation == "silu":
+                    nn.init.xavier_uniform_(layer.weight)
+                    with torch.no_grad():
+                        layer.weight.mul_(0.25)
+                nn.init.zeros_(layer.bias)
+    return network
 
 
 class _CouplingLayer(nn.Module):
@@ -72,10 +117,11 @@ class _CouplingLayer(nn.Module):
         depth: int,
         activation: str,
         max_log_scale: float,
+        initializer_mode: str,
     ) -> None:
         super().__init__()
         self.register_buffer("mask", mask)
-        self.net = _build_mlp(dim, width, depth, activation)
+        self.net = _build_mlp(dim, width, depth, activation, initializer_mode)
         self.max_log_scale = float(max_log_scale)
         # zero-init the final layer so the flow starts near identity.
         final = self.net[-1]
@@ -117,34 +163,70 @@ class _FlowModule(nn.Module):
         hidden_depth: int,
         activation: str,
         max_log_scale: float,
+        mixing_mode: str,
+        seed: int,
+        initializer_mode: str = "scaled_activation_aware",
     ) -> None:
         super().__init__()
         self.dim = dim
+        if mixing_mode not in ("alternating_only", "fixed_random_permutation"):
+            raise ValueError("unknown mixing_mode {!r}".format(mixing_mode))
+        if initializer_mode not in _INITIALIZER_MODES:
+            raise ValueError(
+                "unknown initializer_mode {!r}; expected one of {}".format(
+                    initializer_mode, _INITIALIZER_MODES
+                )
+            )
         layers = []
+        permutations = []
+        rng = np.random.default_rng(int(seed))
         for i in range(number_of_blocks):
             pattern = (torch.arange(dim) + i) % 2
             mask = pattern.to(torch.get_default_dtype())
             layers.append(
                 _CouplingLayer(
-                    dim, mask, hidden_width, hidden_depth, activation, max_log_scale
+                    dim, mask, hidden_width, hidden_depth, activation, max_log_scale,
+                    initializer_mode,
                 )
             )
+            permutation = (
+                rng.permutation(dim) if mixing_mode == "fixed_random_permutation"
+                else np.arange(dim)
+            )
+            permutations.append(torch.as_tensor(permutation, dtype=torch.long))
         self.layers = nn.ModuleList(layers)
+        self.mixing_mode = mixing_mode
+        for index, permutation in enumerate(permutations):
+            self.register_buffer(
+                "permutation_{}".format(index), permutation, persistent=False
+            )
         self._log_base_const = 0.5 * dim * float(np.log(2.0 * np.pi))
 
     def inverse(self, x: torch.Tensor):
         z = x
         total = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
-        for layer in self.layers:
+        for index, layer in enumerate(self.layers):
+            permutation = getattr(self, "permutation_{}".format(index))
+            z = z[:, permutation]
             z, ld = layer.inverse_map(z)
             total = total + ld
         return z, total
 
     def forward(self, z: torch.Tensor):
         x = z
-        for layer in reversed(self.layers):
+        for index in reversed(range(len(self.layers))):
+            layer = self.layers[index]
             x, _ = layer.forward_map(x)
+            permutation = getattr(self, "permutation_{}".format(index))
+            inverse_permutation = torch.argsort(permutation)
+            x = x[:, inverse_permutation]
         return x
+
+    def permutations(self):
+        return [
+            getattr(self, "permutation_{}".format(i)).detach().cpu().tolist()
+            for i in range(len(self.layers))
+        ]
 
     def base_log_prob(self, z: torch.Tensor) -> torch.Tensor:
         return -self._log_base_const - 0.5 * torch.sum(z * z, dim=-1)
@@ -152,6 +234,20 @@ class _FlowModule(nn.Module):
     def log_prob(self, x: torch.Tensor) -> torch.Tensor:
         z, log_det = self.inverse(x)
         return self.base_log_prob(z) + log_det
+
+    def max_abs_log_scale(self, x: torch.Tensor) -> torch.Tensor:
+        """Maximum absolute realized coupling log scale on ``x``."""
+
+        value = torch.zeros((), dtype=x.dtype, device=x.device)
+        current = x
+        with torch.no_grad():
+            for index, layer in enumerate(self.layers):
+                permutation = getattr(self, "permutation_{}".format(index))
+                current = current[:, permutation]
+                scale, _ = layer._s_t(current)
+                value = torch.maximum(value, torch.max(torch.abs(scale)))
+                current, _ = layer.inverse_map(current)
+        return value
 
 
 class AffineCouplingFlow:
@@ -176,6 +272,14 @@ class AffineCouplingFlow:
         patience: int = 10,
         grad_clip_norm: Optional[float] = 5.0,
         weight_decay: float = 0.0,
+        mixing_mode: str = "alternating_only",
+        initializer_mode: str = "legacy_torch_default",
+        memorization_mode: bool = False,
+        dropout: float = 0.0,
+        data_augmentation: bool = False,
+        input_noise_std: float = 0.0,
+        early_stopping: bool = True,
+        checkpoint_interval: int = 1,
     ) -> None:
         self.dimension = int(dimension)
         self.requested_device = device
@@ -195,6 +299,43 @@ class AffineCouplingFlow:
         self.patience = int(patience)
         self.grad_clip_norm = grad_clip_norm
         self.weight_decay = float(weight_decay)
+        self.mixing_mode = mixing_mode
+        if initializer_mode not in _INITIALIZER_MODES:
+            raise ValueError(
+                "unknown initializer_mode {!r}; expected one of {}".format(
+                    initializer_mode, _INITIALIZER_MODES
+                )
+            )
+        self.initializer_mode = initializer_mode
+        self.memorization_mode = bool(memorization_mode)
+        self.dropout = _validate_unimplemented_neutral_float("dropout", dropout)
+        if not isinstance(data_augmentation, (bool, np.bool_)):
+            raise ValueError("data_augmentation must be a boolean")
+        if data_augmentation:
+            raise ValueError("data_augmentation is not implemented; use False")
+        self.data_augmentation = False
+        self.input_noise_std = _validate_unimplemented_neutral_float(
+            "input_noise_std", input_noise_std
+        )
+        self.early_stopping = bool(early_stopping)
+        self.checkpoint_interval = int(checkpoint_interval)
+        if self.checkpoint_interval != 1:
+            raise ValueError(
+                "checkpoint_interval must be 1; periodic checkpoint "
+                "persistence (interval != 1) is not implemented, and only "
+                "the final state is ever saved, so other values would "
+                "change the config hash without changing training or "
+                "checkpoint artifacts"
+            )
+        if self.memorization_mode and any((
+            self.weight_decay != 0.0, self.dropout != 0.0,
+            self.data_augmentation, self.input_noise_std != 0.0,
+            self.early_stopping,
+        )):
+            raise ValueError(
+                "memorization_mode requires weight_decay=0, dropout=0, no "
+                "augmentation/noise, and early_stopping=False"
+            )
         self._module: Optional[_FlowModule] = None
         self._init_seed = 0
         self._build_module(seed=self._init_seed)
@@ -216,6 +357,9 @@ class AffineCouplingFlow:
                 hidden_depth=self.hidden_depth,
                 activation=self.activation,
                 max_log_scale=self.max_log_scale,
+                mixing_mode=self.mixing_mode,
+                seed=int(seed),
+                initializer_mode=self.initializer_mode,
             )
         finally:
             torch.set_default_dtype(prev)
@@ -230,17 +374,24 @@ class AffineCouplingFlow:
         x_validation: Optional[np.ndarray] = None,
         seed: int = 0,
         sample_weight: Optional[np.ndarray] = None,
+        validation_sample_weight: Optional[np.ndarray] = None,
+        component_id: Optional[np.ndarray] = None,
+        validation_component_id: Optional[np.ndarray] = None,
+        rare_component_id: Optional[int] = None,
     ) -> FitResult:
-        if sample_weight is not None:
-            raise NotImplementedError(
-                "affine_coupling does not support sample_weight; pass None"
-            )
         # Reset weights deterministically from the run seed so identical
         # RunSpecs with the same seed produce identical checkpoints/metrics.
         self._build_module(seed=int(seed))
         from .trainer import train_flow
 
-        return train_flow(self, x_train, x_validation, seed=int(seed))
+        return train_flow(
+            self, x_train, x_validation, seed=int(seed),
+            sample_weight=sample_weight,
+            validation_sample_weight=validation_sample_weight,
+            component_id=component_id,
+            validation_component_id=validation_component_id,
+            rare_component_id=rare_component_id,
+        )
 
     def _to_tensor(self, x: np.ndarray) -> torch.Tensor:
         array = np.asarray(x, dtype=np.float64)
@@ -291,6 +442,14 @@ class AffineCouplingFlow:
             "patience": self.patience,
             "grad_clip_norm": self.grad_clip_norm,
             "weight_decay": self.weight_decay,
+            "mixing_mode": self.mixing_mode,
+            "initializer_mode": self.initializer_mode,
+            "memorization_mode": self.memorization_mode,
+            "dropout": self.dropout,
+            "data_augmentation": self.data_augmentation,
+            "input_noise_std": self.input_noise_std,
+            "early_stopping": self.early_stopping,
+            "checkpoint_interval": self.checkpoint_interval,
         }
 
     def manifest(self) -> Dict[str, Any]:
@@ -302,6 +461,12 @@ class AffineCouplingFlow:
                 "actual_device": str(self.device),
                 "torch_version": torch.__version__,
                 "cuda_available": bool(torch.cuda.is_available()),
+                "init_seed": self._init_seed,
+                "permutations": self._module.permutations(),
+                "permutation_log_abs_det": 0.0,
+                "loss_normalization": "sum_weights",
+                "checkpoint_hash": self.checkpoint_hash(),
+                "checkpoint_hash_schema": _CHECKPOINT_HASH_SCHEMA,
             }
         )
         return manifest
@@ -315,23 +480,49 @@ class AffineCouplingFlow:
         torch.save(self._module.state_dict(), buffer)
         return buffer.getvalue()
 
+    def _functional_fingerprint_payload(self) -> Dict[str, Any]:
+        # Only fields that change the model *function* (what log_prob/sample
+        # compute), not training-only knobs like learning_rate, max_epochs,
+        # device or checkpoint_interval.
+        return {
+            "schema": _CHECKPOINT_HASH_SCHEMA,
+            "state_dict_sha256": hashlib.sha256(self.state_dict_bytes()).hexdigest(),
+            "init_seed": self._init_seed,
+            "permutations": self._module.permutations(),
+            "mixing_mode": self.mixing_mode,
+            "initializer_mode": self.initializer_mode,
+            "dimension": self.dimension,
+            "number_of_blocks": self.number_of_blocks,
+            "hidden_width": self.hidden_width,
+            "hidden_depth": self.hidden_depth,
+            "activation": self.activation,
+            "max_log_scale": self.max_log_scale,
+            "dtype": self.dtype_name,
+        }
+
     def checkpoint_hash(self) -> str:
-        return hashlib.sha256(self.state_dict_bytes()).hexdigest()
+        payload = self._functional_fingerprint_payload()
+        blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()
 
     def save(self, output_dir: Path) -> Dict[str, Any]:
         output_dir = Path(output_dir)
         checkpoint_dir = output_dir / "checkpoint"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         torch.save(self._module.state_dict(), checkpoint_dir / "state_dict.pt")
-        (checkpoint_dir / "model_config.json").write_text(
-            json.dumps({"config": self.config(), "requested_device": self.requested_device}, indent=2)
-        )
+        (checkpoint_dir / "model_config.json").write_text(json.dumps({
+            "config": self.config(), "requested_device": self.requested_device,
+            "init_seed": self._init_seed,
+            "permutations": self._module.permutations(),
+            "hash_schema": _CHECKPOINT_HASH_SCHEMA,
+        }, indent=2))
         checkpoint_hash = self.checkpoint_hash()
         (checkpoint_dir / "checkpoint_hash.txt").write_text(checkpoint_hash)
         return {
             "family": self.family,
             "checkpoint_dir": "checkpoint",
             "checkpoint_hash": checkpoint_hash,
+            "checkpoint_hash_schema": _CHECKPOINT_HASH_SCHEMA,
         }
 
     @classmethod
@@ -341,8 +532,50 @@ class AffineCouplingFlow:
         config = payload["config"]
         config.pop("family", None)
         model = cls(device=device, **config)
+        model._build_module(seed=int(payload.get("init_seed", 0)))
         state = torch.load(
             checkpoint_dir / "state_dict.pt", map_location=model.device
         )
-        model._module.load_state_dict(state)
+
+        # Interim PR #15 checkpoints registered the deterministic permutation
+        # tensors as persistent buffers; the module no longer expects them in
+        # its state dict (they are reconstructed from config + init_seed), so
+        # strip only keys that exactly match the legacy permutation naming and
+        # cross-check their values against the reconstruction when possible.
+        # Old (pre-permutation) and new checkpoints simply have none of these
+        # keys and load unchanged.
+        legacy_keys = [k for k in state if _LEGACY_PERMUTATION_KEY_RE.match(k)]
+        for key in legacy_keys:
+            index = int(_LEGACY_PERMUTATION_KEY_RE.match(key).group(1))
+            if index < len(model._module.layers):
+                reconstructed = getattr(model._module, key)
+                if not torch.equal(state[key].to(reconstructed.device), reconstructed):
+                    raise ValueError(
+                        "checkpoint permutation {!r} does not match the "
+                        "permutation reconstructed from config and init_seed"
+                        .format(key)
+                    )
+            del state[key]
+
+        model._module.load_state_dict(state, strict=True)
+
+        # Checkpoints tagged with the functional hash schema are verified: a
+        # mismatch means the reconstructed model function (permutations,
+        # init_seed, or functional config) does not match what was saved,
+        # even though the learned tensors loaded successfully. Checkpoints
+        # without a "hash_schema" field (pre-fix and interim PR #15
+        # checkpoints) keep the previous behavior of no hash verification.
+        if payload.get("hash_schema") == _CHECKPOINT_HASH_SCHEMA:
+            hash_path = checkpoint_dir / "checkpoint_hash.txt"
+            if hash_path.exists():
+                recorded_hash = hash_path.read_text().strip()
+                recomputed_hash = model.checkpoint_hash()
+                if recorded_hash != recomputed_hash:
+                    raise ValueError(
+                        "checkpoint_hash verification failed: recorded {!r} "
+                        "!= recomputed {!r}; functional metadata, init_seed "
+                        "or permutations do not match the saved checkpoint"
+                        .format(recorded_hash, recomputed_hash)
+                    )
+
         return model

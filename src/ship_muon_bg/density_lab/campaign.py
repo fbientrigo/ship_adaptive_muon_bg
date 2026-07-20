@@ -26,6 +26,7 @@ from .environment import capture_environment, utc_timestamp
 from .evaluator import evaluate_run
 from .feature_pipeline import FittedFeaturePipeline
 from .gates import SCIENTIFIC_STATUSES, STATUS_UNAVAILABLE, evaluate_scientific_gates
+from .config import canonical_hash
 
 DIMENSION = 5
 
@@ -65,11 +66,14 @@ def _dataset_key(run_spec) -> tuple:
     return (
         run_spec.target.target_id,
         run_spec.target.variant,
+        run_spec.target.stage,
         run_spec.pdg_id,
         run_spec.seed,
         run_spec.dataset.n_train,
         run_spec.dataset.n_validation,
         run_spec.dataset.n_test,
+        run_spec.sampling.regime,
+        run_spec.sampling.sampling_rare_fraction,
     )
 
 
@@ -105,14 +109,18 @@ def run_single(
                 n_validation=run_spec.dataset.n_validation,
                 n_test=run_spec.dataset.n_test,
                 seed=run_spec.seed,
+                regime=run_spec.sampling.regime,
+                sampling_rare_fraction=run_spec.sampling.sampling_rare_fraction,
+                target_stage=run_spec.target.stage,
             )
             if dataset_cache is not None:
                 dataset_cache[key] = dataset
 
-        from ..benchmarks import make_controlled_target
+        from .targets import resolve_target
 
-        target = make_controlled_target(
-            run_spec.target.target_id, variant=run_spec.target.variant
+        target = resolve_target(
+            run_spec.target.target_id, variant=run_spec.target.variant,
+            stage=run_spec.target.stage,
         )
 
         view = _make_feature_view(run_spec.feature_view)
@@ -129,8 +137,23 @@ def run_single(
         model = create_density_estimator(
             run_spec.model, dimension=DIMENSION, device=device
         )
+        fit_kwargs = {}
+        if run_spec.model.family == "affine_coupling":
+            fit_kwargs = {
+                "sample_weight": dataset.train.sample_weight,
+                "validation_sample_weight": dataset.validation.sample_weight,
+                "component_id": dataset.train.component_id,
+                "validation_component_id": dataset.validation.component_id,
+                "rare_component_id": (
+                    target.rare_component_id(pdg_id=run_spec.pdg_id)
+                    if getattr(target, "rare_mass", None) is not None else None
+                ),
+            }
+        elif run_spec.sampling.regime == "stratified_self_normalized_provisional":
+            fit_kwargs = {"sample_weight": dataset.train.sample_weight}
         fit_result = model.fit(
-            normalized_train, x_validation=normalized_val, seed=run_spec.seed
+            normalized_train, x_validation=normalized_val, seed=run_spec.seed,
+            **fit_kwargs
         )
 
         environment = capture_environment(requested_device=device)
@@ -162,6 +185,30 @@ def run_single(
             seed=run_spec.seed,
         )
         metrics["fit_wall_time_seconds"] = fit_result.wall_time_seconds
+        metrics["training_final"] = (
+            fit_result.train_history[-1] if fit_result.train_history else {}
+        )
+        metrics["training_sampling"] = dataset.train.sampling_manifest
+        metrics["sampling_regime"] = run_spec.sampling.regime
+        metrics["diagnostic_only"] = bool(dataset.train.sampling_manifest.get("diagnostic_only", False))
+        for key in ("estimator_family", "unbiasedness_status", "scientific_scope"):
+            metrics[key] = dataset.train.sampling_manifest.get(key)
+        metrics["fit_claim"] = (
+            "diagnostic_only_not_a_fit_to_original_target_density"
+            if metrics["diagnostic_only"] else (
+                "provisional_target_estimator_not_validated_as_original_target_density"
+                if metrics["estimator_family"] == "self_normalized_importance_weighted_minibatch"
+                else "fit_to_original_target_density"
+            )
+        )
+        if fit_result.train_history:
+            final = fit_result.train_history[-1]
+            for key in (
+                "feature_space_train_nll", "feature_space_train_main_nll",
+                "feature_space_train_rare_nll", "feature_space_validation_nll",
+                "feature_space_validation_main_nll", "feature_space_validation_rare_nll",
+            ):
+                metrics[key] = final.get(key)
         metrics["ended_at"] = utc_timestamp()
 
         # -- scientific gates (model-independent; consume the metric bundle) --
@@ -186,6 +233,7 @@ def run_single(
             "train_dataset_hash": dataset.train.raw_dataset_hash,
             "test_dataset_hash": dataset.test_nominal.raw_dataset_hash,
             "checkpoint_hash": save_manifest.get("checkpoint_hash"),
+            "sampling_manifest_hash": canonical_hash(dataset.train.sampling_manifest),
         }
         store.write_run(
             run_spec,
@@ -209,7 +257,7 @@ def run_single(
             try:
                 tracker.log_run(
                     run_id=run_id,
-                    params=run_spec.to_dict(),
+                    params=dict(run_spec.to_dict(), provenance_hashes=hashes),
                     metrics=metrics,
                     run_dir=paths.run_dir,
                 )

@@ -14,11 +14,42 @@ import csv
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 
 import numpy as np
 
 TARGET_ORDER = ["D0", "D1", "D2", "D3", "D4", "D5"]
+
+
+class PlotSeriesKey(NamedTuple):
+    """Scientific scope that must never be merged into one plotted series."""
+
+    target_label: str
+    target_stage: str
+    sampling_regime: str
+    diagnostic_only: bool
+
+
+def _plot_series_key(record: Dict[str, Any]) -> PlotSeriesKey:
+    return PlotSeriesKey(
+        target_label=str(record.get("target_label") or "unknown"),
+        target_stage=str(record.get("target_stage") or "unspecified"),
+        sampling_regime=str(record.get("sampling_regime") or "unspecified"),
+        diagnostic_only=bool(record.get("diagnostic_only", False)),
+    )
+
+
+def _plot_series_label(key: PlotSeriesKey) -> str:
+    scope = "DIAGNOSTIC ONLY" if key.diagnostic_only else "non-diagnostic"
+    return "{} | stage={} | regime={} | {}".format(
+        key.target_label, key.target_stage, key.sampling_regime, scope
+    )
+
+
+def _plot_series_sort_key(key: PlotSeriesKey):
+    base = key.target_label.split("-")[0]
+    target_order = TARGET_ORDER.index(base) if base in TARGET_ORDER else 99
+    return (target_order, key.target_label, key.target_stage, key.sampling_regime, key.diagnostic_only)
 
 
 def _target_label(target_id: str, variant: Optional[str]) -> str:
@@ -59,6 +90,7 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
                     "model": config["model"]["name"],
                     "seed": config["seed"],
                     "device": config.get("device"),
+                    "target_stage": config["target"].get("stage", "transformed"),
                 }
             )
             record["target_label"] = _target_label(
@@ -66,11 +98,29 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
             )
         if metrics and record["status"] == "completed":
             record["forward_kl"] = _dig(metrics, "forward_kl", "forward_kl")
-            record["held_out_nll"] = _dig(metrics, "held_out", "held_out_nll")
+            record["physical_space_held_out_nll"] = metrics.get(
+                "physical_space_held_out_nll", _dig(metrics, "held_out", "held_out_nll")
+            )
+            record["feature_space_held_out_nll"] = metrics.get("feature_space_held_out_nll")
             record["ess_over_n"] = _dig(metrics, "importance_ess", "ess_over_n")
             record["ess_catastrophic"] = _dig(metrics, "importance_ess", "catastrophic")
             record["c2st_accuracy"] = _dig(metrics, "c2st", "c2st_accuracy")
             record["parameter_count"] = metrics.get("parameter_count")
+            record["sampling_regime"] = metrics.get("sampling_regime")
+            record["diagnostic_only"] = bool(metrics.get("diagnostic_only", False))
+            record["fit_claim"] = metrics.get("fit_claim")
+            record["feature_space_train_nll"] = metrics.get("feature_space_train_nll", metrics.get("train_nll"))
+            record["feature_space_train_main_nll"] = metrics.get("feature_space_train_main_nll", metrics.get("train_main_nll"))
+            record["feature_space_train_rare_nll"] = metrics.get("feature_space_train_rare_nll", metrics.get("train_rare_nll"))
+            record["feature_space_validation_nll"] = metrics.get("feature_space_validation_nll", metrics.get("validation_nll"))
+            record["feature_space_validation_main_nll"] = metrics.get("feature_space_validation_main_nll", metrics.get("validation_main_nll"))
+            record["feature_space_validation_rare_nll"] = metrics.get("feature_space_validation_rare_nll", metrics.get("validation_rare_nll"))
+            record["estimator_family"] = metrics.get("estimator_family")
+            record["unbiasedness_status"] = metrics.get("unbiasedness_status")
+            record["scientific_scope"] = metrics.get("scientific_scope")
+            record["rare_mode_interpretation"] = (
+                "inconclusive_low_power" if _dig(metrics, "rare_mode", "zero_rare_samples_flag") else None
+            )
             record["fit_wall_time_seconds"] = metrics.get("fit_wall_time_seconds")
             record["q_rare_region_mass"] = _dig(metrics, "rare_mode", "q_rare_region_mass")
             record["target_rare_mass"] = _dig(metrics, "rare_mode", "target_rare_mass")
@@ -79,6 +129,16 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
             )
             record["observed_q_rare_sample_count"] = _dig(
                 metrics, "rare_mode", "observed_q_rare_sample_count"
+            )
+            record["q_rare_region_mass"] = _dig(metrics, "rare_mode", "q_rare_region_mass")
+            record["rare_mass_exact_binomial_interval_95"] = _dig(
+                metrics, "rare_mode", "rare_mass_exact_binomial_interval_95"
+            )
+            record["probability_of_zero_rare_samples_given_target_mass_and_n"] = _dig(
+                metrics, "rare_mode", "probability_of_zero_rare_samples_given_target_mass_and_n"
+            )
+            record["zero_rare_samples_flag"] = _dig(
+                metrics, "rare_mode", "zero_rare_samples_flag"
             )
             # Prefer the scientific status recorded in metrics.json's gate block;
             # fall back to run_status.json (kept in sync by the campaign).
@@ -120,12 +180,20 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     columns = [
-        "target_label", "pdg_id", "feature_view", "model", "device", "seed",
+        "target_label", "target_stage", "sampling_regime", "diagnostic_only",
+        "pdg_id", "feature_view", "model", "device", "seed",
         "technical_status", "scientific_status",
         "forward_kl", "ess_over_n", "ess_catastrophic", "c2st_accuracy",
-        "held_out_nll", "parameter_count", "fit_wall_time_seconds",
+        "physical_space_held_out_nll", "feature_space_held_out_nll",
+        "parameter_count", "fit_wall_time_seconds",
         "q_rare_region_mass", "target_rare_mass", "rare_region_mass_ratio",
-        "observed_q_rare_sample_count",
+        "observed_q_rare_sample_count", "rare_mass_exact_binomial_interval_95",
+        "probability_of_zero_rare_samples_given_target_mass_and_n",
+        "zero_rare_samples_flag", "rare_mode_interpretation",
+        "feature_space_train_nll", "feature_space_train_main_nll",
+        "feature_space_train_rare_nll", "feature_space_validation_nll",
+        "feature_space_validation_main_nll", "feature_space_validation_rare_nll",
+        "estimator_family", "unbiasedness_status", "scientific_scope",
     ]
     # CSV (one row per run, failed runs included)
     with (out_dir / "benchmark_summary.csv").open("w", newline="") as handle:
@@ -143,16 +211,16 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
         # averaged together (backend-dependent metrics) or counted as extra
         # seeds when a config is run once on CPU and once on CUDA/auto.
         key = (
-            r.get("target_label"), r.get("pdg_id"), r.get("feature_view"),
+            _plot_series_key(r), r.get("pdg_id"), r.get("feature_view"),
             r.get("model"), r.get("device"),
         )
         groups[key].append(r)
     aggregate = []
-    for (target_label, pdg_id, view, model, device), rows in sorted(
+    for (series_key, pdg_id, view, model, device), rows in sorted(
         groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])
     ):
         # Scientifically non-catastrophic rows only. A catastrophic run (e.g.
-        # ESS/N collapse or D5 zero-rare) must never be averaged together with a
+        # ESS/N collapse) must never be averaged together with a
         # passing run into an unqualified mean: the "clean" means below are
         # explicitly pass/inconclusive-only, and catastrophic runs stay counted
         # and visible.
@@ -162,11 +230,15 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
             sci_counts[r.get("scientific_status") or "unknown"] += 1
         aggregate.append(
             {
-                "target_label": target_label,
+                "target_label": series_key.target_label,
                 "pdg_id": pdg_id,
                 "feature_view": view,
                 "model": model,
                 "device": device,
+                "sampling_regime": series_key.sampling_regime,
+                "diagnostic_only": series_key.diagnostic_only,
+                "target_stage": series_key.target_stage,
+                "fit_claim": rows[0].get("fit_claim"),
                 "n_seeds": len(rows),
                 "scientific_status_counts": dict(sci_counts),
                 "n_scientific_catastrophic": sci_counts.get("catastrophic", 0),
@@ -290,11 +362,20 @@ def build_scientific_gate_summary(
             "target_label": r.get("target_label"),
             "model": r.get("model"),
             "seed": r.get("seed"),
+            "sampling_regime": r.get("sampling_regime"),
+            "diagnostic_only": r.get("diagnostic_only", False),
             "device": r.get("device"),
             "technical_status": tech,
             "scientific_status": sci,
             "ess_over_n": r.get("ess_over_n"),
             "observed_q_rare_sample_count": r.get("observed_q_rare_sample_count"),
+            "q_rare_region_mass": r.get("q_rare_region_mass"),
+            "rare_mass_exact_binomial_interval_95": r.get("rare_mass_exact_binomial_interval_95"),
+            "probability_of_zero_rare_samples_given_target_mass_and_n": r.get(
+                "probability_of_zero_rare_samples_given_target_mass_and_n"
+            ),
+            "zero_rare_samples_flag": r.get("zero_rare_samples_flag"),
+            "rare_mode_interpretation": r.get("rare_mode_interpretation"),
             "rare_region_mass_ratio": r.get("rare_region_mass_ratio"),
             "scientific_failure_reasons": reasons,
         }
@@ -423,6 +504,9 @@ def write_limitations(records, out_dir: Path) -> None:
         "  (pass/fail/catastrophic/inconclusive): a completed run may be catastrophic.",
         "- Wall times mix CPU/GPU only within, never across, a single curve.",
         "- Provisional engineering gates are not preregistered physics criteria.",
+        "- stratified_unweighted_diagnostic rows are diagnostic-only and are never a fit claim for the original target density.",
+        "- stratified_self_normalized_provisional is a self-normalized minibatch estimator; unbiasedness is not established.",
+        "- Zero rare-region samples at the bounded smoke budget are inconclusive_low_power, not demonstrated rare-mode collapse.",
     ]
     (out_dir / "limitations.md").write_text("\n".join(text) + "\n")
 
@@ -459,49 +543,99 @@ def build_plots(records, out_dir: Path) -> List[str]:
 def _plot_quality_by_target(plt, rows, out_dir):
     if not rows:
         return []
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    series = sorted(
+        {(_plot_series_key(r), r["pdg_id"]) for r in rows},
+        key=lambda item: (_plot_series_sort_key(item[0]), item[1]),
+    )
+    positions = {item: index for index, item in enumerate(series)}
+    short_labels = ["S{}".format(index + 1) for index in range(len(series))]
+    fig, axes = plt.subplots(1, 2, figsize=(14, 7))
     for metric, ax, title in (
         ("forward_kl", axes[0], "Forward KL (lower better)"),
         ("ess_over_n", axes[1], "ESS/N (higher better)"),
     ):
         for pdg in sorted({r["pdg_id"] for r in rows}):
-            labels, means, stds = _by_target(rows, metric, pdg)
-            ax.errorbar(labels, means, yerr=stds, marker="o", capsize=3, label="pdg {}".format(pdg))
+            stats = _series_metric_stats(
+                [r for r in rows if r["pdg_id"] == pdg], metric
+            )
+            for key, mean, std in stats:
+                position = positions[(key, pdg)]
+                series_id = short_labels[position]
+                ax.errorbar(
+                    [position],
+                    [mean],
+                    yerr=[std],
+                    marker="o",
+                    linestyle="none",
+                    capsize=3,
+                    label=(
+                        "{}: {} | pdg={}".format(
+                            series_id, _plot_series_label(key), pdg
+                        )
+                        if metric == "forward_kl"
+                        else "_nolegend_"
+                    ),
+                )
         ax.set_title(title)
-        ax.set_xlabel("target")
+        ax.set_xlabel("scoped series")
         ax.set_ylabel(metric)
-        ax.legend()
+        ax.set_xticks(range(len(series)))
+        ax.set_xticklabels(short_labels)
         if metric == "forward_kl":
             ax.set_yscale("symlog")
     fig.suptitle("Quality by target (exact controlled benchmarks; not SHiP physics)")
-    fig.tight_layout()
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=1, fontsize=7)
+    fig.tight_layout(rect=(0, 0.18, 1, 0.96))
     path = out_dir / "quality_by_target.png"
     fig.savefig(path, dpi=110)
     plt.close(fig)
     return [str(path)]
 
 
-def _by_target(rows, metric, pdg):
+def _series_metric_stats(rows, metric):
+    """Aggregate one metric across seeds without crossing PlotSeriesKey."""
+
     grouped = defaultdict(list)
     for r in rows:
-        if r["pdg_id"] == pdg and isinstance(r.get(metric), (int, float)):
-            grouped[r["target_label"]].append(r[metric])
-    labels = sorted(grouped, key=lambda t: (TARGET_ORDER.index(t.split("-")[0]) if t.split("-")[0] in TARGET_ORDER else 99, t))
-    means = [float(np.mean(grouped[l])) for l in labels]
-    stds = [float(np.std(grouped[l])) if len(grouped[l]) > 1 else 0.0 for l in labels]
-    return labels, means, stds
+        if isinstance(r.get(metric), (int, float)):
+            grouped[_plot_series_key(r)].append(r[metric])
+    return [
+        (
+            key,
+            float(np.mean(grouped[key])),
+            float(np.std(grouped[key])) if len(grouped[key]) > 1 else 0.0,
+        )
+        for key in sorted(grouped, key=_plot_series_sort_key)
+    ]
 
 
 def _plot_rare_mode(plt, rows, out_dir):
     rare = [r for r in rows if isinstance(r.get("q_rare_region_mass"), (int, float))]
     if not rare:
         return []
-    fig, ax = plt.subplots(figsize=(7, 6))
-    for r in rare:
-        target = r.get("target_rare_mass")
-        recovered = r.get("q_rare_region_mass")
-        marker = "x" if r.get("observed_q_rare_sample_count") == 0 else "o"
-        ax.scatter(target, recovered, marker=marker, s=60)
+    fig, ax = plt.subplots(figsize=(12, 6))
+    grouped = defaultdict(list)
+    for row in rare:
+        grouped[_plot_series_key(row)].append(row)
+    series_keys = sorted(grouped, key=_plot_series_sort_key)
+    for index, key in enumerate(series_keys, start=1):
+        counted = [r for r in grouped[key] if r.get("observed_q_rare_sample_count") != 0]
+        zero = [r for r in grouped[key] if r.get("observed_q_rare_sample_count") == 0]
+        label = "S{}: {}".format(index, _plot_series_label(key))
+        if counted:
+            ax.scatter(
+                [r.get("target_rare_mass") for r in counted],
+                [r.get("q_rare_region_mass") for r in counted],
+                marker="o", s=60, label=label,
+            )
+        if zero:
+            ax.scatter(
+                [r.get("target_rare_mass") for r in zero],
+                [r.get("q_rare_region_mass") for r in zero],
+                marker="x", s=60,
+                label="{} | zero count".format(label) if not counted else None,
+            )
     lims = [1e-4, 2e-2]
     ax.plot(lims, lims, "k--", alpha=0.5, label="ideal recovery")
     ax.set_xscale("log")
@@ -509,7 +643,7 @@ def _plot_rare_mode(plt, rows, out_dir):
     ax.set_xlabel("target rare mass")
     ax.set_ylabel("recovered rare-region mass (x = zero count)")
     ax.set_title("Rare-mode recovery (D5)")
-    ax.legend()
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=7)
     fig.tight_layout()
     path = out_dir / "rare_mode_recovery.png"
     fig.savefig(path, dpi=110)
@@ -521,21 +655,34 @@ def _plot_feature_views(plt, rows, out_dir):
     views = sorted({r["feature_view"] for r in rows})
     if len(views) < 2:
         return []
-    fig, ax = plt.subplots(figsize=(9, 5))
-    targets = sorted({r["target_label"] for r in rows}, key=lambda t: (TARGET_ORDER.index(t.split("-")[0]) if t.split("-")[0] in TARGET_ORDER else 99, t))
+    fig, ax = plt.subplots(figsize=(12, 6))
+    series_keys = sorted({_plot_series_key(r) for r in rows}, key=_plot_series_sort_key)
     width = 0.8 / len(views)
-    x = np.arange(len(targets))
+    x = np.arange(len(series_keys))
     for i, view in enumerate(views):
-        means = []
-        for t in targets:
-            vals = [r["forward_kl"] for r in rows if r["feature_view"] == view and r["target_label"] == t and isinstance(r.get("forward_kl"), (int, float))]
-            means.append(float(np.mean(vals)) if vals else np.nan)
-        ax.bar(x + i * width, means, width, label=view)
+        stats = {
+            key: (mean, std)
+            for key, mean, std in _series_metric_stats(
+                [r for r in rows if r["feature_view"] == view], "forward_kl"
+            )
+        }
+        for j, key in enumerate(series_keys):
+            if key not in stats:
+                continue
+            mean, std = stats[key]
+            ax.bar(
+                [x[j] + i * width],
+                [mean],
+                width,
+                yerr=[std],
+                capsize=3,
+                label="{} | view={}".format(_plot_series_label(key), view),
+            )
     ax.set_xticks(x + width * (len(views) - 1) / 2)
-    ax.set_xticklabels(targets)
+    ax.set_xticklabels(["S{}".format(i + 1) for i in range(len(series_keys))])
     ax.set_ylabel("forward KL (physical space)")
     ax.set_title("Feature-view comparison (matched rows/model/seed/budget)")
-    ax.legend()
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=7)
     fig.tight_layout()
     path = out_dir / "feature_view_comparison.png"
     fig.savefig(path, dpi=110)
@@ -547,16 +694,39 @@ def _plot_capacity(plt, rows, out_dir):
     pts = [r for r in rows if isinstance(r.get("parameter_count"), (int, float)) and isinstance(r.get("ess_over_n"), (int, float))]
     if not pts:
         return []
-    fig, ax = plt.subplots(figsize=(8, 5))
-    for target in sorted({r["target_label"] for r in pts}):
-        sub = sorted([r for r in pts if r["target_label"] == target], key=lambda r: r["parameter_count"])
-        ax.plot([r["parameter_count"] for r in sub], [r["ess_over_n"] for r in sub], marker="o", label=target)
+    fig, ax = plt.subplots(figsize=(12, 6))
+    curves = defaultdict(list)
+    for row in pts:
+        curves[(_plot_series_key(row), row.get("device"))].append(row)
+    scoped_curves = sorted(
+        curves, key=lambda item: (_plot_series_sort_key(item[0]), str(item[1]))
+    )
+    for index, (key, device) in enumerate(scoped_curves, start=1):
+        by_capacity = defaultdict(list)
+        for row in curves[(key, device)]:
+            by_capacity[row["parameter_count"]].append(row["ess_over_n"])
+        capacities = sorted(by_capacity)
+        means = [float(np.mean(by_capacity[value])) for value in capacities]
+        errors = [
+            float(np.std(by_capacity[value])) if len(by_capacity[value]) > 1 else 0.0
+            for value in capacities
+        ]
+        ax.errorbar(
+            capacities, means, yerr=errors, marker="o", capsize=3,
+            label="S{}: {} | device={}".format(
+                index, _plot_series_label(key), device
+            ),
+        )
     ax.set_xscale("log")
     ax.set_xlabel("parameter count")
     ax.set_ylabel("ESS/N")
     device_note = "hardware: see environment.json per run (CPU/GPU not mixed on one curve)"
-    ax.set_title("Capacity frontier\n{}".format(device_note))
-    ax.legend()
+    ax.set_title(
+        "Capacity versus ESS/N (descriptive only; no architecture winner inference)\n{}".format(
+            device_note
+        )
+    )
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=7)
     fig.tight_layout()
     path = out_dir / "capacity_frontier.png"
     fig.savefig(path, dpi=110)

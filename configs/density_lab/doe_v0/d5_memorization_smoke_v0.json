@@ -1,0 +1,127 @@
+{
+  "dataset": {
+    "n_test": 256,
+    "n_train": 512,
+    "n_validation": 256
+  },
+  "description": "Bounded CPU wiring smoke: one config per block and one seed; never rank winners.",
+  "doe_seed": 20260717,
+  "evaluation": {
+    "c2st_sample_count": 256,
+    "ess_sample_count": 512,
+    "rare_sample_count": 2000
+  },
+  "experiment_id": "d5_memorization_doe_smoke_v0",
+  "feature_views": [
+    {
+      "view_id": "identity_cartesian_v0"
+    }
+  ],
+  "models": [
+    {
+      "family": "affine_coupling",
+      "name": "A_b08_w192_d2_lr0.00317796_mls2.84045_bs0128",
+      "params": {
+        "activation": "relu",
+        "batch_size": 128,
+        "checkpoint_interval": 1,
+        "data_augmentation": false,
+        "dropout": 0.0,
+        "early_stopping": false,
+        "grad_clip_norm": 5.0,
+        "hidden_depth": 2,
+        "hidden_width": 192,
+        "initializer_mode": "scaled_activation_aware",
+        "input_noise_std": 0.0,
+        "learning_rate": 0.0031779554851785524,
+        "max_epochs": 200,
+        "max_log_scale": 2.8404525334052737,
+        "memorization_mode": true,
+        "mixing_mode": "alternating_only",
+        "number_of_blocks": 8,
+        "weight_decay": 0.0
+      }
+    },
+    {
+      "family": "affine_coupling",
+      "name": "B_b04_w128_d2_lr0.0015465_mls4.01328_bs0512",
+      "params": {
+        "activation": "relu",
+        "batch_size": 512,
+        "checkpoint_interval": 1,
+        "data_augmentation": false,
+        "dropout": 0.0,
+        "early_stopping": false,
+        "grad_clip_norm": 5.0,
+        "hidden_depth": 2,
+        "hidden_width": 128,
+        "initializer_mode": "scaled_activation_aware",
+        "input_noise_std": 0.0,
+        "learning_rate": 0.0015464950444038779,
+        "max_epochs": 200,
+        "max_log_scale": 4.013278696637645,
+        "memorization_mode": true,
+        "mixing_mode": "fixed_random_permutation",
+        "number_of_blocks": 4,
+        "weight_decay": 0.0
+      }
+    },
+    {
+      "family": "affine_coupling",
+      "name": "C_b04_w192_d2_lr0.00249866_mls3.0361_bs0128",
+      "params": {
+        "activation": "silu",
+        "batch_size": 128,
+        "checkpoint_interval": 1,
+        "data_augmentation": false,
+        "dropout": 0.0,
+        "early_stopping": false,
+        "grad_clip_norm": 5.0,
+        "hidden_depth": 2,
+        "hidden_width": 192,
+        "initializer_mode": "scaled_activation_aware",
+        "input_noise_std": 0.0,
+        "learning_rate": 0.00249865669959671,
+        "max_epochs": 200,
+        "max_log_scale": 3.0360965726707003,
+        "memorization_mode": true,
+        "mixing_mode": "fixed_random_permutation",
+        "number_of_blocks": 4,
+        "weight_decay": 0.0
+      }
+    }
+  ],
+  "pdg_ids": [
+    13
+  ],
+  "resources": {
+    "device": "cpu"
+  },
+  "sampling_regimes": [
+    {
+      "regime": "iid_target"
+    },
+    {
+      "regime": "stratified_unweighted_diagnostic",
+      "sampling_rare_fraction": 0.5
+    },
+    {
+      "regime": "stratified_self_normalized_provisional",
+      "sampling_rare_fraction": 0.5
+    }
+  ],
+  "seeds": [
+    1
+  ],
+  "targets": [
+    {
+      "stage": "transformed",
+      "target_id": "D5",
+      "variant": "rare_1e-3"
+    }
+  ],
+  "tracking": {
+    "experiment_name": "d5_memorization_doe_v0",
+    "mode": "local"
+  }
+}

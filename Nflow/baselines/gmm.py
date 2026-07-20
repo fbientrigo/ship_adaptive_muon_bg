@@ -62,11 +62,22 @@ class GaussianMixtureEstimator:
         x_validation: Optional[np.ndarray] = None,
         seed: int = 0,
         sample_weight: Optional[np.ndarray] = None,
+        validation_sample_weight: Optional[np.ndarray] = None,
+        component_id: Optional[np.ndarray] = None,
+        validation_component_id: Optional[np.ndarray] = None,
+        rare_component_id: Optional[int] = None,
     ) -> FitResult:
-        if sample_weight is not None:
-            raise NotImplementedError(
-                "gaussian_mixture does not support sample_weight; pass None"
-            )
+        for name, value in (
+            ("sample_weight", sample_weight),
+            ("validation_sample_weight", validation_sample_weight),
+            ("component_id", component_id),
+            ("validation_component_id", validation_component_id),
+            ("rare_component_id", rare_component_id),
+        ):
+            if value is not None:
+                raise NotImplementedError(
+                    "{} does not support {}; pass None".format(self.family, name)
+                )
         start = time.perf_counter()
         x = np.asarray(x_train, dtype=np.float64)
         if x.ndim != 2 or x.shape[1] != self.dimension:

@@ -86,8 +86,12 @@ class DensityEstimator(Protocol):
         x_validation: Optional[np.ndarray],
         seed: int,
         sample_weight: Optional[np.ndarray] = None,
+        validation_sample_weight: Optional[np.ndarray] = None,
+        component_id: Optional[np.ndarray] = None,
+        validation_component_id: Optional[np.ndarray] = None,
+        rare_component_id: Optional[int] = None,
     ) -> FitResult:
-        """Fit on ``x_train`` (already view-transformed + normalized)."""
+        """Fit normalized rows with optional loss weights and component labels."""
         ...
 
     def log_prob(self, x: np.ndarray) -> np.ndarray:

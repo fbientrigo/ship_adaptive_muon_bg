@@ -1,0 +1,34 @@
+{
+  "campaign_matrices": {
+    "d3_memorization_control_v0.json": {
+      "model_count": 24,
+      "planned_run_count": 24,
+      "sampling_regime_count": 1,
+      "target_count": 1
+    },
+    "d5_memorization_matrix_v0.json": {
+      "model_count": 24,
+      "planned_run_count": 144,
+      "sampling_regime_count": 3,
+      "target_count": 2
+    },
+    "total_valid_planned_run_count": 168
+  },
+  "canonical_hash": "bd041ccd289fe24dfa41dec109657e1f8938295bb3a4b96028d6afea28a60430",
+  "canonical_json_sha256": "872acb67b3b654eec214889a30a224b02af74e9776a394e2eccba8d74425071b",
+  "config_count": 24,
+  "doe_seed": 20260717,
+  "minimum_normalized_pairwise_distance_by_block": {
+    "A": 0.8709776896608725,
+    "B": 0.8672648109482903,
+    "C": 0.87027745967846
+  },
+  "sampling_estimator_contract": {
+    "diagnostic_only": false,
+    "estimator_family": "self_normalized_importance_weighted_minibatch",
+    "regime": "stratified_self_normalized_provisional",
+    "scientific_scope": "provisional_target_estimator",
+    "unbiasedness_status": "not_established"
+  },
+  "schema_version": "0"
+}
