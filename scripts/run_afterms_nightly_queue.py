@@ -1113,6 +1113,17 @@ def main():
     parser.add_argument("--artifact-dir", type=str, default="artifacts/afterms_nightly_v0", help="Directory for reports")
     args = parser.parse_args()
 
+    git_commit = get_git_commit()
+    
+    # Load dataset hash
+    dataset_file = "data/raw/nflow_releases/muonsFullMC_afterMS.pkl"
+    target_hashes = {}
+    if os.path.exists(dataset_file):
+        try:
+            target_hashes["dataset_hash"] = audit.file_sha256(dataset_file)[:16]
+        except Exception:
+            target_hashes["dataset_hash"] = "unknown"
+
     # Subprocess entry point
     if args.run_job is not None:
         # Job 12 sub-runs
@@ -1149,17 +1160,6 @@ def main():
 
     os.makedirs(args.artifact_dir, exist_ok=True)
     os.makedirs(os.path.join(args.artifact_dir, "jobs"), exist_ok=True)
-
-    git_commit = get_git_commit()
-    
-    # Load dataset hash
-    dataset_file = "data/raw/nflow_releases/muonsFullMC_afterMS.pkl"
-    target_hashes = {}
-    if os.path.exists(dataset_file):
-        try:
-            target_hashes["dataset_hash"] = audit.file_sha256(dataset_file)[:16]
-        except Exception:
-            target_hashes["dataset_hash"] = "unknown"
             
     jobs_list = [
         "00_environment_and_dataset_smoke",
