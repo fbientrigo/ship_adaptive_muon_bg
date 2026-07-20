@@ -1007,8 +1007,9 @@ def build_final_nightly_report(args, git_commit, target_hashes):
                     writer.writerow([j_name, "default", m.get("test_feature_space_nll"), m.get("physical_space_nll"), m.get("wall_time_seconds"), m.get("parameter_count")])
                 else: # multiple runs
                     for run_lbl, run_data in j_res.items():
-                        m = run_data.get("metrics", {})
-                        writer.writerow([j_name, run_lbl, m.get("test_feature_space_nll"), m.get("physical_space_nll"), m.get("wall_time_seconds"), m.get("parameter_count")])
+                        if isinstance(run_data, dict) and "metrics" in run_data:
+                            m = run_data["metrics"]
+                            writer.writerow([j_name, run_lbl, m.get("test_feature_space_nll"), m.get("physical_space_nll"), m.get("wall_time_seconds"), m.get("parameter_count")])
                         
     # Write nightly_summary.md
     with open(os.path.join(report_dir, "nightly_summary.md"), "w") as f:
@@ -1033,15 +1034,17 @@ def build_final_nightly_report(args, git_commit, target_hashes):
         f.write("| Job | Model Run | Feature-space NLL | Physical-space NLL | Param Count | Time (s) |\n")
         f.write("| --- | --- | --- | --- | --- | --- |\n")
         for j_name, j_res in job_metrics.items():
-            if "metrics" in j_res:
-                m = j_res["metrics"]
-                f.write(f"| {j_name} | default | {m.get('test_feature_space_nll'):.4f} | {m.get('physical_space_nll') or 0.0:.4f} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
-            else:
-                for run_lbl, run_data in j_res.items():
-                    m = run_data.get("metrics", {})
-                    pnll = m.get("physical_space_nll")
-                    pnll_str = f"{pnll:.4f}" if pnll is not None else "N/A (No Jac)"
-                    f.write(f"| {j_name} | {run_lbl} | {m.get('test_feature_space_nll'):.4f} | {pnll_str} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
+            if isinstance(j_res, dict):
+                if "metrics" in j_res:
+                    m = j_res["metrics"]
+                    f.write(f"| {j_name} | default | {m.get('test_feature_space_nll'):.4f} | {m.get('physical_space_nll') or 0.0:.4f} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
+                else:
+                    for run_lbl, run_data in j_res.items():
+                        if isinstance(run_data, dict) and "metrics" in run_data:
+                            m = run_data["metrics"]
+                            pnll = m.get("physical_space_nll")
+                            pnll_str = f"{pnll:.4f}" if pnll is not None else "N/A (No Jac)"
+                            f.write(f"| {j_name} | {run_lbl} | {m.get('test_feature_space_nll'):.4f} | {pnll_str} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
                     
         f.write("\n## Limitations & Non-claims\n\n")
         f.write("- Five-epoch results are diagnostics only and do not declare model convergence or physics superiority.\n")
@@ -1138,6 +1141,8 @@ def main():
             run_validate_afterms_shards(args, os.path.join(args.artifact_dir, "jobs", args.run_job))
         elif args.run_job == "03_preprocessing_roundtrip_and_plots":
             run_preprocessing_roundtrip_and_plots(args, os.path.join(args.artifact_dir, "jobs", args.run_job))
+        elif args.run_job == "13_build_nightly_report":
+            build_final_nightly_report(args, git_commit, target_hashes)
         else:
             run_neural_training_subprocess(args.run_job, args.device, args.shard_dir, os.path.join(args.artifact_dir, "jobs", args.run_job))
         return 0
