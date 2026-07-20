@@ -213,19 +213,26 @@ def compute_nn_distances(q_samples, ref_samples, subsample_size=1000):
 def evaluate_generated_samples(test_data, q_samples, atol=1e-6):
     from ship_muon_bg.density_lab.metrics import c2st, tail_quantile_errors, exceedance_probability_errors, duplicate_diagnostics
     
-    # 5-D comparison: px, py, pz, x, y
-    p_5d = test_data[:, :5]
-    q_5d = q_samples[:, :5]
+    dim = test_data.shape[1]
+    if dim == 4:
+        col_names = ["px", "py", "pz", "E"]
+    else:
+        col_names = ["px", "py", "pz", "x", "y"]
+        test_data = test_data[:, :5]
+        q_samples = q_samples[:, :5]
+        
+    p_feats = test_data
+    q_feats = q_samples
     
     # C2ST on frozen bounded sample
     c2st_res = {}
-    n_c2st = min(2000, p_5d.shape[0], q_5d.shape[0])
+    n_c2st = min(2000, p_feats.shape[0], q_feats.shape[0])
     if n_c2st >= 10:
-        c2st_res = c2st(p_5d[:n_c2st], q_5d[:n_c2st], seed=42)
+        c2st_res = c2st(p_feats[:n_c2st], q_feats[:n_c2st], seed=42)
         
-    tq_errs = tail_quantile_errors(p_5d, q_5d, quantiles=[0.9, 0.99, 0.999], column_names=["px", "py", "pz", "x", "y"])
-    exc_errs = exceedance_probability_errors(p_5d, q_5d, thresholds=[60.0, 70.0], column_index=2)
-    dups = duplicate_diagnostics(q_5d, atol=atol)
+    tq_errs = tail_quantile_errors(p_feats, q_feats, quantiles=[0.9, 0.99, 0.999], column_names=col_names)
+    exc_errs = exceedance_probability_errors(p_feats, q_feats, thresholds=[60.0, 70.0], column_index=2)
+    dups = duplicate_diagnostics(q_feats, atol=atol)
     
     # Exceedance counts
     pz_q = q_samples[:, 2]
@@ -240,7 +247,7 @@ def evaluate_generated_samples(test_data, q_samples, atol=1e-6):
     
     # Weighted/unweighted marginal summaries
     marginal_summaries = {}
-    for i, name in enumerate(["px", "py", "pz", "x", "y"]):
+    for i, name in enumerate(col_names):
         col = q_samples[:, i]
         marginal_summaries[name] = {
             "mean": float(np.mean(col)),
