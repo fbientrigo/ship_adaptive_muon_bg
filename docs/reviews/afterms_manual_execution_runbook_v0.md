@@ -58,8 +58,10 @@ python -m pytest -q tests/afterms/test_report_builder.py
 ```powershell
 python -m pytest -q
 ```
-**EXPECTED OUTPUT:** `552 passed, 2 skipped` (0 failed), as verified this
-session.
+**EXPECTED OUTPUT:** `564 passed, 2 skipped` (0 failed), as verified this
+session (12 tests were added by the shard-interruption-handling patch below;
+the two `RuntimeWarning: overflow encountered in scalar multiply` warnings
+from `split.py` are gone).
 **ARTIFACTS WRITTEN:** none.
 **SAFE TO RE-RUN:** yes.
 **TRAINS A MODEL:** no.
@@ -167,6 +169,135 @@ not started.
 **ARTIFACTS WRITTEN:** jobs 00-03 only.
 **SAFE TO RE-RUN:** yes.
 **TRAINS A MODEL:** no (jobs 00-03 are non-neural).
+
+---
+
+## INCIDENT: JOB 01 "SILENCE" AND CTRL+C (resolved this session)
+
+An `artifacts/afterms_nightly_v1` run was Ctrl+C'd during job
+`01_build_afterms_shards` after ~117s with no visible progress. Diagnosis:
+job 01 was **not hung** — `afterms_audit.json` (73.8K, valid JSON) had
+already been written, and the two `RuntimeWarning: overflow encountered in
+scalar multiply` lines (from `split.py`'s intentional uint64 splitmix64
+mixer) had reached `run.log`, proving the split-assignment phase had already
+started. The prints that should have preceded those warnings never appeared
+because `scripts/build_afterms_shards.py` is launched as a grandchild
+process whose stdout is a pipe (not a tty) and was never run unbuffered —
+CPython block-buffers stdout in that situation, so `print()` output sat
+invisible for minutes while `warnings.warn()` (always unbuffered on stderr)
+showed up immediately. This session:
+- added `flush=True` and phase-boundary progress prints (+ a `progress.json`
+  heartbeat under `jobs/01_build_afterms_shards/`) to `build_afterms_shards.py`;
+- launches it with `-u` and `PYTHONUNBUFFERED=1`/`PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8`
+  from `run_afterms_nightly_queue.py`;
+- made all shard/manifest writes atomic (`.tmp` + `os.replace`) so a killed
+  process can never leave a half-written file at its final name;
+- added explicit `KeyboardInterrupt` handling in `run_job_outer` that
+  terminates the child process tree (Windows: `CTRL_BREAK_EVENT` on a
+  dedicated process group, escalating to `taskkill /PID <pid> /T /F` only if
+  needed), writes `status.json` with `"status": "interrupted"` (never
+  `"failed"`), and clears `queue_state.json`'s `active_job`/`pid`, exiting 130.
+- fixed a **pre-existing, independent bug** in `update_queue_state()`: it used
+  `if x is not None` to decide whether to update a field, so every call site
+  that intentionally cleared `active_job`/`pid` back to `None` after a job
+  finished was silently a no-op — `queue_state.json` could report a job as
+  perpetually "active" even after it completed normally, Ctrl+C aside. This
+  is the actual reason the interrupted run's `queue_state.json` still showed
+  `"active_job": "01_build_afterms_shards"` with a dead PID.
+
+**PURPOSE:** Inspect the partial artifacts left by the interrupted run before
+deciding whether to reuse or discard them.
+**COMMAND:**
+```powershell
+Get-ChildItem -Recurse artifacts\afterms_nightly_v1
+Get-ChildItem data\shards\afterms_nightly_v1
+Get-Content artifacts\afterms_nightly_v1\queue_state.json
+```
+**FINDINGS THIS SESSION (safe to retain, nothing needs manual deletion):**
+- `artifacts/afterms_nightly_v1/afterms_audit.json` — complete, valid JSON.
+  Safe to keep; a rerun overwrites it with an identical file (audit is a pure
+  function of the raw file's bytes and `--seed`).
+- `artifacts/afterms_nightly_v1/jobs/01_build_afterms_shards/run.log` —
+  informational log of the interrupted attempt (just the two overflow
+  warnings). Safe to keep; `run_job_outer` reopens `run.log` in `"w"` mode
+  and overwrites it on the next attempt.
+- `data/shards/afterms_nightly_v1/` — **empty**. The interrupt happened
+  before any shard `.npy`/`.json` file was written, so there is nothing
+  incomplete to remove here.
+- No `jobs/01_build_afterms_shards/status.json` exists — the crash predates
+  this session's `"interrupted"` status write, so `--resume` will simply
+  re-run job 01 from scratch (there is no `"completed"` status to
+  short-circuit it).
+- `queue_state.json` still shows a stale `"active_job": "01_build_afterms_shards"`
+  with a dead PID — this is cosmetic only (no process at that PID is
+  running; confirmed via `Get-CimInstance Win32_Process` returning no
+  `python.exe` rows). It is automatically corrected the next time the queue
+  runs, now that the `update_queue_state()` clearing bug above is fixed.
+
+**IF you ever do find a `*.tmp` file** under `data/shards/<run>/` after a
+future interruption (not the case for `afterms_nightly_v1` today), it is
+always safe to delete — atomic writes only ever leave a `.tmp` sibling
+behind when the corresponding final file was never produced:
+```powershell
+Get-ChildItem data\shards\afterms_nightly_v1 -Filter *.tmp
+Remove-Item data\shards\afterms_nightly_v1\*.tmp -ErrorAction SilentlyContinue
+```
+
+**PURPOSE:** Confirm no orphaned child process remains from a past
+interruption before starting a new run.
+**COMMAND:**
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Select-Object ProcessId, ParentProcessId, CommandLine
+```
+**EXPECTED OUTPUT:** No rows (or only rows unrelated to this repo). Confirmed
+empty this session — the interrupted run left no orphan.
+**IF an orphan matching this repo's queue/shard-build command line is
+found**, terminate only that exact PID (never a broad `taskkill /IM
+python.exe`):
+```powershell
+Stop-Process -Id <PID> -Force
+```
+
+**PURPOSE:** Rerun job 01 alone against the same directories as the
+interrupted run.
+**COMMAND:**
+```powershell
+python scripts/run_afterms_nightly_queue.py --jobs 01_build_afterms_shards --artifact-dir artifacts/afterms_nightly_v1 --shard-dir data/shards/afterms_nightly_v1
+```
+**EXPECTED OUTPUT:** Progress lines now appear promptly (`Loading raw
+dataset...`, `Loaded dataset: ... (elapsed ...)`, per-split/per-shard lines),
+not just at the end; `jobs/01_build_afterms_shards/progress.json` updates
+through each phase; `status.json` ends `"status": "completed"`.
+**ARTIFACTS WRITTEN:** `data/shards/afterms_nightly_v1/*`,
+`artifacts/afterms_nightly_v1/jobs/01_build_afterms_shards/*`.
+**SAFE TO RE-RUN:** yes.
+**TRAINS A MODEL:** no.
+
+**PURPOSE:** Run jobs 02-03 once job 01 has completed.
+**COMMAND:**
+```powershell
+python scripts/run_afterms_nightly_queue.py --jobs 02_validate_afterms_shards 03_preprocessing_roundtrip_and_plots --artifact-dir artifacts/afterms_nightly_v1 --shard-dir data/shards/afterms_nightly_v1
+```
+**SAFE TO RE-RUN:** yes.
+**TRAINS A MODEL:** no.
+
+**PURPOSE:** Resume the rest of the queue later (skips 00-03 once their
+`status.json` says `"completed"`).
+**COMMAND:**
+```powershell
+python scripts/run_afterms_nightly_queue.py --resume --artifact-dir artifacts/afterms_nightly_v1 --shard-dir data/shards/afterms_nightly_v1
+```
+**SAFE TO RE-RUN:** yes.
+**TRAINS A MODEL:** yes, once it reaches jobs 04+.
+
+**PURPOSE:** Run the watcher against this artifact directory while the queue
+runs in another terminal.
+**COMMAND:**
+```powershell
+python scripts/watch_afterms_nightly_queue.py --artifact-dir artifacts/afterms_nightly_v1 --loop --interval 30
+```
+**SAFE TO RE-RUN:** yes.
+**TRAINS A MODEL:** no.
 
 ---
 

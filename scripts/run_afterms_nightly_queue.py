@@ -18,6 +18,7 @@ import ctypes
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -142,7 +143,18 @@ def get_git_commit() -> str:
         return "unknown"
 
 
-def update_queue_state(artifact_dir, active_job=None, pid=None, completed=None, failed=None, pending=None):
+_UNSET = object()
+
+
+def update_queue_state(artifact_dir, active_job=_UNSET, pid=_UNSET, completed=_UNSET, failed=_UNSET, pending=_UNSET):
+    """Merge-update queue_state.json. Any argument left at its default
+    (unspecified) leaves that field untouched; passing ``None`` explicitly
+    sets the field to ``None`` -- this distinction matters because every
+    caller that clears ``active_job``/``pid`` after a job finishes (or is
+    interrupted) does so by passing ``active_job=None, pid=None``. A prior
+    ``if x is not None`` check treated that identically to "not passed",
+    so those clears were silently no-ops and queue_state.json kept reporting
+    the last-started job as active forever, including across Ctrl+C."""
     queue_state_path = os.path.join(artifact_dir, "queue_state.json")
     state = {}
     if os.path.exists(queue_state_path):
@@ -151,16 +163,16 @@ def update_queue_state(artifact_dir, active_job=None, pid=None, completed=None, 
                 state = json.load(f)
         except Exception:
             pass
-            
-    if active_job is not None:
+
+    if active_job is not _UNSET:
         state["active_job"] = active_job
-    if pid is not None:
+    if pid is not _UNSET:
         state["pid"] = pid
-    if completed is not None:
+    if completed is not _UNSET:
         state["completed_jobs"] = completed
-    if failed is not None:
+    if failed is not _UNSET:
         state["failed_jobs"] = failed
-    if pending is not None:
+    if pending is not _UNSET:
         state["pending_jobs"] = pending
     state["heartbeat"] = time.time()
     
@@ -892,6 +904,55 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
 
 # --- Queue Runner Main Implementation ---
 
+def _terminate_process_tree(proc, grace_seconds=10.0):
+    """Best-effort termination of `proc` and its descendants after a
+    KeyboardInterrupt.
+
+    `proc` is expected to have been created with
+    ``creationflags=CREATE_NEW_PROCESS_GROUP`` on Windows so it forms its own
+    console process group, distinct from ours. We first ask that group to
+    stop gracefully via CTRL_BREAK_EVENT (which also reaches any grandchild
+    subprocess it spawned), wait a bounded grace period, then escalate to a
+    narrowly scoped ``taskkill /PID <pid> /T /F`` (this exact pid's tree only)
+    if it is still alive. Idempotent if the child already exited.
+    """
+    if proc.poll() is not None:
+        return
+
+    if os.name == "nt":
+        try:
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=grace_seconds)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True,
+                timeout=grace_seconds,
+            )
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=grace_seconds)
+        except subprocess.TimeoutExpired:
+            pass
+    else:
+        try:
+            proc.terminate()
+            proc.wait(timeout=grace_seconds)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+
 def run_job_outer(job_name, args, target_hashes, git_commit):
     """Orchestrates one job, handles pre/post metrics, failure isolation and logging."""
     job_dir = os.path.join(args.artifact_dir, "jobs", job_name)
@@ -955,27 +1016,66 @@ def run_job_outer(job_name, args, target_hashes, git_commit):
     ]
     
     log_path = os.path.join(job_dir, "run.log")
+    child_env = dict(os.environ)
+    child_env["PYTHONUTF8"] = "1"
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    popen_kwargs = {}
+    if os.name == "nt":
+        # A dedicated console process group lets us target Ctrl+C/Break
+        # cleanup at exactly this subprocess (and its descendants) instead of
+        # relying on default Windows Ctrl+C broadcast to every process
+        # sharing our console.
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+    proc = None
     try:
         with open(log_path, "w", encoding="utf-8") as log_file:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                env=child_env,
+                **popen_kwargs,
+            )
             update_queue_state(args.artifact_dir, active_job=job_name, pid=proc.pid)
-            # We query and stream stdout
-            while True:
-                line = proc.stdout.readline()
-                if not line and proc.poll() is not None:
-                    break
-                if line:
-                    print(f"  [Subprocess] {line.strip()}", flush=True)
-                    log_file.write(line)
-                    log_file.flush()
-                    
-            stdout, stderr = proc.communicate()
-            if stdout:
-                log_file.write(stdout)
-                print(f"  [Subprocess] {stdout.strip()}", flush=True)
-                
+            try:
+                # We query and stream stdout
+                while True:
+                    line = proc.stdout.readline()
+                    if not line and proc.poll() is not None:
+                        break
+                    if line:
+                        print(f"  [Subprocess] {line.strip()}", flush=True)
+                        log_file.write(line)
+                        log_file.flush()
+
+                stdout, stderr = proc.communicate()
+                if stdout:
+                    log_file.write(stdout)
+                    print(f"  [Subprocess] {stdout.strip()}", flush=True)
+            except KeyboardInterrupt:
+                proc.stdout.close()
+                _terminate_process_tree(proc)
+                interrupted_status = {
+                    "status": "interrupted",
+                    "job_name": job_name,
+                    "job_config_hash": job_config_hash,
+                    "dataset_hash": target_hashes.get("dataset_hash"),
+                    "git_commit": git_commit,
+                    "interrupted_at": time.time(),
+                }
+                with open(status_path, "w") as f:
+                    json.dump(interrupted_status, f, indent=2)
+                update_queue_state(args.artifact_dir, active_job=None, pid=None)
+                print(f"JOB INTERRUPTED: {job_name}")
+                raise
+
             ret_code = proc.poll()
-        
+
         # Post cleanup wait
         time.sleep(1.0)
         
@@ -1254,12 +1354,25 @@ def main():
         elif args.run_job == "01_build_afterms_shards":
             cmd = [
                 sys.executable,
+                "-u",
                 "scripts/build_afterms_shards.py",
                 "--raw-file", "data/raw/nflow_releases/muonsFullMC_afterMS.pkl",
                 "--shard-dir", args.shard_dir,
-                "--artifact-dir", args.artifact_dir
+                "--artifact-dir", args.artifact_dir,
+                "--job-name", args.run_job,
             ]
-            subprocess.run(cmd, check=True)
+            # -u (plus PYTHONUNBUFFERED as belt-and-suspenders) forces this
+            # grandchild's stdout to be truly unbuffered: without it, since
+            # its stdout is a pipe (not a tty), CPython block-buffers stdout
+            # writes by default, so print()s that already happened sit
+            # invisible for minutes while stderr warnings appear immediately
+            # -- that stdio-buffering artifact is what looked like a silent
+            # hang, not an actual hang.
+            child_env = dict(os.environ)
+            child_env["PYTHONUNBUFFERED"] = "1"
+            child_env["PYTHONUTF8"] = "1"
+            child_env["PYTHONIOENCODING"] = "utf-8"
+            subprocess.run(cmd, check=True, env=child_env)
         elif args.run_job == "02_validate_afterms_shards":
             run_validate_afterms_shards(args, os.path.join(args.artifact_dir, "jobs", args.run_job))
         elif args.run_job == "03_preprocessing_roundtrip_and_plots":
@@ -1305,46 +1418,57 @@ def main():
         )
         
         ok = False
-        if job == "01_build_afterms_shards":
-            if args.dry_run:
-                print(f"[DRY-RUN] Would run build_afterms_shards.py")
-                ok = True
-            else:
-                ok = run_job_outer(job, args, target_hashes, git_commit)
-        elif job == "12_memory_release_repeat_smoke":
-            if args.dry_run:
-                print(f"[DRY-RUN] Would run memory_release_repeat_smoke")
-                ok = True
-            else:
-                try:
-                    execute_job_12_memory_release(args, target_hashes, git_commit)
-                    status_path = os.path.join(args.artifact_dir, "jobs", job, "status.json")
-                    with open(status_path, "w") as f:
-                        json.dump({"status": "completed", "job_name": job, "git_commit": git_commit}, f)
+        try:
+            if job == "01_build_afterms_shards":
+                if args.dry_run:
+                    print(f"[DRY-RUN] Would run build_afterms_shards.py")
                     ok = True
-                except Exception as e:
-                    print(f"Job 12 failed: {e}")
-                    ok = False
-        elif job == "13_build_nightly_report":
-            if args.dry_run:
-                print(f"[DRY-RUN] Would build final report")
-                ok = True
-            else:
-                try:
-                    build_final_nightly_report(args, git_commit, target_hashes)
-                    status_path = os.path.join(args.artifact_dir, "jobs", job, "status.json")
-                    with open(status_path, "w") as f:
-                        json.dump({"status": "completed", "job_name": job, "git_commit": git_commit}, f)
+                else:
+                    ok = run_job_outer(job, args, target_hashes, git_commit)
+            elif job == "12_memory_release_repeat_smoke":
+                if args.dry_run:
+                    print(f"[DRY-RUN] Would run memory_release_repeat_smoke")
                     ok = True
-                except Exception as e:
-                    print(f"Job 13 failed: {e}")
-                    ok = False
-        else:
-            if args.dry_run:
-                print(f"[DRY-RUN] Job {job} would execute.")
-                ok = True
+                else:
+                    try:
+                        execute_job_12_memory_release(args, target_hashes, git_commit)
+                        status_path = os.path.join(args.artifact_dir, "jobs", job, "status.json")
+                        with open(status_path, "w") as f:
+                            json.dump({"status": "completed", "job_name": job, "git_commit": git_commit}, f)
+                        ok = True
+                    except Exception as e:
+                        print(f"Job 12 failed: {e}")
+                        ok = False
+            elif job == "13_build_nightly_report":
+                if args.dry_run:
+                    print(f"[DRY-RUN] Would build final report")
+                    ok = True
+                else:
+                    try:
+                        build_final_nightly_report(args, git_commit, target_hashes)
+                        status_path = os.path.join(args.artifact_dir, "jobs", job, "status.json")
+                        with open(status_path, "w") as f:
+                            json.dump({"status": "completed", "job_name": job, "git_commit": git_commit}, f)
+                        ok = True
+                    except Exception as e:
+                        print(f"Job 13 failed: {e}")
+                        ok = False
             else:
-                ok = run_job_outer(job, args, target_hashes, git_commit)
+                if args.dry_run:
+                    print(f"[DRY-RUN] Job {job} would execute.")
+                    ok = True
+                else:
+                    ok = run_job_outer(job, args, target_hashes, git_commit)
+        except KeyboardInterrupt:
+            # run_job_outer already wrote an "interrupted" status.json and
+            # cleared active_job/pid for its own job; this is a defense-in-
+            # depth backstop (also covers jobs 12/13's direct subprocess
+            # paths above) so queue_state.json never keeps reporting a
+            # falsely-active job after Ctrl+C. A user interruption is not a
+            # data-contract or model failure, so it must exit 130, not 1.
+            update_queue_state(args.artifact_dir, active_job=None, pid=None)
+            print(f"\nQueue interrupted by user during job {job}.")
+            sys.exit(130)
 
         if ok:
             completed_jobs.append(job)

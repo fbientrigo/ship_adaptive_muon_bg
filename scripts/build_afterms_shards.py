@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import numpy as np
 
 # Add src/ to path to allow importing ship_muon_bg
@@ -25,9 +26,58 @@ from ship_muon_bg.data_contracts import (
 )
 from ship_muon_bg.afterms import audit, split, stratify
 
+DEFAULT_JOB_NAME = "01_build_afterms_shards"
+
 
 def compute_hash(data_bytes: bytes) -> str:
     return hashlib.sha256(data_bytes).hexdigest()
+
+
+def _atomic_save_npy(path, array, **save_kwargs):
+    """Write ``array`` to ``path`` via a same-directory temp file + os.replace,
+    so a killed process never leaves a half-written file at the final name."""
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "wb") as handle:
+        np.save(handle, array, **save_kwargs)
+    os.replace(tmp_path, path)
+
+
+def _atomic_write_json(path, obj, **dump_kwargs):
+    """Write ``obj`` as JSON to ``path`` via a same-directory temp file +
+    os.replace, so a completed manifest never references a partially written
+    sibling file (and never appears itself half-written)."""
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(obj, handle, **dump_kwargs)
+        handle.write("\n")
+    os.replace(tmp_path, path)
+
+
+def _atomic_write_text(path, text):
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.replace(tmp_path, path)
+
+
+def _write_progress(artifact_dir, job_name, phase, *, started_at, extra=None):
+    """Update the existing jobs/<job_name>/progress.json heartbeat contract
+    that scripts/watch_afterms_nightly_queue.py already reads, so the shard
+    build reports meaningful phase boundaries instead of going silent for
+    minutes at a time."""
+    job_dir = os.path.join(artifact_dir, "jobs", job_name)
+    os.makedirs(job_dir, exist_ok=True)
+    payload = {
+        "phase": phase,
+        "elapsed_seconds": time.perf_counter() - started_at,
+        "heartbeat": time.time(),
+    }
+    if extra:
+        payload.update(extra)
+    try:
+        _atomic_write_json(os.path.join(job_dir, "progress.json"), payload, indent=2, sort_keys=True)
+    except OSError:
+        pass
 
 
 def standardized_mean_difference(shard_col, split_col):
@@ -144,29 +194,41 @@ def main():
     parser.add_argument("--raw-file", type=str, default="data/raw/nflow_releases/muonsFullMC_afterMS.pkl", help="Input PKL path")
     parser.add_argument("--shard-dir", type=str, default="data/shards/afterms_nightly_v0", help="Output directory for shards")
     parser.add_argument("--artifact-dir", type=str, default="artifacts/afterms_nightly_v0", help="Output directory for audits")
+    parser.add_argument("--job-name", type=str, default=DEFAULT_JOB_NAME, help="Job name under artifact-dir/jobs/ for progress heartbeat")
     args = parser.parse_args()
 
     os.makedirs(args.shard_dir, exist_ok=True)
     os.makedirs(args.artifact_dir, exist_ok=True)
 
-    print(f"Loading raw dataset: {args.raw_file}")
+    t_start = time.perf_counter()
+
+    def progress(phase, **extra):
+        _write_progress(args.artifact_dir, args.job_name, phase, started_at=t_start, extra=extra or None)
+
+    print(f"Loading raw dataset: {args.raw_file}", flush=True)
+    progress("raw_dataset_load_started")
     array = load_muon_pkl(args.raw_file)
     n_rows, n_cols = array.shape
-    print(f"Loaded dataset: {n_rows} rows, {n_cols} columns")
+    print(f"Loaded dataset: {n_rows} rows, {n_cols} columns (elapsed {time.perf_counter() - t_start:.1f}s)", flush=True)
+    progress("raw_dataset_load_completed", n_rows=int(n_rows), n_cols=int(n_cols))
 
     # 1. Descriptive Audit (Phase A)
-    print("Performing Phase A descriptive audit...")
+    print("Performing Phase A descriptive audit...", flush=True)
     audit_data = audit.build_afterms_audit(args.raw_file, sample_seed=args.seed)
     audit_path = audit.write_afterms_audit(audit_data, args.artifact_dir)
-    print(f"Audit written to: {audit_path}")
+    print(f"Audit written to: {audit_path} (elapsed {time.perf_counter() - t_start:.1f}s)", flush=True)
     raw_hash = audit_data["content_dataset_hash"]
-    print(f"Dataset Content Hash: {raw_hash}")
+    print(f"Dataset Content Hash: {raw_hash}", flush=True)
+    progress("descriptive_audit_completed", dataset_hash=raw_hash)
 
     # 2. Deterministic split (Phase B, §5.1)
-    print("Generating deterministic global train/validation/test split...")
+    print("Generating deterministic global train/validation/test split...", flush=True)
+    progress("split_assignment_started")
     row_indices = np.arange(n_rows, dtype=np.uint64)
     labels = split.assign_split(row_indices, dataset_hash=raw_hash, seed=args.seed)
-    
+    print(f"Split assignment completed (elapsed {time.perf_counter() - t_start:.1f}s)", flush=True)
+    progress("split_assignment_completed")
+
     # 3. Create shards for each split (Phase B, §5.2-5.3)
     shards_written = []
     representativeness_reports = {}
@@ -182,15 +244,20 @@ def main():
         split_mask = (labels == split_name)
         split_indices = row_indices[split_mask]
         split_array = array[split_mask]
-        
+
         split_n_rows = split_array.shape[0]
         n_shards = stratify.n_shards_for_split(split_n_rows, target_rows_per_shard=args.target_rows)
-        print(f"Split '{split_name}': {split_n_rows} rows, assigning to {n_shards} shards")
+        print(f"Split '{split_name}' started: {split_n_rows} rows, assigning to {n_shards} shards "
+              f"(elapsed {time.perf_counter() - t_start:.1f}s)", flush=True)
+        progress(f"split_{split_name}_started", row_count=int(split_n_rows), n_shards=int(n_shards))
 
+        print(f"Split '{split_name}': computing stratification summaries...", flush=True)
         stratum_ids, stratum_table = stratify.compute_strata(split_array, schema.COLUMN_INDEX)
         shard_of_row, understaffed_report = stratify.assign_shards(
             split_indices, stratum_ids, n_shards=n_shards, shard_seed=args.seed
         )
+        print(f"Split '{split_name}': stratification summaries completed "
+              f"(elapsed {time.perf_counter() - t_start:.1f}s)", flush=True)
 
         global_manifest["splits"][split_name] = {
             "row_count": int(split_n_rows),
@@ -209,9 +276,11 @@ def main():
             idx_path = os.path.join(args.shard_dir, f"{shard_name}.indices.npy")
             json_path = os.path.join(args.shard_dir, f"{shard_name}.json")
 
-            # Save arrays (preserve float64 format)
-            np.save(npy_path, shard_data, allow_pickle=False)
-            np.save(idx_path, shard_row_indices, allow_pickle=False)
+            # Save arrays (preserve float64 format) atomically: a killed
+            # process must never leave a shard file that looks complete but
+            # isn't.
+            _atomic_save_npy(npy_path, shard_data, allow_pickle=False)
+            _atomic_save_npy(idx_path, shard_row_indices, allow_pickle=False)
 
             # Compute shard file hashes
             with open(npy_path, "rb") as f:
@@ -262,9 +331,7 @@ def main():
                 "indices_hash": idx_hash,
             }
 
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(shard_manifest, f, indent=2, sort_keys=True)
-                f.write("\n")
+            _atomic_write_json(json_path, shard_manifest, indent=2, sort_keys=True)
 
             shards_written.append({
                 "split": split_name,
@@ -275,6 +342,9 @@ def main():
                 "row_count": shard_data.shape[0],
                 "shard_hash": shard_hash,
             })
+            print(f"Split '{split_name}': shard {s + 1}/{n_shards} written ({shard_data.shape[0]} rows, "
+                  f"elapsed {time.perf_counter() - t_start:.1f}s)", flush=True)
+            progress(f"split_{split_name}_shard_written", shard_number=int(s), row_count=int(shard_data.shape[0]))
 
             # Calculate representativeness report entry
             rep_report = calculate_representativeness(
@@ -283,33 +353,33 @@ def main():
             representativeness_reports[shard_name] = rep_report
 
     global_manifest["shards"] = shards_written
-    
-    # Write global shard_manifest.json
+    progress("manifest_validation_started")
+
+    # Write global shard_manifest.json. Atomic (tmp + os.replace) so that
+    # 02_validate_afterms_shards can never observe a manifest referencing
+    # shards that were only partially written.
     manifest_path = os.path.join(args.shard_dir, "shard_manifest.json")
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(global_manifest, f, indent=2, sort_keys=True)
-        f.write("\n")
-    print(f"Global shard manifest written to: {manifest_path}")
+    _atomic_write_json(manifest_path, global_manifest, indent=2, sort_keys=True)
+    print(f"Global shard manifest written to: {manifest_path} (elapsed {time.perf_counter() - t_start:.1f}s)", flush=True)
 
     # Write global shard_validation_report.json
     report_json_path = os.path.join(args.shard_dir, "shard_validation_report.json")
     validation_status = "generated"
-    
+
     # Simple check for completeness/validity
     for s_name, s_rep in representativeness_reports.items():
         if s_rep["row_count_shard"] == 0:
             validation_status = "incomplete"
-            
+
     report_envelope = {
         "validation_status": validation_status,
         "dataset_hash": raw_hash,
         "seed": args.seed,
         "shards": representativeness_reports
     }
-    with open(report_json_path, "w", encoding="utf-8") as f:
-        json.dump(report_envelope, f, indent=2, sort_keys=True)
-        f.write("\n")
-    print(f"Validation report JSON written to: {report_json_path}")
+    _atomic_write_json(report_json_path, report_envelope, indent=2, sort_keys=True)
+    print(f"Validation report JSON written to: {report_json_path}", flush=True)
+    progress("manifest_validation_completed")
 
     # Write global shard_validation_report.md
     report_md_path = os.path.join(args.shard_dir, "shard_validation_report.md")
@@ -356,8 +426,10 @@ def main():
         f.write("> [!IMPORTANT]\n")
         f.write("> No source-lineage/group identifier is currently available. Row-disjoint splitting does not prove source-muon independence.\n")
         
-    print(f"Validation report MD written to: {report_md_path}")
-    print("Shard construction completed successfully.")
+    print(f"Validation report MD written to: {report_md_path}", flush=True)
+    total_elapsed = time.perf_counter() - t_start
+    print(f"Shard construction completed successfully. Total elapsed: {total_elapsed:.1f}s", flush=True)
+    progress("shard_construction_completed", total_elapsed_seconds=total_elapsed)
 
 
 if __name__ == "__main__":

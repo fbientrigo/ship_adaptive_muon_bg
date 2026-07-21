@@ -1,6 +1,12 @@
+import json
+import os
+import warnings
+
 import numpy as np
 
 from ship_muon_bg.afterms import split
+
+_FROZEN_VECTORS_PATH = os.path.join(os.path.dirname(__file__), "_frozen_split_vectors.json")
 
 
 def test_deterministic_repeatable():
@@ -54,3 +60,37 @@ def test_different_seed_changes_assignment():
     labels_a = split.assign_split(idx, dataset_hash="aa" * 32, seed=1)
     labels_b = split.assign_split(idx, dataset_hash="aa" * 32, seed=2)
     assert not np.array_equal(labels_a, labels_b)
+
+
+def test_frozen_vectors_exact_bit_for_bit():
+    """Regression-locks the splitmix64 mixer output against vectors captured
+    from the pre-errstate-patch implementation (seed sweeps, uint64 boundary
+    indices, a realistic-row-count-sized range, and assign_split labels).
+    Any mismatch means the uint64 overflow-warning fix silently changed the
+    frozen split/shard-allocation contract, which must never happen."""
+    with open(_FROZEN_VECTORS_PATH) as f:
+        cases = json.load(f)
+
+    assert len(cases) > 0
+    for name, dataset_hash, seed, idx, expected in cases:
+        idx = np.array(idx, dtype=np.uint64)
+        if name == "assign_split_labels":
+            got = split.assign_split(idx, dataset_hash=dataset_hash, seed=seed).tolist()
+        else:
+            got = split.row_uniform(idx, dataset_hash=dataset_hash, seed=seed).tolist()
+        assert got == expected, f"frozen vector mismatch for case {name!r}"
+
+
+def test_no_uint64_overflow_warning_emitted():
+    idx = np.arange(0, 50_000, dtype=np.uint64)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        split.assign_split(idx, dataset_hash="deadbeef" * 8, seed=7)
+
+
+def test_unrelated_numpy_warnings_not_suppressed():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with np.errstate(invalid="warn"):
+            np.float64(0.0) / np.float64(0.0)
+        assert any(issubclass(w.category, RuntimeWarning) for w in caught)

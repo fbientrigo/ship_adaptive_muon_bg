@@ -31,8 +31,13 @@ def _mix64(x):
     """splitmix64 finalizer: not cryptographic, just a well-distributed,
     deterministic avalanche mix suitable for reproducible row assignment."""
     x = x & _MASK64
-    x = (x ^ (x >> np.uint64(33))) * np.uint64(0xFF51AFD7ED558CCD) & _MASK64
-    x = (x ^ (x >> np.uint64(33))) * np.uint64(0xC4CEB9FE1A85EC53) & _MASK64
+    # Modulo-2^64 wraparound is intentional here (splitmix64 is defined over
+    # uint64 arithmetic); NumPy's scalar overflow warning is expected noise
+    # for these two multiplies, not a correctness signal, so it is suppressed
+    # at the narrowest possible scope.
+    with np.errstate(over="ignore"):
+        x = (x ^ (x >> np.uint64(33))) * np.uint64(0xFF51AFD7ED558CCD) & _MASK64
+        x = (x ^ (x >> np.uint64(33))) * np.uint64(0xC4CEB9FE1A85EC53) & _MASK64
     x = x ^ (x >> np.uint64(33))
     return x
 
