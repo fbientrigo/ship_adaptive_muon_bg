@@ -303,3 +303,89 @@ def test_resume_does_not_skip_a_previously_interrupted_job(tmp_path, monkeypatch
     # An interrupted status must not satisfy the resume-skip check: the
     # subprocess must actually have been (re)launched, not silently skipped.
     assert len(job_dispatch_calls) == 1
+
+
+# --- Job 13 (nightly report) queue-loop dispatch: it runs in-process (no
+# subprocess), so it must create its own job_dir and clear queue_state.json
+# exactly like every other job. This guards the "Job 13 failed: [Errno 2] No
+# such file or directory: .../13_build_nightly_report/status.json" incident,
+# where jobs/13_build_nightly_report/ was never created before the queue
+# loop tried to write status.json into it. ---
+
+
+def _write_smoke_jobs_completed(artifact_dir):
+    for name in queue_mod.NIGHTLY_JOB_NAMES:
+        if name == "13_build_nightly_report":
+            continue
+        job_dir = os.path.join(artifact_dir, "jobs", name)
+        os.makedirs(job_dir, exist_ok=True)
+        with open(os.path.join(job_dir, "status.json"), "w") as f:
+            json.dump({"status": "completed"}, f)
+
+
+def test_queue_loop_job13_success_clears_active_job_and_pid(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    shard_dir = tmp_path / "shards"
+    _write_smoke_jobs_completed(str(artifact_dir))
+
+    argv = [
+        "run_afterms_nightly_queue.py",
+        "--jobs", "13_build_nightly_report",
+        "--artifact-dir", str(artifact_dir),
+        "--shard-dir", str(shard_dir),
+    ]
+    import sys as sys_mod
+    old_argv = sys_mod.argv
+    sys_mod.argv = argv
+    try:
+        assert queue_mod.main() == 0
+    finally:
+        sys_mod.argv = old_argv
+
+    status = json.loads((artifact_dir / "jobs" / "13_build_nightly_report" / "status.json").read_text())
+    assert status["status"] == "completed"
+
+    queue_state = json.loads((artifact_dir / "queue_state.json").read_text())
+    assert queue_state["active_job"] is None
+    assert queue_state["pid"] is None
+    assert "13_build_nightly_report" in queue_state["completed_jobs"]
+
+
+def test_queue_loop_job13_failure_clears_active_job_and_pid_and_marks_failed(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    shard_dir = tmp_path / "shards"
+    # A metrics.json missing a required numeric key makes the markdown
+    # renderer's `:.4f` format spec raise on a real value (None) -- a
+    # genuine report-generation failure, not a mocked one.
+    bad_job_dir = artifact_dir / "jobs" / "05_affine_preprocessing_ab_pdg13"
+    bad_job_dir.mkdir(parents=True)
+    (bad_job_dir / "status.json").write_text(json.dumps({"status": "completed"}))
+    (bad_job_dir / "metrics.json").write_text(json.dumps({
+        "identity_standardized_v0_affine_small_unweighted": {"metrics": {
+            "physical_space_nll": 0.5, "wall_time_seconds": 1.0, "parameter_count": 10,
+        }}
+    }))
+
+    argv = [
+        "run_afterms_nightly_queue.py",
+        "--jobs", "13_build_nightly_report",
+        "--artifact-dir", str(artifact_dir),
+        "--shard-dir", str(shard_dir),
+    ]
+    import sys as sys_mod
+    old_argv = sys_mod.argv
+    sys_mod.argv = argv
+    try:
+        with pytest.raises(SystemExit) as exc_info:
+            queue_mod.main()
+        assert exc_info.value.code == 1
+    finally:
+        sys_mod.argv = old_argv
+
+    status = json.loads((artifact_dir / "jobs" / "13_build_nightly_report" / "status.json").read_text())
+    assert status["status"] == "failed"
+
+    queue_state = json.loads((artifact_dir / "queue_state.json").read_text())
+    assert queue_state["active_job"] is None
+    assert queue_state["pid"] is None
+    assert "13_build_nightly_report" in queue_state["failed_jobs"]

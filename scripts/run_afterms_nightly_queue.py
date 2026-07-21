@@ -1193,75 +1193,135 @@ def build_final_nightly_report(args, git_commit, target_hashes):
         "status_code": "NIGHTLY_SMOKES_COMPLETE" if all(v.get("status") == "completed" for v in smoke_job_statuses.values()) else "NIGHTLY_SMOKES_PARTIAL"
     }
     
-    with open(os.path.join(report_dir, "nightly_summary.json"), "w") as f:
-        json.dump(summary_json, f, indent=2)
-        
-    # Write nightly_results.csv
+    # All three report files are rendered fully in memory first, and only
+    # written to disk (each via tmp+os.replace) after every render below has
+    # succeeded. A formatting error partway through (e.g. a missing metric
+    # key) must never leave one report file updated to a new/inconsistent
+    # state while another still shows stale content from a prior run.
     import csv
-    with open(os.path.join(report_dir, "nightly_results.csv"), "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["job_name", "run_label", "test_feature_space_nll", "physical_space_nll", "wall_time_seconds", "parameter_count"])
-        for j_name, j_res in job_metrics.items():
-            if j_name == "13_build_nightly_report":
-                # This job is the report builder itself, never a model run;
-                # any metrics.json found under its directory is not a
-                # performance result and must not be rendered as one.
-                continue
-            if isinstance(j_res, dict):
-                # Check if it has history or if it is multiple runs
-                if "metrics" in j_res: # single run like job 04
-                    m = j_res["metrics"]
-                    writer.writerow([j_name, "default", m.get("test_feature_space_nll"), m.get("physical_space_nll"), m.get("wall_time_seconds"), m.get("parameter_count")])
-                else: # multiple runs
-                    for run_lbl, run_data in j_res.items():
-                        if isinstance(run_data, dict) and "metrics" in run_data:
-                            m = run_data["metrics"]
-                            writer.writerow([j_name, run_lbl, m.get("test_feature_space_nll"), m.get("physical_space_nll"), m.get("wall_time_seconds"), m.get("parameter_count")])
+    import io
 
-    # Write nightly_summary.md
+    csv_buffer = io.StringIO()
+    writer = csv.writer(csv_buffer)
+    writer.writerow(["job_name", "run_label", "test_feature_space_nll", "physical_space_nll", "wall_time_seconds", "parameter_count"])
+    for j_name, j_res in job_metrics.items():
+        if j_name == "13_build_nightly_report":
+            # This job is the report builder itself, never a model run;
+            # any metrics.json found under its directory is not a
+            # performance result and must not be rendered as one.
+            continue
+        if isinstance(j_res, dict):
+            # Check if it has history or if it is multiple runs
+            if "metrics" in j_res: # single run like job 04
+                m = j_res["metrics"]
+                writer.writerow([j_name, "default", m.get("test_feature_space_nll"), m.get("physical_space_nll"), m.get("wall_time_seconds"), m.get("parameter_count")])
+            else: # multiple runs
+                for run_lbl, run_data in j_res.items():
+                    if isinstance(run_data, dict) and "metrics" in run_data:
+                        m = run_data["metrics"]
+                        writer.writerow([j_name, run_lbl, m.get("test_feature_space_nll"), m.get("physical_space_nll"), m.get("wall_time_seconds"), m.get("parameter_count")])
+    csv_text = csv_buffer.getvalue()
+
     status_code = summary_json["status_code"]
-    with open(os.path.join(report_dir, "nightly_summary.md"), "w") as f:
-        f.write("# NIGHTLY MISSION SUMMARY REPORT\n\n")
-        f.write(f"- **Git Commit**: `{git_commit}`\n")
-        f.write(f"- **Dataset Content Hash**: `{target_hashes.get('dataset_hash')}`\n")
-        f.write(f"- **Memory Retention Flag**: `{possible_memory_retention}`\n")
-        f.write(f"- **Status Code**: `{status_code}`\n\n")
+    md_buffer = io.StringIO()
+    md_buffer.write("# NIGHTLY MISSION SUMMARY REPORT\n\n")
+    md_buffer.write(f"- **Git Commit**: `{git_commit}`\n")
+    md_buffer.write(f"- **Dataset Content Hash**: `{target_hashes.get('dataset_hash')}`\n")
+    md_buffer.write(f"- **Memory Retention Flag**: `{possible_memory_retention}`\n")
+    md_buffer.write(f"- **Status Code**: `{status_code}`\n\n")
 
-        f.write("## Job Statuses\n\n")
-        f.write("| Job Name | Status | Pre RSS (MB) | Post RSS (MB) | Diff RSS (MB) |\n")
-        f.write("| --- | --- | --- | --- | --- |\n")
-        for name in jobs_list:
-            st = job_statuses.get(name, {})
-            status = st.get("status", "missing")
-            pre_rss = st.get("system_metrics_pre", {}).get("parent_rss_bytes", 0) / (1024**2)
-            post_rss = st.get("system_metrics_post", {}).get("parent_rss_bytes", 0) / (1024**2)
-            diff_rss = st.get("system_metrics_diff", {}).get("parent_rss_diff_bytes", 0) / (1024**2)
-            f.write(f"| {name} | {status} | {pre_rss:.2f} | {post_rss:.2f} | {diff_rss:+.2f} |\n")
-            
-        f.write("\n## Wiring & Smoke Performance Results\n\n")
-        f.write("| Job | Model Run | Feature-space NLL | Physical-space NLL | Param Count | Time (s) |\n")
-        f.write("| --- | --- | --- | --- | --- | --- |\n")
-        for j_name, j_res in job_metrics.items():
-            if j_name == "13_build_nightly_report":
-                continue
-            if isinstance(j_res, dict):
-                if "metrics" in j_res:
-                    m = j_res["metrics"]
-                    pnll = m.get("physical_space_nll")
-                    pnll_str = f"{pnll:.4f}" if pnll is not None else "N/A (No Jac)"
-                    f.write(f"| {j_name} | default | {m.get('test_feature_space_nll'):.4f} | {pnll_str} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
-                else:
-                    for run_lbl, run_data in j_res.items():
-                        if isinstance(run_data, dict) and "metrics" in run_data:
-                            m = run_data["metrics"]
-                            pnll = m.get("physical_space_nll")
-                            pnll_str = f"{pnll:.4f}" if pnll is not None else "N/A (No Jac)"
-                            f.write(f"| {j_name} | {run_lbl} | {m.get('test_feature_space_nll'):.4f} | {pnll_str} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
+    md_buffer.write("## Job Statuses\n\n")
+    md_buffer.write("| Job Name | Status | Pre RSS (MB) | Post RSS (MB) | Diff RSS (MB) |\n")
+    md_buffer.write("| --- | --- | --- | --- | --- |\n")
+    for name in jobs_list:
+        st = job_statuses.get(name, {})
+        status = st.get("status", "missing")
+        pre_rss = st.get("system_metrics_pre", {}).get("parent_rss_bytes", 0) / (1024**2)
+        post_rss = st.get("system_metrics_post", {}).get("parent_rss_bytes", 0) / (1024**2)
+        diff_rss = st.get("system_metrics_diff", {}).get("parent_rss_diff_bytes", 0) / (1024**2)
+        md_buffer.write(f"| {name} | {status} | {pre_rss:.2f} | {post_rss:.2f} | {diff_rss:+.2f} |\n")
 
-        f.write("\n## Limitations & Non-claims\n\n")
-        f.write("- Five-epoch results are diagnostics only and do not declare model convergence or physics superiority.\n")
-        f.write("- Row-disjoint splitting does not prove source-muon independence due to missing lineage group IDs.\n\n")
-        f.write(f"{status_code}\n")
+    md_buffer.write("\n## Wiring & Smoke Performance Results\n\n")
+    md_buffer.write("| Job | Model Run | Feature-space NLL | Physical-space NLL | Param Count | Time (s) |\n")
+    md_buffer.write("| --- | --- | --- | --- | --- | --- |\n")
+    for j_name, j_res in job_metrics.items():
+        if j_name == "13_build_nightly_report":
+            continue
+        if isinstance(j_res, dict):
+            if "metrics" in j_res:
+                m = j_res["metrics"]
+                pnll = m.get("physical_space_nll")
+                pnll_str = f"{pnll:.4f}" if pnll is not None else "N/A (No Jac)"
+                md_buffer.write(f"| {j_name} | default | {m.get('test_feature_space_nll'):.4f} | {pnll_str} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
+            else:
+                for run_lbl, run_data in j_res.items():
+                    if isinstance(run_data, dict) and "metrics" in run_data:
+                        m = run_data["metrics"]
+                        pnll = m.get("physical_space_nll")
+                        pnll_str = f"{pnll:.4f}" if pnll is not None else "N/A (No Jac)"
+                        md_buffer.write(f"| {j_name} | {run_lbl} | {m.get('test_feature_space_nll'):.4f} | {pnll_str} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
+
+    md_buffer.write("\n## Limitations & Non-claims\n\n")
+    md_buffer.write("- Five-epoch results are diagnostics only and do not declare model convergence or physics superiority.\n")
+    md_buffer.write("- Row-disjoint splitting does not prove source-muon independence due to missing lineage group IDs.\n\n")
+    md_buffer.write(f"{status_code}\n")
+    md_text = md_buffer.getvalue()
+
+    # Only now, with all three renders having succeeded, touch disk -- each
+    # write is itself atomic (tmp file + os.replace) so a filesystem-level
+    # failure mid-write can't leave a truncated file either.
+    json_path = os.path.join(report_dir, "nightly_summary.json")
+    json_tmp_path = json_path + ".tmp"
+    with open(json_tmp_path, "w") as f:
+        json.dump(summary_json, f, indent=2)
+    os.replace(json_tmp_path, json_path)
+
+    csv_path = os.path.join(report_dir, "nightly_results.csv")
+    csv_tmp_path = csv_path + ".tmp"
+    with open(csv_tmp_path, "w", newline="") as f:
+        f.write(csv_text)
+    os.replace(csv_tmp_path, csv_path)
+
+    md_path = os.path.join(report_dir, "nightly_summary.md")
+    md_tmp_path = md_path + ".tmp"
+    with open(md_tmp_path, "w") as f:
+        f.write(md_text)
+    os.replace(md_tmp_path, md_path)
+
+
+def _write_job13_status(args, git_commit, status, error=None):
+    """Writes job 13's own status.json. Deliberately excludes timestamps
+    (unlike other jobs' status payloads) so that re-running the report job
+    against unchanged inputs stays byte-for-byte deterministic."""
+    job_dir = os.path.join(args.artifact_dir, "jobs", "13_build_nightly_report")
+    os.makedirs(job_dir, exist_ok=True)
+    payload = {"status": status, "job_name": "13_build_nightly_report", "git_commit": git_commit}
+    if error is not None:
+        payload["error"] = error
+    status_path = os.path.join(job_dir, "status.json")
+    tmp_path = status_path + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(payload, f, indent=2)
+    os.replace(tmp_path, status_path)
+
+
+def run_build_nightly_report_job(args, git_commit, target_hashes):
+    """Builds the final nightly report, then marks job 13's own status.
+
+    `build_final_nightly_report` never reads its own status.json (it treats
+    itself as "missing" while it runs -- see its self-reference note), so
+    there is no circular self-status dependency. The previous crash was
+    unrelated to that: `jobs/13_build_nightly_report/` was never created
+    before the caller tried to write status.json into it. This wrapper
+    owns that directory and the status write, used identically by both the
+    queue loop and a standalone `--run-job 13_build_nightly_report` call.
+    """
+    try:
+        build_final_nightly_report(args, git_commit, target_hashes)
+    except Exception as e:
+        _write_job13_status(args, git_commit, "failed", error=str(e))
+        raise
+    _write_job13_status(args, git_commit, "completed")
 
 
 def execute_job_12_memory_release(args, target_hashes, git_commit):
@@ -1378,7 +1438,7 @@ def main():
         elif args.run_job == "03_preprocessing_roundtrip_and_plots":
             run_preprocessing_roundtrip_and_plots(args, os.path.join(args.artifact_dir, "jobs", args.run_job))
         elif args.run_job == "13_build_nightly_report":
-            build_final_nightly_report(args, git_commit, target_hashes)
+            run_build_nightly_report_job(args, git_commit, target_hashes)
         else:
             run_neural_training_subprocess(args.run_job, args.device, args.shard_dir, os.path.join(args.artifact_dir, "jobs", args.run_job))
         return 0
@@ -1445,10 +1505,7 @@ def main():
                     ok = True
                 else:
                     try:
-                        build_final_nightly_report(args, git_commit, target_hashes)
-                        status_path = os.path.join(args.artifact_dir, "jobs", job, "status.json")
-                        with open(status_path, "w") as f:
-                            json.dump({"status": "completed", "job_name": job, "git_commit": git_commit}, f)
+                        run_build_nightly_report_job(args, git_commit, target_hashes)
                         ok = True
                     except Exception as e:
                         print(f"Job 13 failed: {e}")

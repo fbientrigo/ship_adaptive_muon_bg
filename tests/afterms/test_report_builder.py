@@ -11,6 +11,7 @@ from scripts.run_afterms_nightly_queue import (
     checkpoint_file_hash,
     evaluate_generated_samples,
     generated_sample_hash,
+    run_build_nightly_report_job,
     train_and_validation_nll_from_fit_result,
 )
 from Nflow.interfaces import FitResult
@@ -331,3 +332,165 @@ def test_json_csv_markdown_agree_on_physical_and_test_nll(tmp_path):
     md = open(os.path.join(artifact_dir, "report", "nightly_summary.md")).read()
     assert f"{metrics['physical_space_nll']:.4f}" in md
     assert f"{metrics['test_feature_space_nll']:.4f}" in md
+
+
+# --- Job 13 self-consistency: this guards the "Job 13 failed: [Errno 2] No
+# such file or directory: .../13_build_nightly_report/status.json" incident.
+# Root cause was never a self-status read dependency (build_final_nightly_report
+# already treats its own status.json as gracefully "missing"); it was that
+# nothing created jobs/13_build_nightly_report/ before the caller tried to
+# write status.json into it. run_build_nightly_report_job now owns both the
+# report build and that status write, for the queue loop and a standalone
+# `--run-job 13_build_nightly_report` invocation alike.
+
+
+class _QueueArgs:
+    def __init__(self, artifact_dir, shard_dir=None):
+        self.artifact_dir = str(artifact_dir)
+        self.shard_dir = str(shard_dir) if shard_dir is not None else str(artifact_dir)
+
+
+def _write_all_smoke_jobs_completed(artifact_dir):
+    for name in NIGHTLY_JOB_NAMES:
+        if name == "13_build_nightly_report":
+            continue
+        _write_job(str(artifact_dir), name, status={"status": "completed"})
+
+
+def test_run_build_nightly_report_job_succeeds_with_no_preexisting_job13_status(tmp_path):
+    # This is the exact incident scenario: jobs/13_build_nightly_report/ does
+    # not exist anywhere on disk yet when the report job first runs.
+    args = _QueueArgs(tmp_path)
+    assert not os.path.exists(os.path.join(tmp_path, "jobs", "13_build_nightly_report"))
+
+    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+
+    status = json.load(open(os.path.join(tmp_path, "jobs", "13_build_nightly_report", "status.json")))
+    assert status["status"] == "completed"
+
+
+def test_report_generation_success_marks_job13_completed(tmp_path):
+    args = _QueueArgs(tmp_path)
+    _write_all_smoke_jobs_completed(tmp_path)
+
+    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+
+    status = json.load(open(os.path.join(tmp_path, "jobs", "13_build_nightly_report", "status.json")))
+    assert status["status"] == "completed"
+    summary = json.load(open(os.path.join(tmp_path, "report", "nightly_summary.json")))
+    assert summary["status_code"] == "NIGHTLY_SMOKES_COMPLETE"
+
+
+def test_report_generation_failure_marks_job13_failed(tmp_path):
+    args = _QueueArgs(tmp_path)
+    # A metrics.json missing a required numeric key makes the markdown
+    # renderer's `:.4f` format spec raise on a real value (None), the same
+    # class of failure a malformed real job could produce.
+    _write_job(
+        str(tmp_path),
+        "05_affine_preprocessing_ab_pdg13",
+        status={"status": "completed"},
+        metrics={"identity_standardized_v0_affine_small_unweighted": {"metrics": {
+            "physical_space_nll": 0.5, "wall_time_seconds": 1.0, "parameter_count": 10,
+        }}},
+    )
+
+    with pytest.raises(TypeError):
+        run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+
+    status = json.load(open(os.path.join(tmp_path, "jobs", "13_build_nightly_report", "status.json")))
+    assert status["status"] == "failed"
+    assert "error" in status
+
+
+def test_no_stale_report_committed_when_report_generation_fails(tmp_path):
+    args = _QueueArgs(tmp_path)
+    job_dir = os.path.join(tmp_path, "jobs", "05_affine_preprocessing_ab_pdg13")
+    good_metrics = {"identity_standardized_v0_affine_small_unweighted": {"metrics": {
+        "test_feature_space_nll": -1.0, "physical_space_nll": 0.5,
+        "wall_time_seconds": 1.0, "parameter_count": 10,
+    }}}
+    _write_job(str(tmp_path), "05_affine_preprocessing_ab_pdg13", status={"status": "completed"}, metrics=good_metrics)
+    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+
+    good_json = open(os.path.join(tmp_path, "report", "nightly_summary.json")).read()
+    good_md = open(os.path.join(tmp_path, "report", "nightly_summary.md")).read()
+    good_csv = open(os.path.join(tmp_path, "report", "nightly_results.csv")).read()
+
+    # Corrupt the same job's metrics.json (drop a required key) so the next
+    # report build fails partway through rendering.
+    bad_metrics = {"identity_standardized_v0_affine_small_unweighted": {"metrics": {
+        "physical_space_nll": 0.5, "wall_time_seconds": 1.0, "parameter_count": 10,
+    }}}
+    _write_job(str(tmp_path), "05_affine_preprocessing_ab_pdg13", metrics=bad_metrics)
+
+    with pytest.raises(TypeError):
+        run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+
+    # None of the three previously-good report files may be silently
+    # replaced with new-but-inconsistent content when generation fails.
+    assert open(os.path.join(tmp_path, "report", "nightly_summary.json")).read() == good_json
+    assert open(os.path.join(tmp_path, "report", "nightly_summary.md")).read() == good_md
+    assert open(os.path.join(tmp_path, "report", "nightly_results.csv")).read() == good_csv
+
+
+def test_report_job_never_invokes_training(tmp_path, monkeypatch):
+    import scripts.run_afterms_nightly_queue as queue_mod
+
+    def _boom(*a, **kw):
+        raise AssertionError("report-only job 13 must never invoke neural training")
+
+    monkeypatch.setattr(queue_mod, "run_neural_training_subprocess", _boom)
+
+    args = _QueueArgs(tmp_path)
+    _write_all_smoke_jobs_completed(tmp_path)
+    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})  # must not raise
+
+
+def test_report_job_deterministic_once_its_own_status_stabilizes(tmp_path):
+    args = _QueueArgs(tmp_path)
+    _write_all_smoke_jobs_completed(tmp_path)
+
+    # The very first run transitions job 13's own displayed status from
+    # "missing" to "completed" -- that transition is expected to change the
+    # rendered report once. From the second run onward, with nothing else
+    # changing on disk, output must be byte-for-byte identical.
+    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})  # missing -> completed
+    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+    second = open(os.path.join(tmp_path, "report", "nightly_summary.md")).read()
+    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+    third = open(os.path.join(tmp_path, "report", "nightly_summary.md")).read()
+    assert second == third
+
+
+def test_job13_appears_exactly_once_in_all_three_report_outputs(tmp_path):
+    args = _QueueArgs(tmp_path)
+    _write_all_smoke_jobs_completed(tmp_path)
+    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+
+    summary = json.load(open(os.path.join(tmp_path, "report", "nightly_summary.json")))
+    assert list(summary["job_statuses"]).count("13_build_nightly_report") == 1
+
+    md = open(os.path.join(tmp_path, "report", "nightly_summary.md")).read()
+    assert md.count("13_build_nightly_report") == 1  # Job Statuses table only
+
+    csv_text = open(os.path.join(tmp_path, "report", "nightly_results.csv")).read()
+    assert "13_build_nightly_report" not in csv_text  # never a performance row
+
+
+def test_json_csv_markdown_agree_on_job_count_and_final_status(tmp_path):
+    args = _QueueArgs(tmp_path)
+    _write_all_smoke_jobs_completed(tmp_path)
+    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+
+    summary = json.load(open(os.path.join(tmp_path, "report", "nightly_summary.json")))
+    assert len(summary["job_statuses"]) == 14
+    assert summary["status_code"] == "NIGHTLY_SMOKES_COMPLETE"
+
+    md = open(os.path.join(tmp_path, "report", "nightly_summary.md")).read()
+    assert "NIGHTLY_SMOKES_COMPLETE" in md
+    # 14 job rows in the Job Statuses table (header + separator + 14 rows).
+    assert sum(1 for name in NIGHTLY_JOB_NAMES if f"| {name} |" in md) == 14
+
+    status = json.load(open(os.path.join(tmp_path, "jobs", "13_build_nightly_report", "status.json")))
+    assert status["status"] == "completed"

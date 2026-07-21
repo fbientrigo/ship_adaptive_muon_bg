@@ -48,7 +48,7 @@ string, and `True`/`False` for CUDA.
 ```powershell
 python -m pytest -q tests/afterms/test_report_builder.py
 ```
-**EXPECTED OUTPUT:** `17 passed` (0 failed).
+**EXPECTED OUTPUT:** `25 passed` (0 failed).
 **ARTIFACTS WRITTEN:** none (tests use `tmp_path`, not the repo's `artifacts/`).
 **SAFE TO RE-RUN:** yes.
 **TRAINS A MODEL:** no.
@@ -58,10 +58,10 @@ python -m pytest -q tests/afterms/test_report_builder.py
 ```powershell
 python -m pytest -q
 ```
-**EXPECTED OUTPUT:** `564 passed, 2 skipped` (0 failed), as verified this
-session (12 tests were added by the shard-interruption-handling patch below;
-the two `RuntimeWarning: overflow encountered in scalar multiply` warnings
-from `split.py` are gone).
+**EXPECTED OUTPUT:** `574 passed, 2 skipped` (0 failed), as verified this
+session (10 tests were added by the job-13 self-consistency patch below; the
+two `RuntimeWarning: overflow encountered in scalar multiply` warnings from
+`split.py` remain gone, per the earlier shard-interruption-handling patch).
 **ARTIFACTS WRITTEN:** none.
 **SAFE TO RE-RUN:** yes.
 **TRAINS A MODEL:** no.
@@ -298,6 +298,95 @@ python scripts/watch_afterms_nightly_queue.py --artifact-dir artifacts/afterms_n
 ```
 **SAFE TO RE-RUN:** yes.
 **TRAINS A MODEL:** no.
+
+---
+
+## INCIDENT: JOB 13 "SELF-STATUS" CRASH (resolved this session)
+
+**Observed failure:** after jobs 00-12 all completed successfully, job 13
+failed with:
+```
+Job 13 failed: [Errno 2] No such file or directory: artifacts/afterms_nightly_v1\jobs\13_build_nightly_report\status.json
+```
+
+**Root cause (confirmed by reproduction, not assumed):** this was **not** a
+self-status read dependency -- `build_final_nightly_report` already treats
+its own (not-yet-written) `status.json` as gracefully `"missing"` behind an
+`os.path.exists` guard; it never raises on that. The actual bug: unlike
+every other job, `jobs/13_build_nightly_report/` was never created by
+anything before the queue loop tried to `open(status_path, "w")` inside it.
+Jobs 00/02/03/04-11 get their `job_dir` created by `run_job_outer`; job 12
+creates its own inside `execute_job_12_memory_release`; job 13 had no
+equivalent, so the very first attempt to persist its status crashed with
+`FileNotFoundError` (missing parent directory), which was misreported at the
+"Job 13 failed" print site as `[Errno 2] No such file or directory`.
+
+**Fix:** added `run_build_nightly_report_job()`, a thin wrapper around the
+unchanged `build_final_nightly_report()` that (1) creates
+`jobs/13_build_nightly_report/` before writing anything, (2) writes
+`status.json` as `"completed"` only after report generation succeeds, or
+`"failed"` (with the error message) if it raises, and then re-raises. Both
+the queue loop's job-13 branch and the standalone
+`--run-job 13_build_nightly_report` entry point now call this same wrapper,
+so they behave identically. `status.json` for job 13 deliberately carries no
+timestamp, so re-running it against unchanged inputs is byte-for-byte
+deterministic once its own status has stabilized to `"completed"` (the very
+first run, transitioning from `"missing"` to `"completed"`, is the one
+expected exception).
+
+Additionally, all three report outputs (`nightly_summary.json`,
+`nightly_results.csv`, `nightly_summary.md`) are now rendered fully in
+memory first and only then written to disk (each via a `.tmp` file +
+`os.replace`), so a real rendering failure (e.g. a malformed job metrics
+file) can never leave one report file updated to new/inconsistent content
+while another still shows stale content from a prior successful run.
+
+**Jobs 00-12 status (this session, real artifacts):** all 12 already showed
+`"completed"` in `artifacts/afterms_nightly_v1/jobs/*/status.json` before any
+code change -- confirmed by direct inspection, not re-run. Job 12's terminal
+output ends after `"[Job 12] Launching Run 2..."` with no `JOB COMPLETE`
+banner; this is a cosmetic display gap only (job 12 bypasses
+`run_job_outer`, which is the only place that prints that banner) --
+`status.json`, `metrics.json`, `metrics_run1.json`, and `metrics_run2.json`
+all confirm it genuinely completed. No rerun was needed or performed.
+
+**`queue_state.json`'s stale `failed_jobs: ["13_build_nightly_report"]`
+entry** is a historical record of the crash above; `active_job`/`pid` are
+already `null` (which is what actually matters -- no job looks falsely
+active). The standalone `--run-job` command below intentionally never
+touches `queue_state.json` (only the full queue loop does), so this cosmetic
+entry is not auto-corrected by re-running job 13 alone. Do not try to clear
+it by running `--resume` or a bare full-queue invocation -- see the warning
+immediately below.
+
+**WARNING -- do not `--resume` after this fix is committed.** The resume-skip
+check in `run_job_outer` requires the persisted `status.json`'s `git_commit`
+to match the *current* `git rev-parse HEAD`. Once this fix is committed,
+`HEAD` changes, so `--resume` (or a bare full-queue run) will see jobs 00-11
+as config-mismatched and **re-run them**, and job 12 has no resume check at
+all so it **always re-runs** -- a full, unwanted retrain of 04-12. The only
+safe way to regenerate the report against the existing real artifacts is the
+standalone command below.
+
+**PURPOSE:** Regenerate the final nightly report only, against the existing
+real artifacts, without touching or resuming the rest of the queue.
+**COMMAND:**
+```powershell
+python scripts/run_afterms_nightly_queue.py --run-job 13_build_nightly_report --artifact-dir artifacts/afterms_nightly_v1 --shard-dir data/shards/afterms_nightly_v1
+```
+**EXPECTED OUTPUT:** exit code `0`, no stdout (this dispatch path is silent
+on success). `jobs/13_build_nightly_report/status.json` becomes
+`"completed"`; `report/nightly_summary.json`, `nightly_summary.md`, and
+`nightly_results.csv` are (re)written with all 14 jobs present exactly once
+and `status_code: NIGHTLY_SMOKES_COMPLETE`.
+**ARTIFACTS WRITTEN:** only `jobs/13_build_nightly_report/status.json` and
+`report/*`. Jobs 00-12's own artifacts are never opened for writing by this
+path.
+**SAFE TO RE-RUN:** yes -- deterministic once job 13's own status has
+stabilized to `"completed"` (verified this session: a second and third
+invocation produced byte-identical `nightly_summary.md`).
+**TRAINS A MODEL:** no (verified: no `.pt` checkpoint files were touched by
+this command).
 
 ---
 
