@@ -34,6 +34,28 @@ from ship_muon_bg.afterms import audit, split, stratify
 from ship_muon_bg.afterms.preprocessing import PreprocessingPipeline
 
 
+# Single source of truth for the nightly queue's job names. `main()`'s
+# sequential loop and `build_final_nightly_report()` used to keep independent
+# copies of this list; they drifted (job 13 was missing from the report's
+# copy), so both now read from here.
+NIGHTLY_JOB_NAMES = [
+    "00_environment_and_dataset_smoke",
+    "01_build_afterms_shards",
+    "02_validate_afterms_shards",
+    "03_preprocessing_roundtrip_and_plots",
+    "04_legacy_available_code_realnvp_quantile",
+    "05_affine_preprocessing_ab_pdg13",
+    "06_affine_preprocessing_ab_pdg_minus13",
+    "07_affine_weight_ab_pdg13",
+    "08_affine_weight_ab_pdg_minus13",
+    "09_affine_capacity_smoke_pdg13",
+    "10_gaussian_controls_pdg13",
+    "11_gaussian_controls_pdg_minus13",
+    "12_memory_release_repeat_smoke",
+    "13_build_nightly_report",
+]
+
+
 # --- Windows Memory Helpers using ctypes ---
 
 class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
@@ -191,6 +213,45 @@ def generate_scaling_plots(raw_data, transformed_data, variant_id, output_dir):
         print(f"Plotting failed: {e}")
 
 
+def train_and_validation_nll_from_fit_result(fit_res):
+    """Extract (train_nll, validation_nll) from a one-shot `FitResult`.
+
+    `best_validation_nll` describes the validation set only; it must never be
+    reused as the train NLL (they are different quantities computed on
+    different rows). The train NLL, when available, comes from the fitter's
+    own `train_history` entries. Returns `None` for either value when the
+    fitter did not record it, rather than fabricating a number.
+    """
+    val_nll = (
+        float(fit_res.best_validation_nll)
+        if fit_res.best_validation_nll is not None
+        else None
+    )
+    train_nll = None
+    if fit_res.train_history:
+        last_entry = fit_res.train_history[-1]
+        if "train_nll" in last_entry:
+            train_nll = float(last_entry["train_nll"])
+    return train_nll, val_nll
+
+
+def generated_sample_hash(samples):
+    """Stable content hash of a generated-sample array.
+
+    Used to verify that repeated report/sample generation from an unchanged
+    checkpoint and seed reproduces bit-identical output, not just "close"
+    output.
+    """
+    arr = np.ascontiguousarray(samples, dtype=np.float64)
+    return hashlib.sha256(arr.tobytes()).hexdigest()
+
+
+def checkpoint_file_hash(path):
+    """Sha256 of a saved checkpoint file, for reload-provenance tracking."""
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
 # --- C2ST & NN metrics helper ---
 
 def compute_nn_distances(q_samples, ref_samples, subsample_size=1000):
@@ -258,7 +319,23 @@ def evaluate_generated_samples(test_data, q_samples, atol=1e-6):
             "q50": float(np.quantile(col, 0.5)),
             "q90": float(np.quantile(col, 0.9)),
         }
-        
+
+    # Generated-support (domain) audit: an unconstrained Gaussian-base flow
+    # can invert to pz < 0, outside the physical domain the log1p_pz view
+    # assumes (pz >= 0). This never clips or repairs generated samples; it
+    # only counts/reports violations so they stay visible in the report.
+    generated_domain_violations = {
+        "generated_domain_violation_count": int(np.count_nonzero(pz_q < 0.0)),
+        "generated_domain_violation_rate": float(np.mean(pz_q < 0.0)),
+        "min_generated_pz": float(np.min(pz_q)),
+        "quantiles_of_generated_pz": {
+            "q001": float(np.quantile(pz_q, 0.001)),
+            "q01": float(np.quantile(pz_q, 0.01)),
+            "q05": float(np.quantile(pz_q, 0.05)),
+            "q50": float(np.quantile(pz_q, 0.50)),
+        },
+    }
+
     return {
         "c2st": c2st_res,
         "tail_quantile_errors": tq_errs,
@@ -266,6 +343,7 @@ def evaluate_generated_samples(test_data, q_samples, atol=1e-6):
         "duplicate_diagnostics": dups,
         "exceedance_counts": exceedance_counts,
         "marginal_summaries": marginal_summaries,
+        "generated_domain_violations": generated_domain_violations,
     }
 def run_environment_and_dataset_smoke(args, job_dir):
     import torch
@@ -517,10 +595,16 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
         total_time = time.perf_counter() - wall_start
         
         # Save model
-        torch.save(model.state_dict(), os.path.join(job_dir, "legacy_model.pt"))
-        
-        # Generate samples for evaluation
+        legacy_ckpt_path = os.path.join(job_dir, "legacy_model.pt")
+        torch.save(model.state_dict(), legacy_ckpt_path)
+        ckpt_hash = checkpoint_file_hash(legacy_ckpt_path)
+
+        # Generate samples for evaluation. `base_dist.sample()` draws from the
+        # global torch RNG with no generator hook, so a fixed seed is set
+        # immediately beforehand to make the generated sample reproducible.
         model.eval()
+        generation_seed = 20260720
+        torch.manual_seed(generation_seed)
         with torch.no_grad():
             z = model.base_dist.sample((5000,))
             gen_scaled = model.inverse(z).cpu().numpy()
@@ -537,9 +621,18 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
         eval_metrics["train_feature_space_nll"] = float(train_loss)
         eval_metrics["validation_feature_space_nll"] = float(val_loss)
         eval_metrics["test_feature_space_nll"] = test_nll
+        # QuantileTransformer has no analytic density Jacobian (same as
+        # quantile_normal_v0 in PreprocessingPipeline) so physical-space NLL
+        # is genuinely undefined here. Serialize it explicitly as null rather
+        # than omitting the key, so report builders never fall back to 0.0.
+        eval_metrics["physical_space_nll"] = None
         eval_metrics["wall_time_seconds"] = total_time
         eval_metrics["parameter_count"] = sum(p.numel() for p in model.parameters())
-        
+        eval_metrics["generation_seed"] = generation_seed
+        eval_metrics["generated_sample_count"] = int(gen_feats.shape[0])
+        eval_metrics["generated_sample_hash"] = generated_sample_hash(gen_feats)
+        eval_metrics["checkpoint_hash"] = ckpt_hash
+
         # Save results
         with open(os.path.join(job_dir, "metrics.json"), "w") as f:
             json.dump({"history": history, "metrics": eval_metrics, "reproduction_scope": "available_code_semantics"}, f, indent=2)
@@ -700,14 +793,20 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
                             run_history.append(epoch_metrics)
                             
                         # Save checkpoint
-                        torch.save(module.state_dict(), os.path.join(job_dir, f"{run_label}_model.pt"))
-                        
-                        # Generate samples
+                        affine_ckpt_path = os.path.join(job_dir, f"{run_label}_model.pt")
+                        torch.save(module.state_dict(), affine_ckpt_path)
+                        checkpoint_hash = checkpoint_file_hash(affine_ckpt_path)
+
+                        # Generate samples. Reuses the seeded `gen` generator
+                        # (already seeded to 20260720 above) so the generated
+                        # sample is deterministic across reruns, not just the
+                        # training minibatch order.
                         module.eval()
+                        generation_seed = 20260720
                         with torch.no_grad():
-                            z = torch.randn(5000, 5, dtype=estimator.torch_dtype, device=estimator.device)
+                            z = torch.randn(5000, 5, dtype=estimator.torch_dtype, device=estimator.device, generator=gen)
                             gen_scaled = module(z).cpu().numpy()
-                            
+
                         gen_feats = pipeline.inverse(gen_scaled)
                         
                         # Test loss (feature space)
@@ -730,12 +829,15 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
                         # Scikit-learn or custom baseline (controls)
                         # No training epochs needed, fit is one-shot
                         fit_res = estimator.fit(train_norm, x_validation=val_norm, seed=20260720)
-                        train_loss = float(fit_res.best_validation_nll or 0.0) # GMM/Gaussian fit metric
-                        val_loss = float(fit_res.best_validation_nll or 0.0)
+                        train_loss, val_loss = train_and_validation_nll_from_fit_result(fit_res)
                         run_history = [{"epoch": 1, "train_loss": train_loss, "validation_loss": val_loss}]
-                        
-                        # Generate samples
-                        gen_scaled = estimator.sample(5000, seed=20260720)
+
+                        # Generate samples. No checkpoint file is saved for
+                        # this baseline family today (unlike the affine
+                        # family) so checkpoint_hash stays None here.
+                        generation_seed = 20260720
+                        checkpoint_hash = None
+                        gen_scaled = estimator.sample(5000, seed=generation_seed)
                         gen_feats = pipeline.inverse(gen_scaled)
                         
                         test_lp = estimator.log_prob(test_norm)
@@ -750,12 +852,16 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
                     
                     # Compute minimum metrics
                     eval_metrics = evaluate_generated_samples(test_data, gen_feats)
-                    eval_metrics["train_feature_space_nll"] = float(train_loss)
-                    eval_metrics["validation_feature_space_nll"] = float(val_loss)
+                    eval_metrics["train_feature_space_nll"] = None if train_loss is None else float(train_loss)
+                    eval_metrics["validation_feature_space_nll"] = None if val_loss is None else float(val_loss)
                     eval_metrics["test_feature_space_nll"] = test_nll
                     eval_metrics["physical_space_nll"] = physical_nll
                     eval_metrics["wall_time_seconds"] = total_time
                     eval_metrics["parameter_count"] = int(estimator.parameter_count())
+                    eval_metrics["generation_seed"] = generation_seed
+                    eval_metrics["generated_sample_count"] = int(gen_feats.shape[0])
+                    eval_metrics["generated_sample_hash"] = generated_sample_hash(gen_feats)
+                    eval_metrics["checkpoint_hash"] = checkpoint_hash
                     
                     # Log-prob finite rate
                     eval_metrics["finite_log_probability_rate"] = float(np.mean(np.isfinite(test_lp)))
@@ -940,22 +1046,12 @@ def build_final_nightly_report(args, git_commit, target_hashes):
     job_statuses = {}
     job_metrics = {}
     
-    jobs_list = [
-        "00_environment_and_dataset_smoke",
-        "01_build_afterms_shards",
-        "02_validate_afterms_shards",
-        "03_preprocessing_roundtrip_and_plots",
-        "04_legacy_available_code_realnvp_quantile",
-        "05_affine_preprocessing_ab_pdg13",
-        "06_affine_preprocessing_ab_pdg_minus13",
-        "07_affine_weight_ab_pdg13",
-        "08_affine_weight_ab_pdg_minus13",
-        "09_affine_capacity_smoke_pdg13",
-        "10_gaussian_controls_pdg13",
-        "11_gaussian_controls_pdg_minus13",
-        "12_memory_release_repeat_smoke",
-    ]
-    
+    # Includes "13_build_nightly_report" itself: its own status.json is only
+    # written by the caller *after* this function returns, so it always
+    # renders as "missing" in the Job Statuses table below. That is expected
+    # self-reference, not a bug.
+    jobs_list = NIGHTLY_JOB_NAMES
+
     for name in jobs_list:
         status_path = os.path.join(args.artifact_dir, "jobs", name, "status.json")
         if os.path.exists(status_path):
@@ -982,13 +1078,19 @@ def build_final_nightly_report(args, git_commit, target_hashes):
     # Write summary files
     # build report/nightly_summary.md, nightly_summary.json, nightly_results.csv
     
-    # We will write the report build output
+    # We will write the report build output.
+    # Completeness is judged over the 13 substantive smoke jobs (00-12) only:
+    # "13_build_nightly_report" cannot observe its own status.json while it is
+    # the one building this report (its status is only written by the caller
+    # *after* this function returns), so including it here would make
+    # status_code permanently NIGHTLY_SMOKES_PARTIAL.
+    smoke_job_statuses = {k: v for k, v in job_statuses.items() if k != "13_build_nightly_report"}
     summary_json = {
         "git_commit": git_commit,
         "dataset_hash": target_hashes.get("dataset_hash"),
         "job_statuses": {k: v.get("status") for k, v in job_statuses.items()},
         "memory_retention_flag": possible_memory_retention,
-        "status_code": "NIGHTLY_SMOKES_COMPLETE" if all(v.get("status") == "completed" for v in job_statuses.values()) else "NIGHTLY_SMOKES_PARTIAL"
+        "status_code": "NIGHTLY_SMOKES_COMPLETE" if all(v.get("status") == "completed" for v in smoke_job_statuses.values()) else "NIGHTLY_SMOKES_PARTIAL"
     }
     
     with open(os.path.join(report_dir, "nightly_summary.json"), "w") as f:
@@ -1000,6 +1102,11 @@ def build_final_nightly_report(args, git_commit, target_hashes):
         writer = csv.writer(f)
         writer.writerow(["job_name", "run_label", "test_feature_space_nll", "physical_space_nll", "wall_time_seconds", "parameter_count"])
         for j_name, j_res in job_metrics.items():
+            if j_name == "13_build_nightly_report":
+                # This job is the report builder itself, never a model run;
+                # any metrics.json found under its directory is not a
+                # performance result and must not be rendered as one.
+                continue
             if isinstance(j_res, dict):
                 # Check if it has history or if it is multiple runs
                 if "metrics" in j_res: # single run like job 04
@@ -1010,15 +1117,16 @@ def build_final_nightly_report(args, git_commit, target_hashes):
                         if isinstance(run_data, dict) and "metrics" in run_data:
                             m = run_data["metrics"]
                             writer.writerow([j_name, run_lbl, m.get("test_feature_space_nll"), m.get("physical_space_nll"), m.get("wall_time_seconds"), m.get("parameter_count")])
-                        
+
     # Write nightly_summary.md
+    status_code = summary_json["status_code"]
     with open(os.path.join(report_dir, "nightly_summary.md"), "w") as f:
         f.write("# NIGHTLY MISSION SUMMARY REPORT\n\n")
         f.write(f"- **Git Commit**: `{git_commit}`\n")
         f.write(f"- **Dataset Content Hash**: `{target_hashes.get('dataset_hash')}`\n")
         f.write(f"- **Memory Retention Flag**: `{possible_memory_retention}`\n")
-        f.write(f"- **Status Code**: `NIGHTLY_SMOKES_COMPLETE`\n\n")
-        
+        f.write(f"- **Status Code**: `{status_code}`\n\n")
+
         f.write("## Job Statuses\n\n")
         f.write("| Job Name | Status | Pre RSS (MB) | Post RSS (MB) | Diff RSS (MB) |\n")
         f.write("| --- | --- | --- | --- | --- |\n")
@@ -1034,10 +1142,14 @@ def build_final_nightly_report(args, git_commit, target_hashes):
         f.write("| Job | Model Run | Feature-space NLL | Physical-space NLL | Param Count | Time (s) |\n")
         f.write("| --- | --- | --- | --- | --- | --- |\n")
         for j_name, j_res in job_metrics.items():
+            if j_name == "13_build_nightly_report":
+                continue
             if isinstance(j_res, dict):
                 if "metrics" in j_res:
                     m = j_res["metrics"]
-                    f.write(f"| {j_name} | default | {m.get('test_feature_space_nll'):.4f} | {m.get('physical_space_nll') or 0.0:.4f} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
+                    pnll = m.get("physical_space_nll")
+                    pnll_str = f"{pnll:.4f}" if pnll is not None else "N/A (No Jac)"
+                    f.write(f"| {j_name} | default | {m.get('test_feature_space_nll'):.4f} | {pnll_str} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
                 else:
                     for run_lbl, run_data in j_res.items():
                         if isinstance(run_data, dict) and "metrics" in run_data:
@@ -1045,11 +1157,11 @@ def build_final_nightly_report(args, git_commit, target_hashes):
                             pnll = m.get("physical_space_nll")
                             pnll_str = f"{pnll:.4f}" if pnll is not None else "N/A (No Jac)"
                             f.write(f"| {j_name} | {run_lbl} | {m.get('test_feature_space_nll'):.4f} | {pnll_str} | {m.get('parameter_count')} | {m.get('wall_time_seconds'):.1f} |\n")
-                    
+
         f.write("\n## Limitations & Non-claims\n\n")
         f.write("- Five-epoch results are diagnostics only and do not declare model convergence or physics superiority.\n")
         f.write("- Row-disjoint splitting does not prove source-muon independence due to missing lineage group IDs.\n\n")
-        f.write("NIGHTLY_SMOKES_COMPLETE\n")
+        f.write(f"{status_code}\n")
 
 
 def execute_job_12_memory_release(args, target_hashes, git_commit):
@@ -1161,22 +1273,7 @@ def main():
     os.makedirs(args.artifact_dir, exist_ok=True)
     os.makedirs(os.path.join(args.artifact_dir, "jobs"), exist_ok=True)
             
-    jobs_list = [
-        "00_environment_and_dataset_smoke",
-        "01_build_afterms_shards",
-        "02_validate_afterms_shards",
-        "03_preprocessing_roundtrip_and_plots",
-        "04_legacy_available_code_realnvp_quantile",
-        "05_affine_preprocessing_ab_pdg13",
-        "06_affine_preprocessing_ab_pdg_minus13",
-        "07_affine_weight_ab_pdg13",
-        "08_affine_weight_ab_pdg_minus13",
-        "09_affine_capacity_smoke_pdg13",
-        "10_gaussian_controls_pdg13",
-        "11_gaussian_controls_pdg_minus13",
-        "12_memory_release_repeat_smoke",
-        "13_build_nightly_report"
-    ]
+    jobs_list = list(NIGHTLY_JOB_NAMES)
 
     # Filter by user selection
     if args.jobs:
