@@ -205,6 +205,10 @@ def test_run_job_outer_keyboard_interrupt_writes_interrupted_status_and_clears_q
     status = json.loads(status_path.read_text())
     assert status["status"] == "interrupted"
     assert status["status"] != "failed"
+    # The renamed hash field must actually reach the written status.json,
+    # not just the in-memory target_hashes dict passed into this call.
+    assert status["raw_file_sha256"] == "abc"
+    assert "dataset_hash" not in status
 
     queue_state = json.loads((artifact_dir / "queue_state.json").read_text())
     assert queue_state["active_job"] is None

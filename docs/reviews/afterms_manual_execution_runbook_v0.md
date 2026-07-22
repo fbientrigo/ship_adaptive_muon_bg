@@ -544,7 +544,21 @@ physical NLL for `quantile_normal_v0`, no persisted preprocessing state).
    model_config.json, checkpoint_hash.txt}`) instead of a bare
    `torch.save(state_dict())` to `<run_label>_model.pt`. This is a checkpoint
    *layout* change for future runs — nothing else in the repo depended on
-   the old flat filename.
+   the old flat filename (verified by a repo-wide grep for `_model.pt`, not
+   just within `scripts/`).
+
+   **`checkpoint_hash` semantics now differ by family** — for
+   `affine_coupling` runs, `metrics.json`'s `checkpoint_hash` is
+   `AffineCouplingFlow.checkpoint_hash()`, a *functional fingerprint*
+   (sha256 of state_dict bytes + config + permutations), not a sha256 of a
+   single `.pt` file's raw bytes. Gaussian/GMM baselines and the legacy job04
+   checkpoint still use `checkpoint_file_hash()` (raw file bytes), since
+   those families have no equivalent functional-fingerprint method. A future
+   consumer (e.g. a reconstruction/integrity audit) must recompute the hash
+   the way each family originally did — comparing an affine run's recorded
+   `checkpoint_hash` against `sha256(checkpoint/state_dict.pt bytes)` will
+   always mismatch, since those are two different hashes of different
+   things, not a corruption signal.
 3. **Gaussian-family baselines (`diagonal_gaussian`/`full_gaussian`/
    `gaussian_mixture`, jobs 10/11) now persist a checkpoint** via their
    existing (previously unused) `.save()`/`.load()` (writes

@@ -844,6 +844,22 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
                         # bare torch.save -- this is what makes the run
                         # reconstructible from job_dir alone, without
                         # hardcoding architecture literals out-of-band.
+                        #
+                        # NOTE on checkpoint_hash semantics: for this
+                        # (affine_coupling) family, checkpoint_hash is
+                        # AffineCouplingFlow.checkpoint_hash() -- a functional
+                        # fingerprint (sha256 of state_dict bytes + config +
+                        # permutations), NOT a sha256 of a single .pt file's
+                        # raw bytes. Baseline (Gaussian/GMM) and legacy
+                        # checkpoints below still use checkpoint_file_hash()
+                        # (raw file bytes), since they have no equivalent
+                        # functional-fingerprint method. A future consumer
+                        # (e.g. a reconstruction audit) must recompute the
+                        # hash the same way the family originally did --
+                        # comparing an affine run's recorded checkpoint_hash
+                        # against sha256(state_dict.pt bytes) will always
+                        # mismatch, since those are two different hashes of
+                        # different things, not a corruption signal.
                         run_dir = os.path.join(job_dir, run_label)
                         save_info = estimator.save(run_dir)
                         checkpoint_hash = save_info["checkpoint_hash"]
