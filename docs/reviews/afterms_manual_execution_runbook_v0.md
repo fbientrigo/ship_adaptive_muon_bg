@@ -58,9 +58,9 @@ python -m pytest -q tests/afterms/test_report_builder.py
 ```powershell
 python -m pytest -q
 ```
-**EXPECTED OUTPUT:** `574 passed, 2 skipped` (0 failed), as verified this
-session (10 tests were added by the job-13 self-consistency patch below; the
-two `RuntimeWarning: overflow encountered in scalar multiply` warnings from
+**EXPECTED OUTPUT:** `583 passed, 2 skipped` (0 failed), as verified this
+session (9 tests were added by the artifact-contract fixes below; the two
+`RuntimeWarning: overflow encountered in scalar multiply` warnings from
 `split.py` remain gone, per the earlier shard-interruption-handling patch).
 **ARTIFACTS WRITTEN:** none.
 **SAFE TO RE-RUN:** yes.
@@ -511,6 +511,71 @@ specifically the queue runner and not an unrelated Python process.
 **ARTIFACTS WRITTEN:** none.
 **SAFE TO RE-RUN:** yes.
 **TRAINS A MODEL:** no.
+
+---
+
+## ARTIFACT-CONTRACT FIXES (resolved this session, apply to future campaigns only)
+
+While planning a downstream evaluation harness over the completed
+`afterms_nightly_v1` campaign, five gaps in the *reusable pipeline code*
+were found and fixed. **These fixes change what future nightly campaigns
+produce; they do not and cannot retroactively alter the already-completed
+`afterms_nightly_v1` artifacts** (`artifacts/afterms_nightly_v1/` and
+`data/shards/afterms_nightly_v1/` remain byte-for-byte untouched — verified
+by hash before and after this session). A tool evaluating that specific
+completed campaign must still handle the pre-fix state (two ambiguous hash
+field names, no checkpoint sidecars, no Gaussian/GMM checkpoints, no
+physical NLL for `quantile_normal_v0`, no persisted preprocessing state).
+
+1. **Two different hash functions were both called `dataset_hash`.**
+   `run_afterms_nightly_queue.py` computed a raw-file-bytes sha256
+   (truncated to 16 hex) for the nightly report/status files;
+   `build_afterms_shards.py` computed a content hash of the canonicalized
+   array (64 hex) for `shard_manifest.json`. Same field name, different
+   inputs. Fixed by renaming: the nightly queue's field is now
+   `raw_file_sha256` (full 64 hex, no truncation); the shard builder's
+   field is now `content_dataset_hash` everywhere it's written
+   (`shard_manifest.json`, per-shard `.json`, `shard_validation_report.json`,
+   `progress.json`). `split.py`'s frozen `assign_split(..., dataset_hash=...)`
+   call and its underlying computed value are unchanged — only the JSON
+   output field names were renamed.
+2. **Affine-family checkpoints now use `AffineCouplingFlow`'s own tested
+   `save()`/`load()`** (writes `<run_label>/checkpoint/{state_dict.pt,
+   model_config.json, checkpoint_hash.txt}`) instead of a bare
+   `torch.save(state_dict())` to `<run_label>_model.pt`. This is a checkpoint
+   *layout* change for future runs — nothing else in the repo depended on
+   the old flat filename.
+3. **Gaussian-family baselines (`diagonal_gaussian`/`full_gaussian`/
+   `gaussian_mixture`, jobs 10/11) now persist a checkpoint** via their
+   existing (previously unused) `.save()`/`.load()` (writes
+   `<run_label>/{model_config.json, model_parameters.npz}`). Previously no
+   checkpoint was saved for these at all.
+4. **`quantile_normal_v0`'s `forward_log_abs_det_jacobian` is now
+   implemented** (`src/ship_muon_bg/afterms/preprocessing.py`) instead of
+   raising `NotImplementedError`. Exact closed-form log-abs-det-Jacobian of
+   the fitted `QuantileTransformer`'s per-feature piecewise-linear map,
+   verified against numerical differentiation
+   (`tests/afterms/test_preprocessing_pipeline_jacobian.py`). Rows outside
+   the fitted quantile range, on a zero-width (duplicate-value) knot
+   interval, or close enough to the outer knots that sklearn's internal
+   probability clipping applies, raise `ValueError` rather than silently
+   misreporting — callers already wrap this in `except Exception:
+   physical_nll = None`, so this can still often resolve to `None` for wide
+   held-out test sets, which is the honest outcome, not a regression.
+5. **`PreprocessingPipeline`'s fitted state (mean/std, or the fitted
+   `QuantileTransformer`) is now persisted** alongside each checkpoint as
+   `<run_label>/preprocessing.json`, via the class's own (previously
+   unused) `to_dict()`. Job 04 (legacy, no registry-backed save/load) gets a
+   hand-rolled `legacy_model_config.json` (architecture + `mass_muon`
+   constant + feature order) and `legacy_preprocessing.json` (pickled
+   `QuantileTransformer`) sidecar instead.
+
+**Verification performed:** `tests/afterms/test_preprocessing_pipeline_jacobian.py`
+(6 tests) and `tests/afterms/test_checkpoint_reconstruction_sidecars.py`
+(3 tests, run real tiny-fixture training end-to-end and reload every
+checkpoint family), plus the full suite (583 passed / 2 skipped / 0 failed).
+`pyproject.toml`'s `lab` extra now also declares `scipy` (previously only
+imported transitively) since the new Jacobian uses `scipy.stats.norm`.
 
 ---
 

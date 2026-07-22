@@ -199,7 +199,7 @@ def test_run_job_outer_keyboard_interrupt_writes_interrupted_status_and_clears_q
     monkeypatch.setattr(queue_mod.subprocess, "Popen", _fake_popen)
 
     with pytest.raises(KeyboardInterrupt):
-        queue_mod.run_job_outer("00_environment_and_dataset_smoke", args, {"dataset_hash": "abc"}, "deadbeef")
+        queue_mod.run_job_outer("00_environment_and_dataset_smoke", args, {"raw_file_sha256": "abc"}, "deadbeef")
 
     status_path = artifact_dir / "jobs" / "00_environment_and_dataset_smoke" / "status.json"
     status = json.loads(status_path.read_text())
@@ -277,7 +277,7 @@ def test_resume_does_not_skip_a_previously_interrupted_job(tmp_path, monkeypatch
         "status": "interrupted",
         "job_name": job_name,
         "job_config_hash": job_config_hash,
-        "dataset_hash": "abc",
+        "raw_file_sha256": "abc",
         "git_commit": "deadbeef",
     }))
 
@@ -298,7 +298,7 @@ def test_resume_does_not_skip_a_previously_interrupted_job(tmp_path, monkeypatch
     monkeypatch.setattr(queue_mod.subprocess, "Popen", _fake_popen)
 
     with pytest.raises(KeyboardInterrupt):
-        queue_mod.run_job_outer(job_name, args, {"dataset_hash": "abc"}, "deadbeef")
+        queue_mod.run_job_outer(job_name, args, {"raw_file_sha256": "abc"}, "deadbeef")
 
     # An interrupted status must not satisfy the resume-skip check: the
     # subprocess must actually have been (re)launched, not silently skipped.

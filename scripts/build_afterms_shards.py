@@ -219,7 +219,7 @@ def main():
     print(f"Audit written to: {audit_path} (elapsed {time.perf_counter() - t_start:.1f}s)", flush=True)
     raw_hash = audit_data["content_dataset_hash"]
     print(f"Dataset Content Hash: {raw_hash}", flush=True)
-    progress("descriptive_audit_completed", dataset_hash=raw_hash)
+    progress("descriptive_audit_completed", content_dataset_hash=raw_hash)
 
     # 2. Deterministic split (Phase B, §5.1)
     print("Generating deterministic global train/validation/test split...", flush=True)
@@ -234,7 +234,11 @@ def main():
     representativeness_reports = {}
     
     global_manifest = {
-        "dataset_hash": raw_hash,
+        # Content hash of the canonicalized in-memory array (data_contracts
+        # .dataset_hash), distinct from a raw-file-bytes hash -- named
+        # explicitly so it is never confused with (or joined against) the
+        # nightly queue's file-level "raw_file_sha256".
+        "content_dataset_hash": raw_hash,
         "source_file": os.path.abspath(args.raw_file),
         "seed": args.seed,
         "splits": {}
@@ -315,7 +319,7 @@ def main():
             edge_counts = {name: int(np.count_nonzero(mask)) for name, mask in tail_masks.items()}
 
             shard_manifest = {
-                "dataset_hash": raw_hash,
+                "content_dataset_hash": raw_hash,
                 "source_file": os.path.abspath(args.raw_file),
                 "split": split_name,
                 "shard_number": int(s),
@@ -373,7 +377,7 @@ def main():
 
     report_envelope = {
         "validation_status": validation_status,
-        "dataset_hash": raw_hash,
+        "content_dataset_hash": raw_hash,
         "seed": args.seed,
         "shards": representativeness_reports
     }

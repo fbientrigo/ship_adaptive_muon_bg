@@ -18,6 +18,7 @@ import ctypes
 import hashlib
 import json
 import os
+import pickle
 import signal
 import subprocess
 import sys
@@ -262,6 +263,17 @@ def checkpoint_file_hash(path):
     """Sha256 of a saved checkpoint file, for reload-provenance tracking."""
     with open(path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
+
+
+def _write_preprocessing_sidecar(run_dir, pipeline):
+    """Persists the fitted PreprocessingPipeline's state (mean/std or
+    QuantileTransformer) alongside the model checkpoint. PreprocessingPipeline
+    already has to_dict()/from_dict(); this was simply never called, so a
+    future evaluation tool had no way to invert generated samples to physical
+    space without re-fitting the preprocessor from the raw shard."""
+    os.makedirs(run_dir, exist_ok=True)
+    with open(os.path.join(run_dir, "preprocessing.json"), "w") as f:
+        json.dump(pipeline.to_dict(), f, indent=2)
 
 
 # --- C2ST & NN metrics helper ---
@@ -606,10 +618,32 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
             
         total_time = time.perf_counter() - wall_start
         
-        # Save model
+        # Save model. NormalizingFlow (legacy) has no save()/load() class
+        # method (unlike the registry-backed families in Nflow/), so a
+        # hand-rolled JSON sidecar records the architecture and
+        # feature-engineering constants that would otherwise only exist as
+        # script literals, plus the fitted QuantileTransformer's state, so
+        # this checkpoint is reconstructible from job_dir alone.
         legacy_ckpt_path = os.path.join(job_dir, "legacy_model.pt")
         torch.save(model.state_dict(), legacy_ckpt_path)
         ckpt_hash = checkpoint_file_hash(legacy_ckpt_path)
+        with open(os.path.join(job_dir, "legacy_model_config.json"), "w") as f:
+            json.dump({
+                "family": "legacy_normalizing_flow",
+                "input_dim": 4,
+                "hidden_dim": 160,
+                "n_layers": 10,
+                "mass_muon": mass_muon,
+                "feature_order": ["px", "py", "pz", "E"],
+                "dtype": "float32",
+                "checkpoint_hash": ckpt_hash,
+            }, f, indent=2)
+        with open(os.path.join(job_dir, "legacy_preprocessing.json"), "w") as f:
+            json.dump({
+                "variant_id": "quantile_transformer_legacy",
+                "seed": 20260720,
+                "qt_pkl": pickle.dumps(qt).hex(),
+            }, f, indent=2)
 
         # Generate samples for evaluation. `base_dist.sample()` draws from the
         # global torch RNG with no generator hook, so a fixed seed is set
@@ -804,10 +838,16 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
                             }
                             run_history.append(epoch_metrics)
                             
-                        # Save checkpoint
-                        affine_ckpt_path = os.path.join(job_dir, f"{run_label}_model.pt")
-                        torch.save(module.state_dict(), affine_ckpt_path)
-                        checkpoint_hash = checkpoint_file_hash(affine_ckpt_path)
+                        # Save checkpoint via the estimator's own tested
+                        # save()/load() protocol (state_dict + JSON-safe
+                        # config + a recorded functional hash), instead of a
+                        # bare torch.save -- this is what makes the run
+                        # reconstructible from job_dir alone, without
+                        # hardcoding architecture literals out-of-band.
+                        run_dir = os.path.join(job_dir, run_label)
+                        save_info = estimator.save(run_dir)
+                        checkpoint_hash = save_info["checkpoint_hash"]
+                        _write_preprocessing_sidecar(run_dir, pipeline)
 
                         # Generate samples. Reuses the seeded `gen` generator
                         # (already seeded to 20260720 above) so the generated
@@ -844,11 +884,18 @@ def run_neural_training_subprocess(job_name, device, shard_dir, job_dir):
                         train_loss, val_loss = train_and_validation_nll_from_fit_result(fit_res)
                         run_history = [{"epoch": 1, "train_loss": train_loss, "validation_loss": val_loss}]
 
-                        # Generate samples. No checkpoint file is saved for
-                        # this baseline family today (unlike the affine
-                        # family) so checkpoint_hash stays None here.
+                        # Save checkpoint via the estimator's own save()
+                        # protocol (model_config.json + model_parameters.npz),
+                        # so these baselines are reconstructible from job_dir
+                        # alone rather than requiring a refit.
+                        run_dir = os.path.join(job_dir, run_label)
+                        save_info = estimator.save(run_dir)
+                        checkpoint_hash = checkpoint_file_hash(
+                            os.path.join(run_dir, save_info["parameters_file"])
+                        )
+                        _write_preprocessing_sidecar(run_dir, pipeline)
+
                         generation_seed = 20260720
-                        checkpoint_hash = None
                         gen_scaled = estimator.sample(5000, seed=generation_seed)
                         gen_feats = pipeline.inverse(gen_scaled)
                         
@@ -974,7 +1021,7 @@ def run_job_outer(job_name, args, target_hashes, git_commit):
             with open(status_path, "r") as f:
                 status_data = json.load(f)
             if (status_data.get("status") == "completed" and
-                status_data.get("dataset_hash") == target_hashes.get("dataset_hash") and
+                status_data.get("raw_file_sha256") == target_hashes.get("raw_file_sha256") and
                 status_data.get("job_config_hash") == job_config_hash and
                 status_data.get("git_commit") == git_commit):
                 print(f"Job {job_name} matches resume credentials. Skipping.")
@@ -1001,7 +1048,7 @@ def run_job_outer(job_name, args, target_hashes, git_commit):
         print(f"[DRY-RUN] Job {job_name} would execute.")
         # Create empty status file to satisfy checks
         with open(status_path, "w") as f:
-            json.dump({"status": "completed", "job_name": job_name, "job_config_hash": job_config_hash, "dataset_hash": target_hashes.get("dataset_hash"), "git_commit": git_commit}, f)
+            json.dump({"status": "completed", "job_name": job_name, "job_config_hash": job_config_hash, "raw_file_sha256": target_hashes.get("raw_file_sha256"), "git_commit": git_commit}, f)
         return True
 
     # Launch as independent python subprocess
@@ -1064,7 +1111,7 @@ def run_job_outer(job_name, args, target_hashes, git_commit):
                     "status": "interrupted",
                     "job_name": job_name,
                     "job_config_hash": job_config_hash,
-                    "dataset_hash": target_hashes.get("dataset_hash"),
+                    "raw_file_sha256": target_hashes.get("raw_file_sha256"),
                     "git_commit": git_commit,
                     "interrupted_at": time.time(),
                 }
@@ -1103,7 +1150,7 @@ def run_job_outer(job_name, args, target_hashes, git_commit):
             "status": "completed",
             "job_name": job_name,
             "job_config_hash": job_config_hash,
-            "dataset_hash": target_hashes.get("dataset_hash"),
+            "raw_file_sha256": target_hashes.get("raw_file_sha256"),
             "git_commit": git_commit,
             "system_metrics_pre": pre_metrics,
             "system_metrics_post": post_metrics,
@@ -1124,7 +1171,7 @@ def run_job_outer(job_name, args, target_hashes, git_commit):
             "status": "failed",
             "job_name": job_name,
             "job_config_hash": job_config_hash,
-            "dataset_hash": target_hashes.get("dataset_hash"),
+            "raw_file_sha256": target_hashes.get("raw_file_sha256"),
             "git_commit": git_commit,
             "error": str(e),
             "traceback": tb,
@@ -1187,7 +1234,7 @@ def build_final_nightly_report(args, git_commit, target_hashes):
     smoke_job_statuses = {k: v for k, v in job_statuses.items() if k != "13_build_nightly_report"}
     summary_json = {
         "git_commit": git_commit,
-        "dataset_hash": target_hashes.get("dataset_hash"),
+        "raw_file_sha256": target_hashes.get("raw_file_sha256"),
         "job_statuses": {k: v.get("status") for k, v in job_statuses.items()},
         "memory_retention_flag": possible_memory_retention,
         "status_code": "NIGHTLY_SMOKES_COMPLETE" if all(v.get("status") == "completed" for v in smoke_job_statuses.values()) else "NIGHTLY_SMOKES_PARTIAL"
@@ -1226,7 +1273,7 @@ def build_final_nightly_report(args, git_commit, target_hashes):
     md_buffer = io.StringIO()
     md_buffer.write("# NIGHTLY MISSION SUMMARY REPORT\n\n")
     md_buffer.write(f"- **Git Commit**: `{git_commit}`\n")
-    md_buffer.write(f"- **Dataset Content Hash**: `{target_hashes.get('dataset_hash')}`\n")
+    md_buffer.write(f"- **Dataset Raw File SHA-256**: `{target_hashes.get('raw_file_sha256')}`\n")
     md_buffer.write(f"- **Memory Retention Flag**: `{possible_memory_retention}`\n")
     md_buffer.write(f"- **Status Code**: `{status_code}`\n\n")
 
@@ -1387,14 +1434,20 @@ def main():
 
     git_commit = get_git_commit()
     
-    # Load dataset hash
+    # Load dataset hash. This is a raw-file-bytes sha256 (cheap: no full
+    # array decode needed at queue-startup time), used only for job
+    # resume-matching and status/report provenance. It is intentionally
+    # named distinctly from shard_manifest.json's "content_dataset_hash"
+    # (a hash of the canonicalized in-memory array, computed by the shard
+    # builder which already has the array loaded) -- the two hash different
+    # things and must never be assumed interchangeable or joinable.
     dataset_file = "data/raw/nflow_releases/muonsFullMC_afterMS.pkl"
     target_hashes = {}
     if os.path.exists(dataset_file):
         try:
-            target_hashes["dataset_hash"] = audit.file_sha256(dataset_file)[:16]
+            target_hashes["raw_file_sha256"] = audit.file_sha256(dataset_file)
         except Exception:
-            target_hashes["dataset_hash"] = "unknown"
+            target_hashes["raw_file_sha256"] = "unknown"
 
     # Subprocess entry point
     if args.run_job is not None:

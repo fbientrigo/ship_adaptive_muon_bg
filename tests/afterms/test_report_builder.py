@@ -58,7 +58,7 @@ def test_missing_physical_nll_renders_na_not_zero(tmp_path):
             },
         },
     )
-    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"dataset_hash": "abc"})
+    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"raw_file_sha256": "abc"})
 
     md = open(os.path.join(artifact_dir, "report", "nightly_summary.md")).read()
     assert "N/A (No Jac)" in md
@@ -74,7 +74,7 @@ def test_status_code_reflects_actual_completion_not_hardcoded(tmp_path):
     artifact_dir = str(tmp_path)
     _write_job(artifact_dir, "00_environment_and_dataset_smoke", status={"status": "completed"})
     # Everything else is left "missing" -> must not be NIGHTLY_SMOKES_COMPLETE
-    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"dataset_hash": "abc"})
+    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"raw_file_sha256": "abc"})
 
     summary = json.load(open(os.path.join(artifact_dir, "report", "nightly_summary.json")))
     assert summary["status_code"] == "NIGHTLY_SMOKES_PARTIAL"
@@ -93,7 +93,7 @@ def test_status_code_complete_when_smoke_jobs_done_despite_job13_missing(tmp_pat
         if name == "13_build_nightly_report":
             continue
         _write_job(artifact_dir, name, status={"status": "completed"})
-    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"dataset_hash": "abc"})
+    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"raw_file_sha256": "abc"})
 
     summary = json.load(open(os.path.join(artifact_dir, "report", "nightly_summary.json")))
     assert summary["status_code"] == "NIGHTLY_SMOKES_COMPLETE"
@@ -121,7 +121,7 @@ def test_report_builder_job_excluded_from_its_own_performance_table(tmp_path):
             }
         },
     )
-    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"dataset_hash": "abc"})
+    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"raw_file_sha256": "abc"})
 
     md = open(os.path.join(artifact_dir, "report", "nightly_summary.md")).read()
     assert "some_stray_run" not in md
@@ -146,9 +146,9 @@ def test_report_regeneration_from_existing_artifacts_is_deterministic(tmp_path):
         },
     )
     args = _Args(artifact_dir)
-    build_final_nightly_report(args, "deadbeef", {"dataset_hash": "abc"})
+    build_final_nightly_report(args, "deadbeef", {"raw_file_sha256": "abc"})
     first = open(os.path.join(artifact_dir, "report", "nightly_summary.md")).read()
-    build_final_nightly_report(args, "deadbeef", {"dataset_hash": "abc"})
+    build_final_nightly_report(args, "deadbeef", {"raw_file_sha256": "abc"})
     second = open(os.path.join(artifact_dir, "report", "nightly_summary.md")).read()
     assert first == second
 
@@ -291,7 +291,7 @@ def test_physical_nll_zero_is_distinguishable_from_missing(tmp_path):
             },
         },
     )
-    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"dataset_hash": "abc"})
+    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"raw_file_sha256": "abc"})
 
     md = open(os.path.join(artifact_dir, "report", "nightly_summary.md")).read()
     assert "0.0000" in md
@@ -315,7 +315,7 @@ def test_json_csv_markdown_agree_on_physical_and_test_nll(tmp_path):
         status={"status": "completed"},
         metrics={"identity_standardized_v0_affine_small_unweighted": {"metrics": metrics}},
     )
-    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"dataset_hash": "abc"})
+    build_final_nightly_report(_Args(artifact_dir), "deadbeef", {"raw_file_sha256": "abc"})
 
     # The job's own metrics.json is the source of truth; it is never
     # rewritten by the report builder.
@@ -363,7 +363,7 @@ def test_run_build_nightly_report_job_succeeds_with_no_preexisting_job13_status(
     args = _QueueArgs(tmp_path)
     assert not os.path.exists(os.path.join(tmp_path, "jobs", "13_build_nightly_report"))
 
-    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+    run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})
 
     status = json.load(open(os.path.join(tmp_path, "jobs", "13_build_nightly_report", "status.json")))
     assert status["status"] == "completed"
@@ -373,7 +373,7 @@ def test_report_generation_success_marks_job13_completed(tmp_path):
     args = _QueueArgs(tmp_path)
     _write_all_smoke_jobs_completed(tmp_path)
 
-    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+    run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})
 
     status = json.load(open(os.path.join(tmp_path, "jobs", "13_build_nightly_report", "status.json")))
     assert status["status"] == "completed"
@@ -396,7 +396,7 @@ def test_report_generation_failure_marks_job13_failed(tmp_path):
     )
 
     with pytest.raises(TypeError):
-        run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+        run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})
 
     status = json.load(open(os.path.join(tmp_path, "jobs", "13_build_nightly_report", "status.json")))
     assert status["status"] == "failed"
@@ -411,7 +411,7 @@ def test_no_stale_report_committed_when_report_generation_fails(tmp_path):
         "wall_time_seconds": 1.0, "parameter_count": 10,
     }}}
     _write_job(str(tmp_path), "05_affine_preprocessing_ab_pdg13", status={"status": "completed"}, metrics=good_metrics)
-    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+    run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})
 
     good_json = open(os.path.join(tmp_path, "report", "nightly_summary.json")).read()
     good_md = open(os.path.join(tmp_path, "report", "nightly_summary.md")).read()
@@ -425,7 +425,7 @@ def test_no_stale_report_committed_when_report_generation_fails(tmp_path):
     _write_job(str(tmp_path), "05_affine_preprocessing_ab_pdg13", metrics=bad_metrics)
 
     with pytest.raises(TypeError):
-        run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+        run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})
 
     # None of the three previously-good report files may be silently
     # replaced with new-but-inconsistent content when generation fails.
@@ -444,7 +444,7 @@ def test_report_job_never_invokes_training(tmp_path, monkeypatch):
 
     args = _QueueArgs(tmp_path)
     _write_all_smoke_jobs_completed(tmp_path)
-    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})  # must not raise
+    run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})  # must not raise
 
 
 def test_report_job_deterministic_once_its_own_status_stabilizes(tmp_path):
@@ -455,10 +455,10 @@ def test_report_job_deterministic_once_its_own_status_stabilizes(tmp_path):
     # "missing" to "completed" -- that transition is expected to change the
     # rendered report once. From the second run onward, with nothing else
     # changing on disk, output must be byte-for-byte identical.
-    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})  # missing -> completed
-    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+    run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})  # missing -> completed
+    run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})
     second = open(os.path.join(tmp_path, "report", "nightly_summary.md")).read()
-    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+    run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})
     third = open(os.path.join(tmp_path, "report", "nightly_summary.md")).read()
     assert second == third
 
@@ -466,7 +466,7 @@ def test_report_job_deterministic_once_its_own_status_stabilizes(tmp_path):
 def test_job13_appears_exactly_once_in_all_three_report_outputs(tmp_path):
     args = _QueueArgs(tmp_path)
     _write_all_smoke_jobs_completed(tmp_path)
-    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+    run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})
 
     summary = json.load(open(os.path.join(tmp_path, "report", "nightly_summary.json")))
     assert list(summary["job_statuses"]).count("13_build_nightly_report") == 1
@@ -481,7 +481,7 @@ def test_job13_appears_exactly_once_in_all_three_report_outputs(tmp_path):
 def test_json_csv_markdown_agree_on_job_count_and_final_status(tmp_path):
     args = _QueueArgs(tmp_path)
     _write_all_smoke_jobs_completed(tmp_path)
-    run_build_nightly_report_job(args, "deadbeef", {"dataset_hash": "abc"})
+    run_build_nightly_report_job(args, "deadbeef", {"raw_file_sha256": "abc"})
 
     summary = json.load(open(os.path.join(tmp_path, "report", "nightly_summary.json")))
     assert len(summary["job_statuses"]) == 14
