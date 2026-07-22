@@ -26,6 +26,8 @@ from ship_muon_bg.afterms.d8 import registry as d8_registry
 from ship_muon_bg.afterms.d8 import arenas as d8_arenas
 from ship_muon_bg.afterms.d8 import plotting as d8_plotting
 from ship_muon_bg.afterms.d8 import reconstruction as d8_reconstruction
+from ship_muon_bg.afterms.d8 import statistics as d8_statistics
+from ship_muon_bg.afterms.d8 import report as d8_report
 
 DEFAULT_SEED = 20260720
 DEFAULT_SAMPLE_SIZE = 20000
@@ -155,18 +157,19 @@ def main(argv=None) -> int:
     arena_result = d8_arenas.build_arenas(records, shard_dir)
     d8_arenas.write_arenas(arena_result, output_dir / "arenas")
 
-    # --- §6 training curves ---
-    d8_plotting.write_all_curves(records, output_dir / "training_curves")
-
     # --- Phase D: reconstruction + deterministic samples (§8-§10) ---
     records_by_id = {r.run_id: r for r in records}
     jobs_dir = input_artifact_dir / "jobs"
-    generated = []
+    reconstruction_outcomes = []
+    one_d_results, two_d_results, ndim_results, real_vs_real_baselines = {}, {}, {}, {}
+
     for arena in arena_result["arenas"]:
+        arena_id = arena["arena_id"]
         viz = arena.get("visualization_candidate")
         if not viz:
             continue
         record = records_by_id[viz["run_id"]]
+
         try:
             result = d8_reconstruction.reconstruct_and_generate(
                 record, jobs_dir=jobs_dir, shard_dir=shard_dir,
@@ -174,19 +177,110 @@ def main(argv=None) -> int:
             )
         except d8_reconstruction.ReconstructionError as exc:
             print(f"WARNING: reconstruction failed for {record.run_id}: {exc}", file=sys.stderr)
+            reconstruction_outcomes.append({"run_id": record.run_id, "arena_id": arena_id, "status": "failed", "error": str(exc)})
             continue
+
         d8_reconstruction.write_generated_samples(result, output_dir / "generated_samples")
         d8_reconstruction.write_reference_sample(
-            arena["arena_id"], record.pdg_value, shard_dir, args.sample_size, args.seed,
+            arena_id, record.pdg_value, shard_dir, args.sample_size, args.seed,
             output_dir / "reference_samples",
         )
-        generated.append(record.run_id)
+        outcome = {"run_id": record.run_id, "arena_id": arena_id, "status": "reconstructed"}
+        reconstruction_outcomes.append(outcome)
 
-    print(
-        "AFTERMS_SMOKE_ARENA_PARTIAL"
-        if audit_result["classification"] == adapter.INPUT_PARTIAL
-        else "GATE_2_OK"
+        if record.modeled_dimension != 5:
+            outcome["note"] = "modeled_dimension != 5 (legacy px,py,pz,E); x/y-involving diagnostics do not apply and are skipped"
+            continue
+
+        # --- Phase E: statistics + visual diagnostics (only for 5D runs) ---
+        indices = d8_reconstruction.select_reference_indices(shard_dir, record.pdg_value, args.sample_size, args.seed)
+        reference = d8_reconstruction.load_reference_rows(shard_dir, record.pdg_value, indices)
+        generated_samples = result["samples"]
+
+        weights = None
+        if record.weighting_policy:
+            filtered = adapter.load_pdg_filtered_shard(shard_dir, "test", record.pdg_value)
+            weights = filtered[indices][:, 7]  # schema COLUMN_INDEX["w"]
+
+        one_d_results[record.run_id] = d8_statistics.run_1d_suite(
+            reference, generated_samples, weighted=record.weighting_policy, weights=weights,
+            n_boot=args.bootstrap_repetitions, seed=args.seed,
+        )
+        two_d_results[record.run_id] = d8_statistics.run_2d_suite(
+            reference, generated_samples, weighted=record.weighting_policy,
+            energy_sample_size=args.energy_sample_size, n_permutations=args.permutations, seed=args.seed,
+        )
+        ndim_results[record.run_id] = d8_statistics.ndim_c2st(
+            reference, generated_samples, sample_size=args.c2st_sample_size, seed=args.seed,
+            n_boot=min(30, args.bootstrap_repetitions), n_permutations=min(30, args.permutations),
+        )
+
+        subsets = d8_reconstruction.real_vs_real_disjoint_subsets(shard_dir, record.pdg_value, args.sample_size, args.seed)
+        subset_a = d8_reconstruction.load_reference_rows(shard_dir, record.pdg_value, subsets["subset_a"])
+        subset_b = d8_reconstruction.load_reference_rows(shard_dir, record.pdg_value, subsets["subset_b"])
+        real_vs_real_baselines[record.run_id] = {
+            "one_dimensional": {
+                var: d8_statistics.real_vs_real_baseline_1d(
+                    subset_a[:, d8_statistics.FEATURE_INDEX[var]], subset_b[:, d8_statistics.FEATURE_INDEX[var]],
+                    n_boot=min(30, args.bootstrap_repetitions), seed=args.seed,
+                )
+                for var in d8_statistics.VARIABLES_1D
+            },
+            "ndimensional_c2st": d8_statistics.real_vs_real_baseline_ndim_c2st(
+                subset_a, subset_b, sample_size=args.c2st_sample_size, seed=args.seed,
+                n_boot=min(30, args.bootstrap_repetitions), n_permutations=min(30, args.permutations),
+            ),
+        }
+
+        sample_matrix_path = d8_plotting.plot_sample_matrix(
+            record.run_id, reference, generated_samples, output_dir / "sample_matrices" / f"sample_matrix__{record.run_id}.png",
+        )
+        pz_path = d8_plotting.plot_pz_diagnostics(
+            record.run_id, reference, generated_samples, output_dir / "pz_diagnostics" / f"pz_diagnostics__{record.run_id}.png",
+        )
+        outcome["sample_matrix_path"] = str(sample_matrix_path)
+        outcome["pz_diagnostics_path"] = str(pz_path)
+
+    (output_dir / "statistics").mkdir(parents=True, exist_ok=True)
+    (output_dir / "statistics" / "one_dimensional_tests.json").write_text(json.dumps(one_d_results, indent=2))
+    (output_dir / "statistics" / "two_dimensional_tests.json").write_text(json.dumps(two_d_results, indent=2))
+    (output_dir / "statistics" / "ndimensional_c2st.json").write_text(json.dumps(ndim_results, indent=2))
+
+    curves_manifest = d8_plotting.write_all_curves(records, output_dir / "training_curves")
+
+    final_status = (
+        "AFTERMS_SMOKE_ARENA_PARTIAL" if audit_result["classification"] == adapter.INPUT_PARTIAL
+        else "AFTERMS_SMOKE_ARENA_COMPLETE"
     )
+    report = d8_report.build_report(
+        audit_result=audit_result,
+        records=records,
+        arena_result=arena_result,
+        loss_semantics_notes=[
+            "Test-set NLL is always row-empirical, even for weighted-training runs (the producer's "
+            "test evaluation never applies sample weights).",
+            "Per-epoch validation_loss for weighted runs is a self_normalized_minibatch_ratio "
+            "quantity; validation_nll for those runs is weighted even though test_nll is not.",
+            "physical_validation_nll (arenas A/B) is derived as validation_nll minus the mean "
+            "log-Jacobian on the validation shard -- verified against the recorded test physical "
+            "NLL to 7 significant figures.",
+        ],
+        curves_manifest=curves_manifest,
+        reconstruction_results=reconstruction_outcomes,
+        one_d_results=one_d_results,
+        two_d_results=two_d_results,
+        ndim_results=ndim_results,
+        real_vs_real_baselines=real_vs_real_baselines,
+        evaluation_budgets={
+            "sample_size": args.sample_size, "energy_sample_size": args.energy_sample_size,
+            "permutations": args.permutations, "bootstrap_repetitions": args.bootstrap_repetitions,
+            "c2st_sample_size": args.c2st_sample_size,
+        },
+        final_status=final_status,
+    )
+    d8_report.write_report(report, output_dir / "report")
+
+    print(final_status)
     return 0
 
 

@@ -247,7 +247,7 @@ def build_arenas(records: List[RunRecord], shard_dir: Path) -> Dict[str, Any]:
 def write_arenas(result: Dict[str, Any], output_dir: Path) -> None:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "model_arena.json").write_text(json.dumps(result, indent=2))
+    (output_dir / "model_arena.json").write_text(json.dumps(result, indent=2), encoding='utf-8')
 
     csv_buffer = io.StringIO()
     writer = csv.writer(csv_buffer)
@@ -258,7 +258,7 @@ def write_arenas(result: Dict[str, Any], output_dir: Path) -> None:
             arena["arena_id"], arena["description"], arena["ranking_axis"], arena["n_candidates"],
             champ["run_id"] if champ else None, champ["ranking_value"] if champ else None,
         ])
-    (output_dir / "model_arena.csv").write_text(csv_buffer.getvalue())
+    (output_dir / "model_arena.csv").write_text(csv_buffer.getvalue(), encoding='utf-8')
 
     md_buffer = io.StringIO()
     md_buffer.write("# D8 Model Arenas\n\n")
@@ -278,4 +278,4 @@ def write_arenas(result: Dict[str, Any], output_dir: Path) -> None:
         if arena.get("ineligible"):
             md_buffer.write(f"- excluded: {arena['ineligible']}\n")
         md_buffer.write("\n")
-    (output_dir / "model_arena.md").write_text(md_buffer.getvalue())
+    (output_dir / "model_arena.md").write_text(md_buffer.getvalue(), encoding='utf-8')

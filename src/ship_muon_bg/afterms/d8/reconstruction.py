@@ -185,7 +185,7 @@ def write_generated_samples(result: Dict[str, Any], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     run_id = result["provenance"]["run_id"]
     np.save(output_dir / f"{run_id}.npy", result["samples"])
-    (output_dir / f"{run_id}.json").write_text(json.dumps(result["provenance"], indent=2))
+    (output_dir / f"{run_id}.json").write_text(json.dumps(result["provenance"], indent=2), encoding='utf-8')
 
 
 # --- §10 reference sample contract ------------------------------------------
@@ -222,8 +222,16 @@ def write_reference_sample(arena_id: str, pdg_value: Optional[int], shard_dir: P
             "identifier, so this does NOT establish source-muon independence"
         ),
     }
-    (output_dir / f"{arena_id}.json").write_text(json.dumps(provenance, indent=2))
+    (output_dir / f"{arena_id}.json").write_text(json.dumps(provenance, indent=2), encoding='utf-8')
     return provenance
+
+
+def load_reference_rows(shard_dir: Path, pdg_value: Optional[int], indices: np.ndarray) -> np.ndarray:
+    """Physical-space (px, py, pz, x, y) held-out rows at `indices` (positions
+    into the PDG-filtered `test_shard_000` array -- see `select_reference_indices`)."""
+
+    filtered = adapter.load_pdg_filtered_shard(shard_dir, "test", pdg_value)
+    return filtered[indices][:, :5]
 
 
 def real_vs_real_disjoint_subsets(

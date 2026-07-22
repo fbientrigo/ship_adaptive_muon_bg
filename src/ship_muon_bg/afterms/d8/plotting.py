@@ -148,6 +148,121 @@ def write_all_curves(records: List[RunRecord], output_dir: Path) -> Dict[str, An
     return {"written": written, "skipped_no_history": skipped}
 
 
+# --- §11 sample matrices + pz diagnostics -----------------------------------
+
+_MATRIX_VARIABLES = ("x", "y", "px", "py")
+_FEATURE_INDEX = {"px": 0, "py": 1, "pz": 2, "x": 3, "y": 4}
+_MATRIX_PLOT_SUBSET = 4000  # deterministic plotting subset (spec §11: "deterministic plotting subset")
+
+
+def plot_sample_matrix(run_id: str, reference: np.ndarray, generated: np.ndarray, output_path: Path) -> Path:
+    """diagonal: held-out vs generated histogram+ECDF; lower triangle: held-out;
+    upper triangle: generated; shared axis limits per variable pair."""
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    ref = reference[:_MATRIX_PLOT_SUBSET]
+    gen = generated[:_MATRIX_PLOT_SUBSET]
+    n_vars = len(_MATRIX_VARIABLES)
+    fig, axes = plt.subplots(n_vars, n_vars, figsize=(3 * n_vars, 3 * n_vars))
+
+    limits = {}
+    for var in _MATRIX_VARIABLES:
+        idx = _FEATURE_INDEX[var]
+        lo = min(np.quantile(ref[:, idx], 0.001), np.quantile(gen[:, idx], 0.001))
+        hi = max(np.quantile(ref[:, idx], 0.999), np.quantile(gen[:, idx], 0.999))
+        limits[var] = (lo, hi)
+
+    for i, vi in enumerate(_MATRIX_VARIABLES):
+        for j, vj in enumerate(_MATRIX_VARIABLES):
+            ax = axes[i, j]
+            idx_i, idx_j = _FEATURE_INDEX[vi], _FEATURE_INDEX[vj]
+            if i == j:
+                bins = np.linspace(*limits[vi], 40)
+                ax.hist(ref[:, idx_i], bins=bins, alpha=0.5, density=True, label="held-out")
+                ax.hist(gen[:, idx_i], bins=bins, alpha=0.5, density=True, label="generated")
+                if i == 0:
+                    ax.legend(fontsize=6)
+            elif i > j:  # lower triangle: held-out
+                ax.hexbin(ref[:, idx_j], ref[:, idx_i], gridsize=30, cmap="Blues")
+                ax.set_xlim(limits[vj])
+                ax.set_ylim(limits[vi])
+            else:  # upper triangle: generated
+                ax.hexbin(gen[:, idx_j], gen[:, idx_i], gridsize=30, cmap="Oranges")
+                ax.set_xlim(limits[vj])
+                ax.set_ylim(limits[vi])
+            if i == n_vars - 1:
+                ax.set_xlabel(vj)
+            if j == 0:
+                ax.set_ylabel(vi)
+
+    fig.suptitle(f"sample matrix: {run_id}", fontsize=8)
+    fig.tight_layout()
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path)
+    plt.close(fig)
+    return output_path
+
+
+def plot_pz_diagnostics(run_id: str, reference: np.ndarray, generated: np.ndarray, output_path: Path) -> Path:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    pz_ref = reference[:, _FEATURE_INDEX["pz"]]
+    pz_gen = generated[:, _FEATURE_INDEX["pz"]]
+    pt_gen = np.sqrt(generated[:, _FEATURE_INDEX["px"]] ** 2 + generated[:, _FEATURE_INDEX["py"]] ** 2)
+    r_gen = np.sqrt(generated[:, _FEATURE_INDEX["x"]] ** 2 + generated[:, _FEATURE_INDEX["y"]] ** 2)
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+
+    axes[0, 0].hist(pz_ref, bins=60, alpha=0.5, density=True, label="held-out")
+    axes[0, 0].hist(pz_gen, bins=60, alpha=0.5, density=True, label="generated")
+    axes[0, 0].set_title("pz marginal")
+    axes[0, 0].legend(fontsize=6)
+
+    axes[0, 1].hist(pz_ref, bins=60, alpha=0.5, density=True, label="held-out")
+    axes[0, 1].hist(pz_gen, bins=60, alpha=0.5, density=True, label="generated")
+    axes[0, 1].set_yscale("log")
+    axes[0, 1].set_title("pz marginal (log-y tail)")
+
+    for label, pz in (("held-out", pz_ref), ("generated", pz_gen)):
+        sorted_pz = np.sort(pz)
+        survival = 1.0 - np.arange(1, len(sorted_pz) + 1) / len(sorted_pz)
+        axes[0, 2].plot(sorted_pz, survival, label=label)
+    axes[0, 2].set_yscale("log")
+    axes[0, 2].set_title("pz survival function")
+    axes[0, 2].legend(fontsize=6)
+
+    axes[1, 0].scatter(pz_gen, pt_gen, s=2, alpha=0.3)
+    axes[1, 0].set_xlabel("pz (generated)")
+    axes[1, 0].set_ylabel("pt (generated)")
+    axes[1, 0].set_title("generated pz vs pt")
+
+    axes[1, 1].scatter(pz_gen, r_gen, s=2, alpha=0.3)
+    axes[1, 1].set_xlabel("pz (generated)")
+    axes[1, 1].set_ylabel("transverse radius (generated)")
+    axes[1, 1].set_title("generated pz vs transverse radius")
+
+    neg_ref = pz_ref[pz_ref < 0]
+    neg_gen = pz_gen[pz_gen < 0]
+    axes[1, 2].hist(neg_ref, bins=30, alpha=0.5, density=True, label=f"held-out (n={neg_ref.size})")
+    axes[1, 2].hist(neg_gen, bins=30, alpha=0.5, density=True, label=f"generated (n={neg_gen.size})")
+    axes[1, 2].set_title("negative-pz diagnostic (never clipped)")
+    axes[1, 2].legend(fontsize=6)
+
+    fig.suptitle(f"pz diagnostics: {run_id}", fontsize=8)
+    fig.tight_layout()
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path)
+    plt.close(fig)
+    return output_path
+
+
 def _write_weighted_panel(weighted: List[RunRecord], unweighted: List[RunRecord], output_path: Path, pdg: str) -> None:
     import matplotlib
     matplotlib.use("Agg")

@@ -427,7 +427,7 @@ def write_registry(records: List[RunRecord], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     payload = [r.to_json_dict() for r in records]
-    (output_dir / "run_registry.json").write_text(json.dumps(payload, indent=2))
+    (output_dir / "run_registry.json").write_text(json.dumps(payload, indent=2), encoding='utf-8')
 
     fieldnames = list(payload[0].keys()) if payload else []
     csv_buffer = io.StringIO()
@@ -439,7 +439,7 @@ def write_registry(records: List[RunRecord], output_dir: Path) -> None:
             if key in flat:
                 flat[key] = json.dumps(flat[key])
         writer.writerow(flat)
-    (output_dir / "run_registry.csv").write_text(csv_buffer.getvalue())
+    (output_dir / "run_registry.csv").write_text(csv_buffer.getvalue(), encoding='utf-8')
 
     md_buffer = io.StringIO()
     md_buffer.write("# D8 Run Registry\n\n")
@@ -450,4 +450,4 @@ def write_registry(records: List[RunRecord], output_dir: Path) -> None:
             "| {run_id} | {model_family} | {pdg_policy} | {preprocessing_name} | {weighting_policy} | "
             "{validation_nll} | {test_nll} | {physical_space_nll} | {reconstruction_status} |\n".format(**row)
         )
-    (output_dir / "run_registry.md").write_text(md_buffer.getvalue())
+    (output_dir / "run_registry.md").write_text(md_buffer.getvalue(), encoding='utf-8')

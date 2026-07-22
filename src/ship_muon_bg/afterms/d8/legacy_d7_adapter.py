@@ -328,8 +328,6 @@ def resolve_checkpoint_info(job_name: str, run_label_str: str) -> CheckpointInfo
     if job_name == "04_legacy_available_code_realnvp_quantile":
         return CheckpointInfo("legacy_model.pt", "bare_state_dict_legacy_flow", "RECONSTRUCTIBLE")
 
-    family = MODEL_FAMILY_OF_NAME.get(run_label_str.rsplit("_", 1)[0], None)  # unused fallback path
-
     if job_name in ("10_gaussian_controls_pdg13", "11_gaussian_controls_pdg_minus13"):
         # Baseline (Gaussian/GMM) family: producer never called `.save()` for
         # these; `checkpoint_hash` stayed `None` in every recorded metric.
@@ -583,7 +581,7 @@ def write_phase_a_outputs(audit_result: Dict[str, Any], output_dir: Path) -> Non
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    (output_dir / "immutable_input_manifest.json").write_text(json.dumps(audit_result, indent=2))
+    (output_dir / "immutable_input_manifest.json").write_text(json.dumps(audit_result, indent=2), encoding='utf-8')
     (output_dir / "legacy_d7_contract.json").write_text(json.dumps(build_legacy_contract_table(), indent=2))
 
     md = []
@@ -599,4 +597,4 @@ def write_phase_a_outputs(audit_result: Dict[str, Any], output_dir: Path) -> Non
         md.append(f"- {finding}\n")
     if not audit_result.get("findings"):
         md.append("- none\n")
-    (output_dir / "immutable_input_audit.md").write_text("".join(md))
+    (output_dir / "immutable_input_audit.md").write_text("".join(md), encoding='utf-8')
