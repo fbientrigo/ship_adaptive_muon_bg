@@ -29,6 +29,7 @@ from ship_muon_bg.data_contracts import dataset_hash, schema
 
 from . import checkpoint as ckpt
 from . import contract as d9contract
+from . import sampling as d9sampling
 from . import weighted_objective as wo
 
 STATUS_PLANNED = "planned"
@@ -217,7 +218,10 @@ def train_candidate_seed(
     if resume and resumable_path.exists():
         bundle = ckpt.load_bundle(resumable_path)
 
-        expected = {"semantic_training_hash": semantic_training_hash}
+        expected = {
+            "semantic_training_hash": semantic_training_hash,
+            "sampling_contract_version": d9sampling.SAMPLING_CONTRACT_VERSION,
+        }
         prior_execution_policy_hash = bundle.get("execution_policy_hash")
         execution_policy_changed = (
             prior_execution_policy_hash is not None
@@ -316,7 +320,6 @@ def train_candidate_seed(
     t_w_val = torch.tensor(w_val, dtype=torch_dtype, device=device)
 
     gen = torch.Generator(device=device)
-    gen.manual_seed(int(seed))
 
     _write_status(run_dir, {"status": STATUS_RUNNING, "run_id": run_id, "candidate_id": candidate_id, "seed": seed})
 
@@ -328,6 +331,12 @@ def train_candidate_seed(
             if interrupt_flag is not None and interrupt_flag():
                 raise TrainingInterrupted()
             module.train()
+            # Reseeded every epoch from (seed, epoch) alone (§Gate B.1 sampling
+            # contract) -- NOT a continuous draw from one process-lifetime
+            # generator -- so epoch N's minibatch order is identical whether
+            # this process trained epochs 1..N-1 first or was resumed fresh at
+            # epoch N.
+            gen.manual_seed(d9sampling.epoch_permutation_seed(seed, epoch))
             perm = torch.randperm(n_train, generator=gen, device=device)
             wall_start = time.perf_counter()
             train_loss_sum = 0.0
@@ -411,6 +420,7 @@ def train_candidate_seed(
                 best_validation_metric=best_val,
                 best_validation_epoch=best_epoch,
                 rng_states={"torch_manual_seed": int(seed)},
+                sampling_contract_version=d9sampling.SAMPLING_CONTRACT_VERSION,
                 dataset_hash=train_hash,
                 split_hashes={"train": train_hash, "validation": validation_hash},
                 shard_manifest_hash=train_hash,
@@ -457,6 +467,7 @@ def train_candidate_seed(
         model_state_dict=module.state_dict(), optimizer_state_dict=optimizer.state_dict(),
         scheduler_state_dict=None, training_history=history, best_validation_metric=best_val,
         best_validation_epoch=best_epoch, rng_states={"torch_manual_seed": int(seed)},
+        sampling_contract_version=d9sampling.SAMPLING_CONTRACT_VERSION,
         dataset_hash=train_hash, split_hashes={"train": train_hash, "validation": validation_hash},
         shard_manifest_hash=train_hash, training_config_hash=training_config_hash,
         semantic_training_hash=semantic_training_hash,

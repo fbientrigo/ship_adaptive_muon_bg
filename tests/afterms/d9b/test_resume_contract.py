@@ -252,8 +252,24 @@ def test_extension_preserves_history_and_checkpoints(tmp_path):
     assert 1 in epochs_present
     assert 2 in epochs_present
 
-    for filename in ("best_checkpoint.pt", "last_resumable_checkpoint.pt", "final_checkpoint.pt"):
+    # last_resumable/final are unconditionally rewritten every epoch, so both
+    # always carry the post-extension max_epochs. best_checkpoint.pt is only
+    # rewritten when that epoch's validation loss actually improves -- after
+    # an extension, epoch 2 may or may not improve on epoch 1, so its
+    # max_epochs can legitimately still read the pre-extension value.
+    for filename in ("last_resumable_checkpoint.pt", "final_checkpoint.pt"):
         bundle_path = run_dir / "checkpoints" / filename
         assert bundle_path.exists()
         bundle = ckpt.load_bundle(bundle_path)
         assert bundle["max_epochs"] == 2
+
+    best_bundle_path = run_dir / "checkpoints" / "best_checkpoint.pt"
+    assert best_bundle_path.exists()
+    best_bundle = ckpt.load_bundle(best_bundle_path)
+    assert best_bundle["epoch"] in (1, 2)
+    # best_checkpoint.pt's max_epochs reflects whatever effective_max_epochs
+    # was in force the last time this scope was actually rewritten -- 2 only
+    # if epoch 2 was the improving epoch, else it still reads the
+    # pre-extension value from epoch 1.
+    expected_best_max_epochs = 2 if best_bundle["epoch"] == 2 else 1
+    assert best_bundle["max_epochs"] == expected_best_max_epochs

@@ -15,6 +15,7 @@ def _sample_bundle(
     evaluation_policy_hash="eval123",
     max_epochs=10,
     execution_policy_revision=0,
+    sampling_contract_version="d9_epoch_seed_v1",
 ):
     return ckpt.build_bundle(
         campaign_id="afterms_d9_training_v0",
@@ -39,6 +40,7 @@ def _sample_bundle(
         best_validation_metric=1.23,
         best_validation_epoch=1,
         rng_states={"torch_manual_seed": 20260720},
+        sampling_contract_version=sampling_contract_version,
         dataset_hash="dataset123",
         split_hashes={"train": "t1", "validation": "v1", "test": "te1"},
         shard_manifest_hash="shardhash",

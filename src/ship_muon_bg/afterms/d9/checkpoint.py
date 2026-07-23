@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-SCHEMA_VERSION = "d9_checkpoint_bundle_v1"
+SCHEMA_VERSION = "d9_checkpoint_bundle_v2"
 
 SCOPE_BEST = "best"
 SCOPE_FINAL = "final"
@@ -46,6 +46,7 @@ _COMPATIBILITY_FIELDS = (
     "seed",
     "semantic_training_hash",
     "execution_policy_hash",
+    "sampling_contract_version",
 )
 
 
@@ -100,6 +101,7 @@ def build_bundle(
     best_validation_metric: Optional[float],
     best_validation_epoch: Optional[int],
     rng_states: Dict[str, Any],
+    sampling_contract_version: str,
     dataset_hash: str,
     split_hashes: Dict[str, str],
     shard_manifest_hash: str,
@@ -139,6 +141,7 @@ def build_bundle(
         "best_validation_metric": best_validation_metric,
         "best_validation_epoch": best_validation_epoch,
         "rng_states": rng_states,
+        "sampling_contract_version": sampling_contract_version,
         "dataset_hash": dataset_hash,
         "split_hashes": split_hashes,
         "shard_manifest_hash": shard_manifest_hash,

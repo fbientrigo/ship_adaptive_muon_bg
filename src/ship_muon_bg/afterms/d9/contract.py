@@ -32,6 +32,7 @@ TRAINING_RELEVANT_MODULES: Sequence[str] = (
     "src/ship_muon_bg/afterms/d9/weighted_objective.py",
     "src/ship_muon_bg/afterms/d9/runner.py",
     "src/ship_muon_bg/afterms/d9/checkpoint.py",
+    "src/ship_muon_bg/afterms/d9/sampling.py",
     "Nflow/torch_models/affine_coupling.py",
 )
 

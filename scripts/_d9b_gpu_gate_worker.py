@@ -147,6 +147,7 @@ def cmd_reload(args) -> int:
         "schema_version", "candidate_id", "architecture_config", "feature_order",
         "pdg_policy", "preprocessing_hash", "target_measure", "weighting_policy",
         "weighting_estimator_version", "seed", "semantic_training_hash", "execution_policy_hash",
+        "sampling_contract_version",
     )
     expected = {f: best_bundle.get(f) for f in compat_fields}
     violations = ckpt.verify_compatibility(final_bundle, expected)
