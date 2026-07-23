@@ -249,10 +249,15 @@ def plot_pz_diagnostics(run_id: str, reference: np.ndarray, generated: np.ndarra
 
     neg_ref = pz_ref[pz_ref < 0]
     neg_gen = pz_gen[pz_gen < 0]
-    axes[1, 2].hist(neg_ref, bins=30, alpha=0.5, density=True, label=f"held-out (n={neg_ref.size})")
-    axes[1, 2].hist(neg_gen, bins=30, alpha=0.5, density=True, label=f"generated (n={neg_gen.size})")
+    if neg_ref.size:
+        axes[1, 2].hist(neg_ref, bins=30, alpha=0.5, density=True, label=f"held-out (n={neg_ref.size})")
+    if neg_gen.size:
+        axes[1, 2].hist(neg_gen, bins=30, alpha=0.5, density=True, label=f"generated (n={neg_gen.size})")
     axes[1, 2].set_title("negative-pz diagnostic (never clipped)")
-    axes[1, 2].legend(fontsize=6)
+    if neg_ref.size or neg_gen.size:
+        axes[1, 2].legend(fontsize=6)
+    else:
+        axes[1, 2].text(0.5, 0.5, "no negative pz in either sample", ha="center", va="center", transform=axes[1, 2].transAxes)
 
     fig.suptitle(f"pz diagnostics: {run_id}", fontsize=8)
     fig.tight_layout()
