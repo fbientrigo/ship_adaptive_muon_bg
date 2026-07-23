@@ -44,7 +44,8 @@ _COMPATIBILITY_FIELDS = (
     "weighting_policy",
     "weighting_estimator_version",
     "seed",
-    "training_contract_hash",
+    "semantic_training_hash",
+    "execution_policy_hash",
 )
 
 
@@ -103,9 +104,13 @@ def build_bundle(
     split_hashes: Dict[str, str],
     shard_manifest_hash: str,
     training_config_hash: str,
-    training_contract_hash: str,
+    semantic_training_hash: str,
+    execution_policy_hash: str,
+    evaluation_policy_hash: str,
+    max_epochs: int,
     training_code_fingerprint: Dict[str, str],
     producer_git_commit: str,
+    execution_policy_revision: int = 0,
 ) -> Dict[str, Any]:
     if checkpoint_scope not in VALID_SCOPES:
         raise ValueError(f"unknown checkpoint_scope {checkpoint_scope!r}, expected one of {VALID_SCOPES}")
@@ -138,7 +143,11 @@ def build_bundle(
         "split_hashes": split_hashes,
         "shard_manifest_hash": shard_manifest_hash,
         "training_config_hash": training_config_hash,
-        "training_contract_hash": training_contract_hash,
+        "semantic_training_hash": semantic_training_hash,
+        "execution_policy_hash": execution_policy_hash,
+        "evaluation_policy_hash": evaluation_policy_hash,
+        "max_epochs": int(max_epochs),
+        "execution_policy_revision": int(execution_policy_revision),
         "training_code_fingerprint": training_code_fingerprint,
         "producer_git_commit": producer_git_commit,
         "runtime_metadata": capture_runtime_metadata(),

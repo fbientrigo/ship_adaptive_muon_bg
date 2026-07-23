@@ -23,6 +23,7 @@ from ship_muon_bg.afterms.preprocessing import PreprocessingPipeline
 from ship_muon_bg.data_contracts import schema
 
 from . import checkpoint as ckpt
+from . import contract as d9contract
 from . import runner as d9runner
 
 
@@ -155,6 +156,9 @@ def evaluate_candidate_seed(
         "seed": int(bundle["seed"]),
         "checkpoint_scope": checkpoint_scope,
         "budget_name": budget_name,
+        "evaluation_policy_hash": d9contract.evaluation_policy_hash(
+            evaluation_policy=candidate_config["evaluation_policy"],
+        ),
         "test_feature_nll": test_feature_nll,
         "test_physical_nll": physical_nll,
         "test_physical_nll_error": physical_nll_error,

@@ -7,7 +7,15 @@ torch = pytest.importorskip("torch")
 from ship_muon_bg.afterms.d9 import checkpoint as ckpt
 
 
-def _sample_bundle(scope, epoch=1, training_contract_hash="abc123"):
+def _sample_bundle(
+    scope,
+    epoch=1,
+    semantic_training_hash="abc123",
+    execution_policy_hash="exec123",
+    evaluation_policy_hash="eval123",
+    max_epochs=10,
+    execution_policy_revision=0,
+):
     return ckpt.build_bundle(
         campaign_id="afterms_d9_training_v0",
         run_id="A1_capacity_medium_identity_pdg13_unweighted__seed20260720",
@@ -35,7 +43,11 @@ def _sample_bundle(scope, epoch=1, training_contract_hash="abc123"):
         split_hashes={"train": "t1", "validation": "v1", "test": "te1"},
         shard_manifest_hash="shardhash",
         training_config_hash="cfg123",
-        training_contract_hash=training_contract_hash,
+        semantic_training_hash=semantic_training_hash,
+        execution_policy_hash=execution_policy_hash,
+        evaluation_policy_hash=evaluation_policy_hash,
+        max_epochs=max_epochs,
+        execution_policy_revision=execution_policy_revision,
         training_code_fingerprint={"runner.py": "fp1"},
         producer_git_commit="deadbeefcafefeed",
     )
@@ -50,7 +62,7 @@ def test_round_trip_preserves_all_fields(tmp_path):
     reloaded = ckpt.load_bundle(path)
     assert reloaded["schema_version"] == ckpt.SCHEMA_VERSION
     assert reloaded["candidate_id"] == bundle["candidate_id"]
-    assert reloaded["training_contract_hash"] == "abc123"
+    assert reloaded["semantic_training_hash"] == "abc123"
     torch.testing.assert_close(reloaded["model_state_dict"]["layer.weight"], bundle["model_state_dict"]["layer.weight"])
 
 
@@ -90,21 +102,21 @@ def test_save_bundle_refuses_mislabeled_scope(tmp_path):
 
 
 def test_verify_compatibility_detects_mismatch():
-    bundle = _sample_bundle(ckpt.SCOPE_BEST, training_contract_hash="hash_v1")
-    violations = ckpt.verify_compatibility(bundle, expected={"training_contract_hash": "hash_v1"})
+    bundle = _sample_bundle(ckpt.SCOPE_BEST, semantic_training_hash="hash_v1")
+    violations = ckpt.verify_compatibility(bundle, expected={"semantic_training_hash": "hash_v1"})
     assert violations == []
-    violations = ckpt.verify_compatibility(bundle, expected={"training_contract_hash": "hash_v2"})
+    violations = ckpt.verify_compatibility(bundle, expected={"semantic_training_hash": "hash_v2"})
     assert len(violations) == 1
-    assert "training_contract_hash" in violations[0]
+    assert "semantic_training_hash" in violations[0]
 
 
 def test_load_and_verify_raises_on_mismatch(tmp_path):
     """Required test 19: training-contract mismatch refuses resume."""
 
-    bundle = _sample_bundle(ckpt.SCOPE_LAST_RESUMABLE, training_contract_hash="hash_v1")
+    bundle = _sample_bundle(ckpt.SCOPE_LAST_RESUMABLE, semantic_training_hash="hash_v1")
     path = ckpt.save_bundle(tmp_path, ckpt.SCOPE_LAST_RESUMABLE, bundle)
     with pytest.raises(ckpt.CheckpointCompatibilityError):
-        ckpt.load_and_verify(path, expected={"training_contract_hash": "hash_v2"})
+        ckpt.load_and_verify(path, expected={"semantic_training_hash": "hash_v2"})
     # Same hash resumes cleanly.
-    reloaded = ckpt.load_and_verify(path, expected={"training_contract_hash": "hash_v1"})
+    reloaded = ckpt.load_and_verify(path, expected={"semantic_training_hash": "hash_v1"})
     assert reloaded["candidate_id"] == bundle["candidate_id"]

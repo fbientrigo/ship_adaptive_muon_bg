@@ -197,7 +197,14 @@ def test_interrupted_run_becomes_interrupted_status(tmp_path):
 
 
 def test_resume_continues_with_matching_contract_and_more_epochs(tmp_path):
-    """Required tests 18/20: optimizer/RNG resume; unchanged relevant fingerprint doesn't force a rerun."""
+    """Required tests 18/20: optimizer/RNG resume; unchanged relevant fingerprint doesn't force a rerun.
+
+    Under the D9B resume contract, increasing max_epochs across a resume must
+    go through the explicit ``extend_max_epochs`` operation -- passing a
+    bumped ``max_epochs`` in candidate_config alone is a silent change and is
+    refused (see ``test_max_epochs_change_without_explicit_extension_is_refused``
+    in tests/afterms/d9b/test_resume_contract.py).
+    """
 
     config = _tiny_candidate_config(tmp_path)
     config["max_epochs"] = 1
@@ -211,10 +218,10 @@ def test_resume_continues_with_matching_contract_and_more_epochs(tmp_path):
     )
     assert first["final_epoch"] == 1
 
-    config2 = dict(config, max_epochs=2)
     second = runner.train_candidate_seed(
-        config2, seed=1, train_raw=train_raw, validation_raw=val_raw,
+        config, seed=1, train_raw=train_raw, validation_raw=val_raw,
         artifact_root=artifact_root, repo_root=REPO_ROOT, device="cpu", resume=True,
+        extend_max_epochs=2,
     )
     assert second["status"] == "completed"
     assert second["final_epoch"] == 2

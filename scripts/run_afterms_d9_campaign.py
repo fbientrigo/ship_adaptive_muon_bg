@@ -121,10 +121,16 @@ def cmd_train(args) -> int:
     train_raw = d9runner.load_concatenated_shards(shard_dir, candidate_config["train_shards"])
     validation_raw = d9runner.load_concatenated_shards(shard_dir, candidate_config["validation_shards"])
 
-    result = d9runner.train_candidate_seed(
-        candidate_config, args.seed, train_raw, validation_raw,
-        artifact_root=args.artifact_root, repo_root=REPO_ROOT, device=args.device, resume=args.resume,
-    )
+    try:
+        result = d9runner.train_candidate_seed(
+            candidate_config, args.seed, train_raw, validation_raw,
+            artifact_root=args.artifact_root, repo_root=REPO_ROOT, device=args.device, resume=args.resume,
+            extend_max_epochs=args.extend_max_epochs,
+            execution_policy_revision_reason=args.execution_policy_revision_reason,
+        )
+    except (d9runner.MaxEpochsExtensionError, ckpt.CheckpointCompatibilityError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 3
     print(json.dumps(result, indent=2, default=str))
     return 0 if result["status"] in (d9runner.STATUS_COMPLETED, d9runner.STATUS_INTERRUPTED) else 1
 
@@ -175,6 +181,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_train.add_argument("--seed", type=int, required=True)
     p_train.add_argument("--device", default="cpu")
     p_train.add_argument("--resume", action="store_true")
+    p_train.add_argument("--extend-max-epochs", type=int, default=None, dest="extend_max_epochs")
+    p_train.add_argument("--execution-policy-revision-reason", default=None, dest="execution_policy_revision_reason")
     p_train.set_defaults(func=cmd_train)
 
     p_eval = sub.add_parser("evaluate", help="Evaluate one completed run. Never trains.")

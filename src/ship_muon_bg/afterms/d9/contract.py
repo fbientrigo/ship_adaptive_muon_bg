@@ -1,6 +1,6 @@
 """D9 training-contract identity (§10).
 
-``training_contract_hash`` is the resume/compatibility key. It is deliberately
+``semantic_training_hash`` is the resume/compatibility key. It is deliberately
 NOT the full git HEAD: a commit that touches an unrelated file (docs, a
 different module) must not force every in-flight run to be treated as
 incompatible and refused resume, while a commit that changes a module this
@@ -50,7 +50,7 @@ def module_source_fingerprint(repo_root: Path, relative_paths: Sequence[str] = T
     return fingerprints
 
 
-def training_contract_hash(
+def semantic_training_hash(
     *,
     candidate_config: Dict[str, Any],
     preprocessing_contract: Dict[str, Any],
@@ -81,7 +81,7 @@ def training_contract_hash(
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
 
-def training_contract_hash_from_repo(
+def semantic_training_hash_from_repo(
     repo_root: Path,
     *,
     candidate_config: Dict[str, Any],
@@ -93,7 +93,7 @@ def training_contract_hash_from_repo(
     optimizer_settings: Dict[str, Any],
 ) -> str:
     fingerprints = module_source_fingerprint(repo_root)
-    return training_contract_hash(
+    return semantic_training_hash(
         candidate_config=candidate_config,
         preprocessing_contract=preprocessing_contract,
         dataset_identity=dataset_identity,
@@ -103,3 +103,33 @@ def training_contract_hash_from_repo(
         optimizer_settings=optimizer_settings,
         module_fingerprints=fingerprints,
     )
+
+
+def execution_policy_hash(
+    *,
+    minimum_epochs: int,
+    early_stopping_patience: int,
+    checkpoint_policy: Dict[str, Any],
+    scheduler_config: Any = None,
+    validation_frequency: str = "every_epoch",
+) -> str:
+    """Resume-gating hash for training-DURATION/scheduling knobs (deliberately
+    excludes max_epochs, which has its own explicit-extension contract in
+    runner.py -- see MaxEpochsExtensionError)."""
+    payload = {
+        "minimum_epochs": minimum_epochs,
+        "early_stopping_patience": early_stopping_patience,
+        "checkpoint_policy": checkpoint_policy,
+        "scheduler_config": scheduler_config,
+        "validation_frequency": validation_frequency,
+    }
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def evaluation_policy_hash(*, evaluation_policy: Dict[str, Any]) -> str:
+    """Descriptive hash of evaluation budgets/settings. NEVER used to gate
+    checkpoint/resume compatibility -- changing evaluation policy must not
+    invalidate a trained model. Every evaluation output must record which
+    evaluation_policy_hash produced it (see evaluate.py)."""
+    payload = {"evaluation_policy": evaluation_policy}
+    return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()

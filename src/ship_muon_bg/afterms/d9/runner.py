@@ -43,6 +43,11 @@ class TrainingInterrupted(RuntimeError):
     """Raised internally to unwind cleanly after a KeyboardInterrupt."""
 
 
+class MaxEpochsExtensionError(RuntimeError):
+    """max_epochs changed without going through the explicit extend_max_epochs
+    contract, or the extension did not strictly increase the value."""
+
+
 def pdg_filter(raw: np.ndarray, pdg_value: Optional[int]) -> np.ndarray:
     if pdg_value is None:
         return raw
@@ -68,6 +73,25 @@ def _write_status(run_dir: Path, payload: Dict[str, Any]) -> None:
     tmp = run_dir / ".status.json.tmp"
     tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     tmp.replace(run_dir / "status.json")
+
+
+def _append_execution_policy_event(run_dir: Path, event: Dict[str, Any]) -> None:
+    """Append an immutable record to this run's execution-policy event log.
+
+    Never rewrites or removes prior entries -- only appends, so a max-epochs
+    extension or an explicit execution-policy revision leaves a permanent,
+    reviewable trail (§3.3/§3.2).
+    """
+
+    from datetime import datetime, timezone
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_path = run_dir / "execution_policy_log.json"
+    existing = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
+    existing.append(dict(event, recorded_at=datetime.now(timezone.utc).isoformat()))
+    tmp = run_dir / ".execution_policy_log.json.tmp"
+    tmp.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")
+    tmp.replace(log_path)
 
 
 def _preprocessing_contract(pipeline: PreprocessingPipeline, training_split_hash: str, pdg_policy: str) -> Dict[str, Any]:
@@ -100,7 +124,8 @@ def train_candidate_seed(
     repo_root: Path,
     device: str = "cpu",
     resume: bool = False,
-    max_epochs_override: Optional[int] = None,
+    extend_max_epochs: Optional[int] = None,
+    execution_policy_revision_reason: Optional[str] = None,
     interrupt_flag: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """Train exactly one (candidate, seed). Never touches test data -- there is
@@ -149,7 +174,7 @@ def train_candidate_seed(
         "train_split_hash": train_hash,
         "validation_split_hash": validation_hash,
     }
-    training_contract_hash = d9contract.training_contract_hash_from_repo(
+    semantic_training_hash = d9contract.semantic_training_hash_from_repo(
         repo_root,
         candidate_config=_identity_relevant_config(candidate_config),
         preprocessing_contract={"preprocessing_name": preprocessing_contract["preprocessing_name"], "serialization_hash": preprocessing_hash},
@@ -159,13 +184,20 @@ def train_candidate_seed(
         weighting_estimator_version=candidate_config["weighting_estimator_version"],
         optimizer_settings=optimizer_settings,
     )
+    execution_policy_hash_value = d9contract.execution_policy_hash(
+        minimum_epochs=candidate_config["minimum_epochs"],
+        early_stopping_patience=candidate_config["early_stopping_patience"],
+        checkpoint_policy=candidate_config["checkpoint_policy"],
+    )
+    evaluation_policy_hash_value = d9contract.evaluation_policy_hash(
+        evaluation_policy=candidate_config["evaluation_policy"],
+    )
 
     from . import training_config as tc
 
     training_config_hash = tc.config_hash(candidate_config)
     module_fingerprint = d9contract.module_source_fingerprint(repo_root)
 
-    max_epochs = max_epochs_override or candidate_config["max_epochs"]
     minimum_epochs = candidate_config["minimum_epochs"]
     patience = candidate_config["early_stopping_patience"]
 
@@ -178,8 +210,62 @@ def train_candidate_seed(
     optimizer = None
     estimator = None
 
+    declared_max_epochs = candidate_config["max_epochs"]
+    execution_policy_revision = 0
+    effective_max_epochs = extend_max_epochs or declared_max_epochs
+
     if resume and resumable_path.exists():
-        bundle = ckpt.load_and_verify(resumable_path, expected={"training_contract_hash": training_contract_hash})
+        bundle = ckpt.load_bundle(resumable_path)
+
+        expected = {"semantic_training_hash": semantic_training_hash}
+        prior_execution_policy_hash = bundle.get("execution_policy_hash")
+        execution_policy_changed = (
+            prior_execution_policy_hash is not None
+            and prior_execution_policy_hash != execution_policy_hash_value
+        )
+        if execution_policy_changed and not execution_policy_revision_reason:
+            expected["execution_policy_hash"] = execution_policy_hash_value
+
+        violations = ckpt.verify_compatibility(bundle, expected)
+        if violations:
+            raise ckpt.CheckpointCompatibilityError(
+                f"checkpoint at {resumable_path} is incompatible with the expected training identity: {violations}"
+            )
+
+        prior_max_epochs = bundle.get("max_epochs")
+        execution_policy_revision = bundle.get("execution_policy_revision", 0)
+        if prior_max_epochs is not None:
+            if extend_max_epochs is not None:
+                if extend_max_epochs <= prior_max_epochs:
+                    raise MaxEpochsExtensionError(
+                        f"extend_max_epochs={extend_max_epochs} must be strictly greater than the "
+                        f"previously recorded max_epochs={prior_max_epochs}"
+                    )
+                effective_max_epochs = extend_max_epochs
+                _append_execution_policy_event(run_dir, {
+                    "event": "max_epochs_extended",
+                    "previous_max_epochs": prior_max_epochs,
+                    "new_max_epochs": extend_max_epochs,
+                })
+            else:
+                if declared_max_epochs != prior_max_epochs:
+                    raise MaxEpochsExtensionError(
+                        f"candidate_config max_epochs={declared_max_epochs} does not match the "
+                        f"previously recorded max_epochs={prior_max_epochs} for this run, and no "
+                        "extend_max_epochs was given. Pass extend_max_epochs=<new_value> to explicitly "
+                        "extend an existing run, or restore the previous max_epochs value."
+                    )
+                effective_max_epochs = prior_max_epochs
+
+        if execution_policy_changed and execution_policy_revision_reason:
+            execution_policy_revision += 1
+            _append_execution_policy_event(run_dir, {
+                "event": "execution_policy_revised",
+                "previous_execution_policy_hash": prior_execution_policy_hash,
+                "new_execution_policy_hash": execution_policy_hash_value,
+                "reason": execution_policy_revision_reason,
+            })
+
         estimator = create_density_estimator(
             {"family": candidate_config["model_family"], "params": _architecture_params(candidate_config)},
             dimension=5, device=device,
@@ -238,7 +324,7 @@ def train_candidate_seed(
     epoch = start_epoch
     interrupted = False
     try:
-        for epoch in range(start_epoch + 1, max_epochs + 1):
+        for epoch in range(start_epoch + 1, effective_max_epochs + 1):
             if interrupt_flag is not None and interrupt_flag():
                 raise TrainingInterrupted()
             module.train()
@@ -329,7 +415,11 @@ def train_candidate_seed(
                 split_hashes={"train": train_hash, "validation": validation_hash},
                 shard_manifest_hash=train_hash,
                 training_config_hash=training_config_hash,
-                training_contract_hash=training_contract_hash,
+                semantic_training_hash=semantic_training_hash,
+                execution_policy_hash=execution_policy_hash_value,
+                evaluation_policy_hash=evaluation_policy_hash_value,
+                max_epochs=effective_max_epochs,
+                execution_policy_revision=execution_policy_revision,
                 training_code_fingerprint=module_fingerprint,
                 producer_git_commit=_current_git_commit(repo_root),
             )
@@ -369,7 +459,12 @@ def train_candidate_seed(
         best_validation_epoch=best_epoch, rng_states={"torch_manual_seed": int(seed)},
         dataset_hash=train_hash, split_hashes={"train": train_hash, "validation": validation_hash},
         shard_manifest_hash=train_hash, training_config_hash=training_config_hash,
-        training_contract_hash=training_contract_hash, training_code_fingerprint=module_fingerprint,
+        semantic_training_hash=semantic_training_hash,
+        execution_policy_hash=execution_policy_hash_value,
+        evaluation_policy_hash=evaluation_policy_hash_value,
+        max_epochs=effective_max_epochs,
+        execution_policy_revision=execution_policy_revision,
+        training_code_fingerprint=module_fingerprint,
         producer_git_commit=_current_git_commit(repo_root),
     )
     ckpt.save_bundle(checkpoints_dir, ckpt.SCOPE_FINAL, final_bundle)
@@ -384,18 +479,31 @@ def train_candidate_seed(
     _write_status(run_dir, {
         "status": STATUS_COMPLETED, "run_id": run_id, "candidate_id": candidate_id, "seed": seed,
         "best_validation_metric": best_val, "best_validation_epoch": best_epoch, "final_epoch": epoch,
-        "training_contract_hash": training_contract_hash,
+        "semantic_training_hash": semantic_training_hash,
+        "execution_policy_hash": execution_policy_hash_value,
+        "evaluation_policy_hash": evaluation_policy_hash_value,
+        "max_epochs": effective_max_epochs,
     })
     return {
         "status": STATUS_COMPLETED, "run_id": run_id, "best_validation_metric": best_val,
-        "best_validation_epoch": best_epoch, "final_epoch": epoch, "training_contract_hash": training_contract_hash,
+        "best_validation_epoch": best_epoch, "final_epoch": epoch,
+        "semantic_training_hash": semantic_training_hash,
+        "execution_policy_hash": execution_policy_hash_value,
+        "evaluation_policy_hash": evaluation_policy_hash_value,
+        "max_epochs": effective_max_epochs,
     }
 
 
 # Fields that are training-duration/scheduling knobs, not part of the
-# semantic training identity: legitimately changing one of these (e.g.
-# "train for more epochs") must NOT invalidate resume of an in-progress or
-# completed run (required tests 19-21).
+# semantic training identity. They are not silently dropped: minimum_epochs,
+# early_stopping_patience and checkpoint_policy feed execution_policy_hash;
+# evaluation_policy feeds evaluation_policy_hash; max_epochs has its own
+# explicit-extension contract (see MaxEpochsExtensionError). seed_set is
+# excluded from all three hashes because it declares which seeds are
+# *permitted* for this candidate, not this run's actual behavior -- the
+# actual seed a run used is tracked as its own checkpoint field (already
+# outside all three hashes) and disambiguates runs via the seed_<seed>/
+# directory path, not the hash.
 _IDENTITY_IRRELEVANT_FIELDS = (
     "max_epochs", "minimum_epochs", "early_stopping_patience",
     "checkpoint_policy", "evaluation_policy", "seed_set",
