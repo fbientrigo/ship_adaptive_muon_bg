@@ -38,6 +38,19 @@ kept as separate estimands. The decision is recorded as `OPEN` in
 | C1_weighted_small_identity_pdg13 | C | `07_affine_weight_ab_pdg13__identity_standardized_v0_affine_small_weighted` | champion (only) | identity_standardized_v0 | small | 37416 |
 | D1_weighted_small_identity_pdg_minus13 | D | `08_affine_weight_ab_pdg_minus13__identity_standardized_v0_affine_small_weighted` | champion (only) | identity_standardized_v0 | small | 37416 |
 
+### Human-readable aliases (D9C)
+
+The `candidate_id`s above are legacy internal identifiers, not model names.
+`docs/reviews/afterms_model_alias_registry_v0.md` defines a presentation-only
+alias layer on top of them (never renaming an id or touching a hash):
+
+- `NF_AC_b08_w128_d02` on `TRK_PDG13_UW_ID` (legacy candidate `A1_capacity_medium_identity_pdg13_unweighted`)
+- `NF_AC_b04_w064_d02` on `TRK_PDG13_UW_LOGPZ` (legacy candidate `A2_capacity_small_cartesian_pdg13_unweighted`)
+- `NF_AC_b04_w064_d02` on `TRK_PDGM13_UW_LOGPZ` (legacy candidate `B1_capacity_small_cartesian_pdg_minus13_unweighted`)
+- `NF_AC_b04_w064_d02` on `TRK_PDGM13_UW_ID` (legacy candidate `B2_capacity_small_identity_pdg_minus13_unweighted`)
+- `NF_AC_b04_w064_d02` on `TRK_PDG13_W_ID` (legacy candidate `C1_weighted_small_identity_pdg13`)
+- `NF_AC_b04_w064_d02` on `TRK_PDGM13_W_ID` (legacy candidate `D1_weighted_small_identity_pdg_minus13`)
+
 ### Why A2/B2 exist (the one scientific question a lone champion can't answer)
 
 D8's five-epoch smoke shows the winning preprocessing **flips by PDG sign** on the
