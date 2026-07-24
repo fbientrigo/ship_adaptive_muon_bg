@@ -1,11 +1,16 @@
 # D9-5: Modern Same-Track Generative Model Family Arena
 
-Status: **Gate A complete** (data-scope audit + common model-adapter contract +
-Gaussian/GMM/NF_AC adapters + evaluation/aggregation/report layer + CLI +
-tests). Gates B-E (actual fitting/training/evaluation on the full declared
-scope) are tracked separately -- see
-`docs/reviews/afterms_d9_5_execution_runbook_v0.md` for exact resume commands
-and current status.
+Status: **Gates A-C complete** (data-scope audit + common model-adapter
+contract + Gaussian/GMM/NF_AC adapters + evaluation/aggregation/report layer
++ CLI + tests, then real GAUSS_DIAG/GAUSS_FULL/GMM fits and validation on the
+full declared scope for both tracks). **Gate D (NF_AC 3-seed training) has
+not started**: a real single-epoch timing probe measured 1011.8s/epoch on the
+full training scope, implying ~34-169 GPU-hours across the 6 serial runs
+required by the frozen execution policy. Given that scale, the user was
+asked and chose to stop here and hand off Gate D/E as documented resume work
+rather than run a multi-day background campaign in this session -- see
+`docs/reviews/afterms_d9_5_execution_runbook_v0.md` for exact resume
+commands, current status, and the Gate B/C results table.
 
 Branch: `experiment/d9-5-afterms-model-family-arena-v0`, forked from D9C HEAD
 `22d38b5`.
@@ -100,6 +105,16 @@ independently, directly computed raw-space Gaussian NLL on the same rows.
 
 Exact settings (regularization, `n_init`, `max_iter`, `tol`, seeds) are frozen
 in `configs/afterms/d9_5_model_family_arena_v0.json`.
+
+**Gate B/C validation results (quick_validation_budget, real full-scope
+data)** -- see the runbook for the full table; summary: every GMM seed
+converged (14-20 EM iterations) with all 4 components occupied on both
+tracks, and GMM's best seed reaches validation physical NLL ~4.72
+(TRK_PDG13_UW_ID) / ~4.72 (TRK_PDGM13_UW_ID) versus GAUSS_FULL's ~7.40/~7.39
+and GAUSS_DIAG's ~9.07/~9.06. This is expected given GMM's much larger
+parameter count and is **not yet a same-track four-family comparison** --
+NF_AC has not been fitted (Gate D) and no validation-only selection has been
+frozen.
 
 ## 7. NF_AC configuration selection (scout-promoted)
 

@@ -11,13 +11,24 @@ by construction (`status`, `summarize`).
 ## Gate status
 
 - [x] Gate A -- data-scope audit, adapters, tests (`812 + 52 = 864` D9-5
-      focused tests pass; see Test Result below for the full-suite number).
-- [ ] Gate B -- GAUSS_DIAG / GAUSS_FULL fits on both tracks.
-- [ ] Gate C -- GMM 3-seed fits on both tracks.
-- [ ] Gate D -- NF_AC 3-seed training on both tracks (estimated 18-60 GPU
-      hours serial; will not complete in one interactive session -- see
-      Sec 20 estimate below).
-- [ ] Gate E -- freeze-selection, evaluate-test, final report.
+      tests pass; full suite 864 passed / 2 skipped / 0 failed).
+- [x] Gate B -- GAUSS_DIAG / GAUSS_FULL fitted + validated on both tracks.
+      Real results in `artifacts/afterms_d9_5_model_family_arena_v0/runs/`.
+- [x] Gate C -- GMM 3 seeds (20260720/21/22) fitted + validated on both
+      tracks; every seed converged (14-20 EM iterations) with all 4
+      components occupied.
+- [ ] Gate D -- NF_AC 3-seed training on both tracks. **Not started.**
+      Measured cost: 1011.8 s/epoch (~16.9 min) on the real full-scope data
+      (single-epoch probe, RTX 2060 Laptop GPU) -- with the frozen policy
+      (min 20 / max 100 epochs), this is **~34-169 GPU-hours total** across
+      the 6 serial runs. The user was asked and explicitly chose to stop
+      here and hand off Gate D/E as documented resume work rather than run
+      a multi-hour-to-multi-day background campaign in this session. Exact
+      resume commands are below (Gate D section) -- nothing partial or
+      corrupt was left behind; this is a clean not-yet-started state.
+- [ ] Gate E -- freeze-selection, evaluate-test, final report. Blocked on
+      Gate D (all four families per track must be fitted before
+      freeze-selection).
 
 ## Gate A -- orientation, data audit, adapters (compute-free)
 
@@ -75,6 +86,29 @@ declared full scope cannot be fit safely, STOP and report
 `D9_5_BLOCKED_BY_GMM_DATA_SCALE` -- do not silently reduce the data. The Gate
 A RAM preflight (`ram_preflight.json`) already confirmed this is not needed
 for the current dataset.
+
+### Gate B/C actual validation results (quick_validation_budget)
+
+| track | model_config_id | seed | validation feature NLL | validation physical NLL |
+|---|---|---|---|---|
+| TRK_PDG13_UW_ID | GAUSS_DIAG_d05 | deterministic | 7.0991 | 9.0655 |
+| TRK_PDG13_UW_ID | GAUSS_FULL_d05 | deterministic | 5.4348 | 7.4011 |
+| TRK_PDG13_UW_ID | GMM_k04_covFULL_d05 | 20260720 | 2.7536 | 4.7199 |
+| TRK_PDG13_UW_ID | GMM_k04_covFULL_d05 | 20260721 | 2.9739 | 4.9402 |
+| TRK_PDG13_UW_ID | GMM_k04_covFULL_d05 | 20260722 | 3.1177 | 5.0840 |
+| TRK_PDGM13_UW_ID | GAUSS_DIAG_d05 | deterministic | 7.0929 | 9.0623 |
+| TRK_PDGM13_UW_ID | GAUSS_FULL_d05 | deterministic | 5.4240 | 7.3934 |
+| TRK_PDGM13_UW_ID | GMM_k04_covFULL_d05 | 20260720 | 2.7494 | 4.7188 |
+| TRK_PDGM13_UW_ID | GMM_k04_covFULL_d05 | 20260721 | 2.9654 | 4.9348 |
+| TRK_PDGM13_UW_ID | GMM_k04_covFULL_d05 | 20260722 | 3.1099 | 5.0793 |
+
+All finite-log-prob fractions are 1.0 (no non-finite log-densities in any
+fit). Within each track, GMM's best seed (20260720) achieves markedly lower
+validation physical NLL than either Gaussian control -- unsurprising given
+its much larger parameter count, and not yet comparable to NF_AC since Gate D
+has not run. **This is a Gate B/C snapshot, not a validation-only selection**
+-- `freeze-selection` has not been run (it requires all four families,
+including NF_AC) and no test-split evaluation has occurred.
 
 ## Gate D -- NF_AC (3 seeds x 2 tracks, GPU, one process at a time)
 
