@@ -168,6 +168,17 @@ class DiagonalGaussian:
         model._variance = data["variance"]
         return model
 
+    @classmethod
+    def from_moments(cls, *, dimension: int, mean: np.ndarray, variance: np.ndarray, variance_floor: float = 1e-6) -> "DiagonalGaussian":
+        """Construct from externally computed (e.g. streaming/chunked) sufficient
+        statistics, applying the identical variance-floor path ``fit`` uses so a
+        streaming estimator and an in-core ``fit`` on the same rows agree exactly."""
+
+        model = cls(dimension=dimension, variance_floor=variance_floor)
+        model._mean = np.asarray(mean, dtype=np.float64)
+        model._variance = np.maximum(np.asarray(variance, dtype=np.float64), model.variance_floor)
+        return model
+
 
 class FullGaussian:
     """Full-covariance Gaussian with configurable, recorded covariance regularization."""
@@ -296,4 +307,16 @@ class FullGaussian:
         model._covariance = cov
         model._cholesky = np.linalg.cholesky(cov)
         model._log_det = 2.0 * float(np.sum(np.log(np.diag(model._cholesky))))
+        return model
+
+    @classmethod
+    def from_moments(cls, *, dimension: int, mean: np.ndarray, covariance: np.ndarray, covariance_regularization: float = 1e-6) -> "FullGaussian":
+        """Construct from externally computed (e.g. streaming/chunked) sufficient
+        statistics, routing the raw covariance through the same ``_set_covariance``
+        regularization/Cholesky path ``fit`` uses so a streaming estimator and an
+        in-core ``fit`` on the same rows agree exactly."""
+
+        model = cls(dimension=dimension, covariance_regularization=covariance_regularization)
+        model._mean = np.asarray(mean, dtype=np.float64)
+        model._set_covariance(np.asarray(covariance, dtype=np.float64))
         return model

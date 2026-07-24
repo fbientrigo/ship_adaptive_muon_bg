@@ -1,0 +1,27 @@
+{
+  "schema_version": "d9_5_data_scope_v0",
+  "description": "D9-5 common data-scope policy shared by NF_AC/GAUSS_DIAG/GAUSS_FULL/GMM within a track. Resolved concrete shard names/hashes/row counts are recorded at audit time in artifacts/afterms_d9_5_model_family_arena_v0/data_scope/data_scope_manifest.json, never here -- this file is the frozen policy, not the resolved evidence.",
+  "shard_dir": "data/shards/afterms_nightly_v1",
+  "shard_scope": "complete_declared_scope",
+  "shard_scope_note": "all shards listed in shard_manifest.json for each split (22 train / 3 validation / 3 test); no row subsampling; shard selection does not depend on any model metric.",
+  "modeled_features": ["px", "py", "pz", "x", "y"],
+  "feature_order": ["px", "py", "pz", "x", "y"],
+  "modeled_dimension": 5,
+  "preprocessing_name": "identity_standardized_v0",
+  "weighting_policy": "row_empirical_unweighted",
+  "weight_column_policy": "metadata_only_never_a_feature_or_loss_weight",
+  "tracks": [
+    {
+      "track_id": "TRK_PDG13_UW_ID",
+      "pdg_value": 13,
+      "pdg_policy": "pdg13"
+    },
+    {
+      "track_id": "TRK_PDGM13_UW_ID",
+      "pdg_value": -13,
+      "pdg_policy": "pdg_minus13"
+    }
+  ],
+  "excluded_tracks_note": "log1p-pz and production-weighted tracks are out of scope for D9-5 (weighting interpretation remains OPEN); never pooled across TRK_PDG13_UW_ID and TRK_PDGM13_UW_ID.",
+  "test_isolation_note": "test rows may only be read by d9_5.evaluation after a family_selection_manifest freeze exists; validation and fitting code paths never open a test shard."
+}
