@@ -103,20 +103,34 @@ Then validate each completed seed:
 
 ### Compute estimate (recorded before starting Gate D, Sec 20)
 
-From the D8/D9 producer's own per-epoch measurement (53.7 s/epoch on a single
-~501k-row train shard, RTX 2060 Max-Q) scaled to the full 22-shard per-track
-training scope (~11x more rows/epoch): **on the order of 10 minutes/epoch**.
+**Pre-execution estimate** (from the D8/D9 producer's own per-epoch
+measurement, 53.7 s/epoch on a single ~501k-row train shard, RTX 2060 Max-Q,
+scaled ~11x to the full 22-shard per-track training scope): on the order of
+10 minutes/epoch.
+
+**Measured** (single real epoch, `TRK_PDG13_UW_ID`, `NF_AC_b08_w128_d02`,
+full 5,484,126-row training scope, RTX 2060 Laptop GPU, throwaway probe run
+then discarded): **1011.8 s/epoch (~16.9 minutes/epoch)** -- markedly higher
+than the pre-execution scale-up, confirming per-epoch cost must be measured
+directly rather than assumed from a single-shard extrapolation.
+
 With the frozen execution policy (`minimum_epochs=20`, `maximum_epochs=100`,
-`early_stopping_patience=25`), a single seed's worst case is
-`100 * ~10 min ≈ 16.7 hours`; six runs (3 seeds x 2 tracks), run strictly
-serially (one CUDA process at a time, per the primary-device policy), worst
-case is on the order of **18-60+ GPU-hours** depending on how early stopping
-actually triggers. This will not complete inside one interactive session --
-that is the expected path (Sec 20/21: "if the complete campaign cannot finish
-in one session, finish the current atomic run, preserve status/checkpoints,
-return exact resume commands"). Peak VRAM per run is the standardized
-training tensor resident on device (~110 MB/track at float32) plus the
-affine-coupling module and optimizer state -- comfortably under 6 GB.
+`early_stopping_patience=25`) and the measured ~16.9 min/epoch:
+
+- minimum bound per seed (early stop right at `minimum_epochs`):
+  `20 * 16.9 min ≈ 5.6 hours`
+- worst case per seed (no early stop, full `maximum_epochs`):
+  `100 * 16.9 min ≈ 28.1 hours`
+- six runs (3 seeds x 2 tracks), run strictly serially (one CUDA process at a
+  time, per the primary-device policy): **~34 to ~169 GPU-hours total**.
+
+This will not complete inside one interactive session -- that is the expected
+path (Sec 20/21: "if the complete campaign cannot finish in one session,
+finish the current atomic run, preserve status/checkpoints, return exact
+resume commands"). Peak VRAM per run is the standardized training tensor
+resident on device (~110 MB/track at float32) plus the affine-coupling module
+and optimizer state -- comfortably under 6 GB; the bottleneck is wall time,
+not memory.
 
 ## Gate E -- freeze selection, frozen test evaluation, final report
 
