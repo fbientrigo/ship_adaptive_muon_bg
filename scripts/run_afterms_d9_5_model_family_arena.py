@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -207,7 +208,14 @@ def cmd_fit(args) -> int:
     validation_raw = data_scope.load_filtered_split(shard_dir, manifest, "validation", pdg_value)
 
     if args.model_family == "NF_AC":
-        result = adapter.fit(train_raw, validation_raw, seed=args.seed, resume=args.resume, extend_max_epochs=args.extend_max_epochs)
+        interrupt_flag = None
+        if args.deadline_timestamp is not None:
+            deadline_timestamp = args.deadline_timestamp
+            interrupt_flag = lambda: time.time() >= deadline_timestamp
+        result = adapter.fit(
+            train_raw, validation_raw, seed=args.seed, resume=args.resume,
+            extend_max_epochs=args.extend_max_epochs, interrupt_flag=interrupt_flag,
+        )
     elif args.model_family == "GMM":
         result = adapter.fit(train_raw, validation_raw, seed=args.seed)
     else:
@@ -440,6 +448,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_fit.add_argument("--execute", action="store_true")
     p_fit.add_argument("--resume", action="store_true")
     p_fit.add_argument("--extend-max-epochs", type=int, default=None, dest="extend_max_epochs")
+    p_fit.add_argument(
+        "--deadline-timestamp", type=float, default=None, dest="deadline_timestamp",
+        help="Unix epoch seconds; NF_AC only. When set, training refuses to start a new epoch "
+        "once time.time() reaches this deadline and exits cleanly with status=interrupted. "
+        "Absent: behavior is unchanged (no interrupt_flag).",
+    )
     p_fit.set_defaults(func=cmd_fit)
 
     p_status = sub.add_parser("status", help="Report per-run status from disk. Never fits.")
