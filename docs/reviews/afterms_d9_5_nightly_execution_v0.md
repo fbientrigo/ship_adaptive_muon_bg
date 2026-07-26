@@ -2,14 +2,35 @@
 
 ## Normal nightly workflow
 
-**Night start** (run this once, then close the terminal — training continues detached):
+**Preferred: run the whole remaining queue unattended.** `start-campaign`
+chains consecutive 8-hour blocks automatically, with no manual re-`start`
+required between them, until Gate D is fully drained
+(`GATE_D_COMPLETE_READY_FOR_VALIDATION_REVIEW`) or a blocking failure needs a
+human:
+
+```
+cd C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg
+.venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py start-campaign
+```
+
+This launches one detached process for the entire remaining campaign — check
+on it every few hours via `status`, not every block.
+
+**Single block start** (only if you deliberately want to stop after one block
+instead of running the whole remaining queue): run this once, then close the
+terminal — training continues detached:
 
 ```
 cd C:\Users\Asus\Documents\FisicoFabi\tesis\ship_adaptive_muon_bg
 .venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py start
 ```
 
-Or double-click `run_d9_5_night.cmd` in the repo root.
+Or double-click `run_d9_5_night.cmd` in the repo root (equivalent to a single
+`start`).
+
+`start` and `start-campaign` each refuse to run while the other is already
+live (a single-block lock at `locks/supervisor.lock`, plus a campaign lock at
+`locks/campaign.lock` while a chain is in progress) — `status` reports both.
 
 **Check status at any time:**
 
@@ -110,9 +131,11 @@ GATE_D_COMPLETE_READY_FOR_VALIDATION_REVIEW
 |---|---|---|
 | `init` | Create the nightly state tree and frozen 6-run queue. Idempotent. | Yes (first run only) |
 | `doctor` | Environment checks (CUDA, disk, python, psutil). | No |
-| `start` | Acquire the lock and launch a detached supervisor. | Yes |
+| `start` | Acquire the lock and launch a detached supervisor for one 8-hour block. | Yes |
 | `run-foreground` | The actual supervisor loop (used internally by `start`, or directly for foreground debugging). | Yes |
-| `status` | Campaign/lock/queue report. | No |
+| `start-campaign` | Acquire the campaign lock and launch a detached loop that chains consecutive 8-hour blocks unattended until the queue drains or a blocking failure needs a human. | Yes |
+| `run-campaign-foreground` | The actual campaign loop (repeated blocks; used internally by `start-campaign`, or directly for foreground debugging). | Yes |
+| `status` | Campaign/lock/queue report (includes both the per-block lock and the campaign lock). | No |
 | `tail [--follow]` | Tail the current block's log file. | No |
 | `stop-after-epoch` | Request a graceful stop at the next epoch boundary. | Writes a flag file only |
 | `abort` | PID-specific termination of the live supervisor + its one active `fit` child. Never a by-name kill. | Yes |

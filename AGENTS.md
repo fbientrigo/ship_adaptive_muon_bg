@@ -12,33 +12,51 @@ and exact epoch-boundary resume.
 Full workflow, operational notes, and subcommand reference:
 `docs/reviews/afterms_d9_5_nightly_execution_v0.md`.
 
-**Start (or resume) an 8-hour block** — detached, survives the terminal closing:
+**Preferred: run the whole remaining queue unattended** — chains consecutive
+8-hour blocks automatically until Gate D is fully drained or a blocking
+failure needs a human, with no manual re-`start` between blocks:
+
+```
+.venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py start-campaign
+```
+
+**Start (or resume) a single 8-hour block** — detached, survives the terminal
+closing; use this only if you deliberately want to stop and re-evaluate after
+one block instead of running the whole remaining queue:
 
 ```
 .venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py start
 ```
 
+`start` and `start-campaign` refuse to run if the other is already live (one
+holds `locks/supervisor.lock` per block, the other additionally holds
+`locks/campaign.lock` for the whole chain) — `status` reports both.
+
 **Check status** (safe, read-only; use this instead of tailing logs when just
-checking whether a block is still alive):
+checking whether a block or campaign is still alive):
 
 ```
 .venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py status
 ```
 
-`status` reports `lock.live`, the per-run queue state, and the current run's
-last completed epoch. A block that has ended cleanly shows `lock.live: false`
-and the current run in `INTERRUPTED_AT_BLOCK_DEADLINE` (normal, resumable) or
-`COMPLETED`.
+`status` reports `lock.live` (current block), `campaign_lock.live` (a
+`start-campaign` chain in progress), the per-run queue state, and the current
+run's last completed epoch. A block that has ended cleanly shows `lock.live:
+false` and the current run in `INTERRUPTED_AT_BLOCK_DEADLINE` (normal,
+resumable) or `COMPLETED`.
 
-**Do not poll status more than once per hour while a block is running.** A
-block runs for up to 8 real hours; checking every few minutes burns tokens for
-no new information. Check hourly, or every 4 hours, and rely on background
-task notifications rather than manual polling loops.
+**Polling cadence**: under `start-campaign`, no manual re-launch is ever
+needed between blocks, so an hourly check is unnecessary busywork — check
+every 4 hours, or longer, and rely on background task notifications rather
+than manual polling loops. Under a single manual `start`, check hourly at
+most while that one block runs (max 8 hours), since it needs a human to
+re-`start` the next block once it ends.
 
-**Stop-here procedure between blocks**: once `status` shows `lock.live: false`
-and the current run has advanced to `COMPLETED` or
-`INTERRUPTED_AT_BLOCK_DEADLINE`, it is safe to launch the next `start` — it
-resumes automatically from the next epoch. Never delete or edit files under
+**Stop-here procedure for a single manual block**: once `status` shows
+`lock.live: false` and the current run has advanced to `COMPLETED` or
+`INTERRUPTED_AT_BLOCK_DEADLINE`, it is safe to launch the next `start` (or
+switch to `start-campaign` for the rest) — it resumes automatically from the
+next epoch. Never delete or edit files under
 `artifacts/afterms_d9_5_model_family_arena_v0/nightly_runner/` or
 `artifacts/afterms_d9_5_model_family_arena_v0/runs/` between blocks.
 
