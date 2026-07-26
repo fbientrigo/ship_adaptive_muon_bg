@@ -14,6 +14,13 @@ Subcommands:
                        supervisor loop that survives this process exiting.
     run-foreground    The actual supervisor loop (state machine + deadlines +
                        subprocess management + keep-awake).
+    start-campaign    Like `start`, but launches a DETACHED loop that chains
+                       consecutive 8-hour blocks unattended until the whole
+                       frozen queue is drained or a blocking failure needs a
+                       human -- no manual re-`start` between blocks.
+    run-campaign-foreground  The actual campaign loop (repeated
+                       run-foreground blocks); used internally by
+                       `start-campaign`.
     status            Read-only campaign/lock/queue report.
     tail              Read-only tail of the current block's log file.
     stop-after-epoch  Request a graceful stop at the next epoch boundary.
@@ -107,6 +114,12 @@ def cmd_start(args) -> int:
               f"block_id={existing.get('block_id')})", file=sys.stderr)
         return 3
 
+    campaign_lock = nr._read_json_if_exists(nr._campaign_lock_path(args.artifact_root))
+    if campaign_lock is not None and nr.is_lock_live(campaign_lock):
+        print(f"ERROR: a campaign driver is already managing this queue (pid={campaign_lock.get('pid')}); "
+              "use 'stop-after-epoch'/'abort' on it instead of starting a manual block", file=sys.stderr)
+        return 3
+
     log_dir = nr.nightly_root(args.artifact_root) / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
@@ -156,6 +169,67 @@ def cmd_run_foreground(args) -> int:
     return 0
 
 
+def cmd_start_campaign(args) -> int:
+    lock_path = nr._lock_path(args.artifact_root)
+    existing = nr._read_json_if_exists(lock_path)
+    if existing is not None and nr.is_lock_live(existing):
+        print(f"ERROR: a supervisor is already running (pid={existing.get('pid')}, "
+              f"block_id={existing.get('block_id')})", file=sys.stderr)
+        return 3
+
+    campaign_lock_path = nr._campaign_lock_path(args.artifact_root)
+    campaign_existing = nr._read_json_if_exists(campaign_lock_path)
+    if campaign_existing is not None and nr.is_lock_live(campaign_existing):
+        print(f"ERROR: a campaign driver is already running (pid={campaign_existing.get('pid')})", file=sys.stderr)
+        return 3
+
+    log_dir = nr.nightly_root(args.artifact_root) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    campaign_log = log_dir / f"campaign_{ts}.log"
+
+    cmd = [
+        str(args.python_exe), str(Path(__file__).resolve()),
+        "--artifact-root", str(args.artifact_root), "--python-exe", str(args.python_exe),
+        "run-campaign-foreground", "--device", args.device,
+        "--duration-hours", str(args.duration_hours), "--soft-stop-hours", str(args.soft_stop_hours),
+    ]
+    creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    log_handle = open(campaign_log, "ab")
+    process = subprocess.Popen(
+        cmd, cwd=str(REPO_ROOT), creationflags=creationflags, close_fds=True,
+        stdin=subprocess.DEVNULL, stdout=log_handle, stderr=subprocess.STDOUT,
+    )
+
+    queue_items = nr.reconcile_queue_and_persist(args.artifact_root)
+    current = nr.determine_current_run(queue_items, args.artifact_root)
+    report = {
+        "detached_campaign_pid": process.pid,
+        "current_run": current["run_id"] if current else None,
+        "block_duration_hours": args.duration_hours,
+        "soft_stop_hours": args.soft_stop_hours,
+        "log_path": str(campaign_log),
+        "note": "runs consecutive 8-hour blocks unattended until the queue is fully "
+                "drained (GATE_D_COMPLETE) or a blocking failure needs a human; "
+                "use 'status' to check on it, 'stop-after-epoch' to pause it after "
+                "the current epoch, or 'abort' to terminate it immediately",
+        "next_command": f"{sys.executable} {Path(__file__).name} status --artifact-root {args.artifact_root}",
+    }
+    print(json.dumps(report, indent=2, default=str))
+    return 0
+
+
+def cmd_run_campaign_foreground(args) -> int:
+    config = _config_from_args(args)
+    try:
+        campaign_record = nr.run_campaign(config)
+    except nr.SupervisorAlreadyRunningError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 3
+    print(json.dumps(campaign_record, indent=2, default=str))
+    return 0
+
+
 def cmd_status(args) -> int:
     root = nr.nightly_root(args.artifact_root)
     queue_path = root / "run_queue.json"
@@ -165,6 +239,8 @@ def cmd_status(args) -> int:
 
     lock_data = nr._read_json_if_exists(nr._lock_path(args.artifact_root))
     lock_live = nr.is_lock_live(lock_data)
+    campaign_lock_data = nr._read_json_if_exists(nr._campaign_lock_path(args.artifact_root))
+    campaign_lock_live = nr.is_lock_live(campaign_lock_data)
 
     items = ma.read_json(queue_path)["items"]
     annotated = []
@@ -185,6 +261,7 @@ def cmd_status(args) -> int:
 
     report = {
         "lock": {"present": lock_data is not None, "live": lock_live, "data": lock_data},
+        "campaign_lock": {"present": campaign_lock_data is not None, "live": campaign_lock_live, "data": campaign_lock_data},
         "queue": annotated, "current_run": current, "campaign_state": campaign_state,
         "recent_process_ledger": ledger_tail,
     }
@@ -285,6 +362,8 @@ def build_parser() -> argparse.ArgumentParser:
     for name, func, help_text in (
         ("start", cmd_start, "Acquire the lock and launch a detached run-foreground supervisor."),
         ("run-foreground", cmd_run_foreground, "The actual supervisor loop (state machine + deadlines)."),
+        ("start-campaign", cmd_start_campaign, "Launch a detached loop that chains 8-hour blocks unattended until the queue drains."),
+        ("run-campaign-foreground", cmd_run_campaign_foreground, "The actual campaign loop (used internally by start-campaign)."),
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--device", default="cuda")

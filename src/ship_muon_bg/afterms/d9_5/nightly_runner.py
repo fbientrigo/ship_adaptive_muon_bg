@@ -132,6 +132,10 @@ def _stop_flag_path(artifact_root: Path) -> Path:
     return nightly_root(artifact_root) / "locks" / "stop_requested.flag"
 
 
+def _campaign_lock_path(artifact_root: Path) -> Path:
+    return nightly_root(artifact_root) / "locks" / "campaign.lock"
+
+
 def _read_json_if_exists(path: Path) -> Optional[Dict[str, Any]]:
     path = Path(path)
     if not path.exists():
@@ -869,3 +873,36 @@ def run_supervisor_block(config: SupervisorConfig) -> Dict[str, Any]:
     ma.atomic_write_json(root / "nightly_blocks" / f"{block_id}.json", block_record)
     _update_campaign_state(root, block_id, block_record)
     return block_record
+
+
+def run_campaign(config: SupervisorConfig, *, max_blocks: Optional[int] = None) -> Dict[str, Any]:
+    """Chain ``run_supervisor_block`` calls back-to-back, unattended, until the
+    frozen Gate D queue is fully drained (``BLOCK_COMPLETED``) or a blocking
+    failure surfaces (``BLOCK_BLOCKED``) that needs a human. Every iteration is
+    exactly one ordinary nightly block -- same per-block lock, same deadline
+    contract, same exact epoch-boundary resume -- so this adds no new way for
+    two ``fit`` subprocesses to run concurrently. A separate campaign lock only
+    prevents a second campaign driver (or a manual ``start``) from being
+    launched on top of an already-running chain."""
+
+    artifact_root = Path(config.artifact_root)
+    campaign_lock_path = _campaign_lock_path(artifact_root)
+
+    reconcile_lock(campaign_lock_path)
+    acquire_supervisor_lock(campaign_lock_path, block_id="campaign", repo_path=config.repo_root)
+
+    blocks_run: List[Dict[str, Any]] = []
+    try:
+        while max_blocks is None or len(blocks_run) < max_blocks:
+            block_record = run_supervisor_block(config)
+            blocks_run.append({"block_id": block_record["block_id"], "state": block_record["state"]})
+            if block_record["state"] in (BLOCK_COMPLETED, BLOCK_BLOCKED):
+                break
+    finally:
+        release_supervisor_lock(campaign_lock_path)
+
+    return {
+        "blocks_run": blocks_run,
+        "block_count": len(blocks_run),
+        "final_state": blocks_run[-1]["state"] if blocks_run else None,
+    }
