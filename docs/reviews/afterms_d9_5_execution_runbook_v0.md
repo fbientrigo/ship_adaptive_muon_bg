@@ -17,18 +17,25 @@ by construction (`status`, `summarize`).
 - [x] Gate C -- GMM 3 seeds (20260720/21/22) fitted + validated on both
       tracks; every seed converged (14-20 EM iterations) with all 4
       components occupied.
-- [ ] Gate D -- NF_AC 3-seed training on both tracks. **Not started.**
-      Measured cost: 1011.8 s/epoch (~16.9 min) on the real full-scope data
-      (single-epoch probe, RTX 2060 Laptop GPU) -- with the frozen policy
-      (min 20 / max 100 epochs), this is **~34-169 GPU-hours total** across
-      the 6 serial runs. The user was asked and explicitly chose to stop
-      here and hand off Gate D/E as documented resume work rather than run
-      a multi-hour-to-multi-day background campaign in this session. Exact
-      resume commands are below (Gate D section) -- nothing partial or
-      corrupt was left behind; this is a clean not-yet-started state.
+- [x] Gate D -- NF_AC seed training, run via the D9-5N unattended nightly
+      campaign (`docs/reviews/afterms_d9_5_nightly_execution_v0.md`).
+      **Closed as Phase 0 (nominal seed-stability baseline) with 5 of 6
+      frozen runs at a genuine terminal state**; the 6th
+      (`TRK_PDGM13_UW_ID` seed `20260722`) was never started -- the user
+      explicitly directed the campaign to stop after seeing 5 runs' results,
+      judging that sufficient for Phase 0. This is a deliberate early
+      closure decision, not a technical failure; zero blocking incidents
+      were recorded across the whole campaign. Total measured GPU time:
+      ~91.8 GPU-hours summed over 384 completed epochs, ~94.4 hours of
+      wall-clock campaign runtime (2026-07-25 07:12 UTC through the final
+      `abort`). See `docs/reviews/afterms_d9_5_model_family_arena_v0.md`
+      Sec 11 for the full closure record (per-run results table,
+      hyperparameters, architecture table, invariant verification, and
+      items explicitly deferred to Phase 1).
 - [ ] Gate E -- freeze-selection, evaluate-test, final report. Blocked on
       Gate D (all four families per track must be fitted before
-      freeze-selection).
+      freeze-selection). **Not started; the test split has not been
+      opened.**
 
 ## Gate A -- orientation, data audit, adapters (compute-free)
 
@@ -111,6 +118,40 @@ has not run. **This is a Gate B/C snapshot, not a validation-only selection**
 including NF_AC) and no test-split evaluation has occurred.
 
 ## Gate D -- NF_AC (3 seeds x 2 tracks, GPU, one process at a time)
+
+**Status: CLOSED as Phase 0 (nominal seed-stability baseline), 5 of 6 runs
+executed to a genuine terminal state.** Run via the D9-5N unattended
+campaign (`start-campaign`), not the manual per-run commands below (those
+remain valid for a single manual run/resume, e.g. after a `FAILED_BLOCKED`
+incident).
+
+### Gate D actual results (Phase 0 closure)
+
+| track | model_config_id | seed | terminal epoch | reason | best epoch | best val feature NLL | final val feature NLL |
+|---|---|---|---|---|---|---|---|
+| TRK_PDG13_UW_ID | NF_AC_b08_w128_d02 | 20260720 | 100 | max epochs | 78 | 1.3032 | 1.3203 |
+| TRK_PDG13_UW_ID | NF_AC_b08_w128_d02 | 20260721 | 75 | early-stopped | 50 | 1.3022 | 1.3223 |
+| TRK_PDG13_UW_ID | NF_AC_b08_w128_d02 | 20260722 | 54 | early-stopped | 17 | 1.3221 | 1.3351 |
+| TRK_PDGM13_UW_ID | NF_AC_b06_w096_d02 | 20260720 | 100 | max epochs | 76 | 1.3123 | 1.3356 |
+| TRK_PDGM13_UW_ID | NF_AC_b06_w096_d02 | 20260721 | 55 (last checkpoint) | **stopped by explicit user request** (not natural) | 38 | 1.3136 | n/a (mid-training) |
+| TRK_PDGM13_UW_ID | NF_AC_b06_w096_d02 | 20260722 | -- | **not started** | -- | -- | -- |
+
+Feature-space NLL only (as recorded directly in each run's
+`training_history.json`/checkpoint); the physical-space NLL Jacobian
+addition (Sec 5 of the arena doc) has not been computed for NF_AC because
+`validate` was not run for these seeds -- that is deferred, not inferred
+here. See `docs/reviews/afterms_d9_5_model_family_arena_v0.md` Sec 11 for
+the full closure record: hyperparameters, invariant verification (identical
+`execution_policy_hash`/`evaluation_policy_hash`/per-track dataset hash
+across every run), incident count (zero), and items explicitly deferred to
+Phase 1.
+
+Total measured compute: 384 completed epochs, ~91.8 GPU-hours (sum of
+per-epoch wall time across all 5 executed runs), ~94.4 hours of campaign
+wall-clock (2026-07-25 07:12 UTC to the final `abort`), across 12
+auto-chained 8-hour blocks with zero blocking incidents.
+
+### Manual per-run commands (for a single run/resume, not the closed campaign)
 
 ```powershell
 foreach ($track in @("TRK_PDG13_UW_ID","TRK_PDGM13_UW_ID")) {

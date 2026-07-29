@@ -1,16 +1,26 @@
 # D9-5: Modern Same-Track Generative Model Family Arena
 
-Status: **Gates A-C complete** (data-scope audit + common model-adapter
-contract + Gaussian/GMM/NF_AC adapters + evaluation/aggregation/report layer
-+ CLI + tests, then real GAUSS_DIAG/GAUSS_FULL/GMM fits and validation on the
-full declared scope for both tracks). **Gate D (NF_AC 3-seed training) has
-not started**: a real single-epoch timing probe measured 1011.8s/epoch on the
-full training scope, implying ~34-169 GPU-hours across the 6 serial runs
-required by the frozen execution policy. Given that scale, the user was
-asked and chose to stop here and hand off Gate D/E as documented resume work
-rather than run a multi-day background campaign in this session -- see
-`docs/reviews/afterms_d9_5_execution_runbook_v0.md` for exact resume
-commands, current status, and the Gate B/C results table.
+Status: **Gates A-C complete, Gate D (Phase 0) closed**. Gates A-C: data-scope
+audit + common model-adapter contract + Gaussian/GMM/NF_AC adapters +
+evaluation/aggregation/report layer + CLI + tests, then real
+GAUSS_DIAG/GAUSS_FULL/GMM fits and validation on the full declared scope for
+both tracks. Gate D ran an unattended nightly-block campaign
+(`docs/reviews/afterms_d9_5_nightly_execution_v0.md`) that executed 5 of the
+6 frozen NF_AC seed runs to a genuine terminal state (100/75/54/100/55
+epochs); the sixth (`TRK_PDGM13_UW_ID` seed `20260722`) was never started.
+The user then explicitly directed the campaign to stop, judging the 5
+executed runs sufficient evidence for **Phase 0 (nominal seed-stability
+baseline)** -- this is a deliberate early closure, not a completed 6/6
+campaign and not a failure. See Sec 11 below for the full Phase 0 closure
+record, and `docs/reviews/afterms_d9_5_execution_runbook_v0.md` for the
+Gate B/C/D results tables and exact reproduce/inspect commands.
+
+**Phase 0 is a nominal seed-stability baseline only.** It says nothing about
+physical MC weighting, utility-weighted enrichment, synthetic tags, new
+architectures, optimizer sweeps, or Flow Matching -- none of that was
+implemented or attempted here, and none of it is implied by these results.
+Gate E (freeze-selection, frozen test-split evaluation) has **not** run; the
+test split has not been opened by any Gate D/Phase-0 activity.
 
 Branch: `experiment/d9-5-afterms-model-family-arena-v0`, forked from D9C HEAD
 `22d38b5`.
@@ -190,3 +200,156 @@ cross-track ranking (required test 31).
   outside D9-5's scope; production-weighted tracks are excluded entirely.
 - PDG +13 and PDG -13 are two separate empirical targets and are never
   ranked against each other.
+
+## 11. Phase 0 closure (Gate D, NF_AC nominal seed-stability baseline)
+
+**Purpose.** Phase 0 exists to answer one narrow question: for the frozen,
+scout-promoted NF_AC architecture per track, trained under one frozen
+optimizer/execution policy, how stable is the resulting validation NLL across
+independent seed reinitializations? It is a **nominal seed-stability
+baseline only**. It is explicitly **not** an enrichment experiment: no
+physical MC weighting, no utility weighting, no synthetic tags, no data
+enrichment, no new architectures, no optimizer sweeps, and no Flow Matching
+were implemented or evaluated in Phase 0. None of the numbers below should be
+read as validating physical tail behavior, MC-weight interpretation, utility
+enrichment, or downstream FairShip usefulness.
+
+**Frozen shared hyperparameters** (identical `execution_policy_hash` and
+`evaluation_policy_hash` confirmed across every executed run -- see
+verification below):
+
+| Setting | Value |
+|---|---|
+| Optimizer | Adam |
+| Learning rate | 0.001 |
+| Batch size | 256 |
+| Weight decay | 0.0 |
+| Gradient clipping | 5.0 |
+| Dtype / AMP | float32, no AMP |
+| Minimum / maximum epochs | 20 / 100 |
+| Early stopping patience | 25 epochs |
+| Weighting policy | `row_empirical_unweighted` (all runs) |
+| Preprocessing | `identity_standardized_v0` (all runs) |
+
+**Per-track architecture** (frozen before any seed trained; consistent
+across every seed of its track):
+
+| Track | PDG | `model_config_id` | Blocks | Hidden width | Hidden depth |
+|---|---|---|---|---|---|
+| `TRK_PDG13_UW_ID` | 13 | `NF_AC_b08_w128_d02` | 8 | 128 | 2 |
+| `TRK_PDGM13_UW_ID` | -13 | `NF_AC_b06_w096_d02` | 6 | 96 | 2 |
+
+**Six-run results.** The frozen queue defines 6 runs (3 seeds x 2 tracks).
+**5 of 6 reached a genuine terminal state** (natural completion, either
+`maximum_epochs` or early stopping); the 6th was never started, and Phase 0
+was explicitly closed by the user before it began -- this is a deliberate
+scope decision, not a technical failure or an invariant violation being
+silently repaired.
+
+| # | Run | Terminal epoch | Reason | Best epoch | Best val NLL | Final train NLL | Final val NLL |
+|---|---|---|---|---|---|---|---|
+| 1 | PDG13 / seed 20260720 | 100 | max epochs | 78 | 1.3032 | 1.3163 | 1.3203 |
+| 2 | PDG13 / seed 20260721 | 75 | early-stopped | 50 | 1.3022 | 1.3175 | 1.3223 |
+| 3 | PDG13 / seed 20260722 | 54 | early-stopped | 17 | 1.3221 | 1.3390 | 1.3351 |
+| 4 | PDG-M13 / seed 20260720 | 100 | max epochs | 76 | 1.3123 | 1.3315 | 1.3356 |
+| 5 | PDG-M13 / seed 20260721 | 55 (last checkpointed epoch) | **stopped by explicit user request, not a natural terminal state** | 38 | 1.3136 | n/a (mid-training) | n/a (mid-training) |
+| 6 | PDG-M13 / seed 20260722 | -- | **not started** | -- | -- | -- | -- |
+
+Run 5 was stopped via the nightly runner's PID-scoped `abort` (never a
+by-name kill); its last completed epoch (55) and its checkpoints
+(`best_checkpoint.pt` at epoch 38, `last_resumable_checkpoint.pt` at epoch
+55) are valid and usable, but its `training_config.json` and
+`preprocessing/preprocessing.json` do not exist on disk -- these files are
+written by the training code only at natural completion, not at every
+epoch, so their absence for run 5 is expected and does not indicate
+corruption. All fields needed for audit (architecture, hashes, policy)
+were instead read directly from its checkpoint bundle, which the
+training loop writes every epoch (`checkpoint_written: true`).
+
+**Artifact locations:**
+
+```
+artifacts/afterms_d9_5_model_family_arena_v0/runs/<track>/<model_config_id>/seed_<seed>/
+  status.json                       (absent-final-state for run 5: still shows "running")
+  training_config.json              (missing for run 5; see note above)
+  histories/training_history.json   (present, sequential, no duplicate epochs, for all 5 executed runs)
+  checkpoints/{best_checkpoint.pt, last_resumable_checkpoint.pt}
+  preprocessing/preprocessing.json  (missing for run 5; see note above)
+```
+
+**Source dataset.** Hash `44336e8e3629149c813026cf21334c6fc2db75ae9ffa12e78ed2b064f3a54579`
+(full declared shard scope, Sec 4). Per-run checkpoint `dataset_hash`/
+`split_hashes` cover only the train+validation shards actually loaded for
+that run (`{"train": ..., "validation": ...}`, no `"test"` key) -- confirmed
+identical across all seeds of a track, confirming no run silently used a
+different data scope or a different track's data.
+
+**Split-integrity statement.** `data_scope_audit.md` (Gate A) already
+recorded zero shard-overlap violations across train/validation/test for both
+tracks; nothing in Gate D touches shard assignment. **The Gate E/test split
+was not opened at any point during Gate D or this closure** -- no
+`freeze-selection`, `evaluate-test`, or `summarize` artifacts exist anywhere
+under `artifacts/afterms_d9_5_model_family_arena_v0/`, and no test shard
+appears in any run's `dataset_hash`/`split_hashes`.
+
+**Incidents.** Zero blocking-failure incidents were recorded in
+`nightly_runner/incidents/` across the entire campaign (12 auto-chained
+8-hour blocks). The only non-natural stop was the final, explicit,
+user-directed `abort` of run 5 -- a deliberate closure action, not a
+technical failure.
+
+**Verified invariants** (read directly from each run's checkpoint bundle):
+
+- All 5 executed runs have `model_family: affine_coupling`.
+- Only the seed varies within each track; architecture is identical across
+  all seeds of a track and differs correctly between tracks (8/128/2 vs
+  6/96/2).
+- `weighting_policy: row_empirical_unweighted` on every run -- no physical
+  MC weight or utility weight entered the loss anywhere.
+- `execution_policy_hash` and `evaluation_policy_hash` are byte-identical
+  across all 5 executed runs -- the frozen policy was never silently
+  changed mid-campaign.
+- `split_hashes["train"]`/`["validation"]` are identical across all seeds of
+  a given track, and differ correctly between the two tracks -- no run
+  silently reused another run's data or another run's result.
+- Each run has its own independent `seed_<seed>/` output directory; no
+  overwrite or cross-run reuse observed.
+- After the final `abort`, both the per-block supervisor lock and the
+  campaign lock were confirmed released (the campaign lock had gone stale
+  on disk after the hard stop and was cleaned up via the existing
+  `nightly_runner.reconcile_lock` function -- no new code was written for
+  this); no CUDA process remained (`nvidia-smi` confirmed empty compute-app
+  list).
+
+**Unresolved items deferred to Phase 1 (explicitly not attempted here):**
+
+- `TRK_PDGM13_UW_ID` seed `20260722` was never trained; Phase 0's PDG-M13
+  seed-stability read rests on 2 seeds, not 3.
+- Run 5's seed-stability contribution is based on a non-terminal checkpoint
+  (epoch 55, best at epoch 38), not a naturally completed/early-stopped run.
+- `freeze-selection`/`evaluate-test`/`summarize` (Gate E) have not run for
+  any family, including NF_AC -- no test-split evaluation, no cross-family
+  validation-only selection, no final report exists yet.
+- Physical MC weighting, utility weighting, synthetic tags, data
+  enrichment, new architectures, optimizer sweeps, and Flow Matching are
+  all out of scope for Phase 0 and remain open for a deliberately separate
+  Phase 1 decision.
+
+**Reproduce/inspect commands:**
+
+```powershell
+git log --oneline -5
+.venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py status
+.venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py history
+.venv\Scripts\python.exe scripts\run_afterms_d9_5_model_family_arena.py status
+```
+
+To inspect a specific run's raw evidence directly:
+
+```powershell
+Get-Content artifacts\afterms_d9_5_model_family_arena_v0\runs\TRK_PDG13_UW_ID\NF_AC_b08_w128_d02\seed_20260720\status.json
+```
+
+**Commit.** This closure was committed as `chore(d9): close Gate D seed
+arena` on branch `experiment/d9-5n-afterms-nightly-gpu-runner-v0`; see
+`git log --oneline -1` for the exact hash on this branch.
