@@ -40,8 +40,18 @@ from .feature_views import (
 from .hashing import dataset_hash
 from .loader import load_muon_pkl
 from .normalization import apply_normalization, fit_normalization
-from .report import build_dataset_report, process_pkl, write_artifacts
-from .splitting import make_split
+from .pdg import filter_by_pdg, pdg_counts
+from .report import (
+    DEFAULT_DUPLICATE_CHECK_ROW_LIMIT,
+    build_dataset_report,
+    build_validation_report,
+    cap_rows,
+    load_muon_array,
+    process_array,
+    process_pkl,
+    write_artifacts,
+)
+from .splitting import make_split, make_three_way_split
 from .subsampling import (
     load_muon_npz,
     representative_subset,
@@ -92,6 +102,9 @@ __all__ = [
     "save_subset_pkl_gz",
     "dataset_hash",
     "make_split",
+    "make_three_way_split",
+    "filter_by_pdg",
+    "pdg_counts",
     "fit_normalization",
     "apply_normalization",
     "DEFAULT_BOUNDS",
@@ -103,6 +116,11 @@ __all__ = [
     "validate_bounds",
     "run_checks",
     "build_dataset_report",
+    "build_validation_report",
+    "load_muon_array",
+    "cap_rows",
+    "process_array",
     "process_pkl",
     "write_artifacts",
+    "DEFAULT_DUPLICATE_CHECK_ROW_LIMIT",
 ]

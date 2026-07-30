@@ -1,0 +1,43 @@
+{
+  "experiment_id": "d7_fixture_bounded_scientific_v0",
+  "description": "Bounded CPU D7 (empirical after-MS data) experiment using the full repository afterMS fixture (no --max-rows cap: the fixture itself is the bound, ~20k rows per PDG track). Config layer 2/4: repository-fixture bounded scientific experiment -- larger model/training budget than the smoke config, still CPU-bounded and CI-safe. This still only proves code-path and artifact compatibility on the committed sample; it is not a full-data scientific result (see docs/d7_full_local_replay_v0.md).",
+  "dataset_path": "data/samples/muonsFullMC_afterMS_sample.npz",
+  "pdg_ids": [13, -13],
+  "feature_view": {
+    "view_id": "identity_cartesian_v0"
+  },
+  "model": {
+    "name": "d7_bounded_affine",
+    "family": "affine_coupling",
+    "params": {
+      "activation": "relu",
+      "batch_size": 128,
+      "checkpoint_interval": 1,
+      "data_augmentation": false,
+      "dropout": 0.0,
+      "early_stopping": true,
+      "grad_clip_norm": 5.0,
+      "hidden_depth": 2,
+      "hidden_width": 64,
+      "initializer_mode": "scaled_activation_aware",
+      "input_noise_std": 0.0,
+      "learning_rate": 0.001,
+      "max_epochs": 30,
+      "max_log_scale": 3.0,
+      "memorization_mode": false,
+      "mixing_mode": "alternating_only",
+      "number_of_blocks": 4,
+      "weight_decay": 0.0
+    }
+  },
+  "seed": 11,
+  "val_fraction": 0.2,
+  "test_fraction": 0.2,
+  "max_rows": null,
+  "allow_zero_weight": true,
+  "evaluation": {
+    "ess_sample_count": 4000,
+    "c2st_sample_count": 2000
+  },
+  "device": "cpu"
+}

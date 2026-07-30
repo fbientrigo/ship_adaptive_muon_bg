@@ -1,0 +1,43 @@
+{
+  "experiment_id": "d7_fixture_smoke_v0",
+  "description": "Bounded CPU wiring smoke for D7 (empirical after-MS data) using the repository afterMS fixture. Config layer 1/4: repository-fixture smoke. Wiring validation only -- not model-quality acceptance, not a physics claim. Never requires a full local dataset.",
+  "dataset_path": "data/samples/muonsFullMC_afterMS_sample.npz",
+  "pdg_ids": [13, -13],
+  "feature_view": {
+    "view_id": "identity_cartesian_v0"
+  },
+  "model": {
+    "name": "d7_smoke_tiny_affine",
+    "family": "affine_coupling",
+    "params": {
+      "activation": "relu",
+      "batch_size": 32,
+      "checkpoint_interval": 1,
+      "data_augmentation": false,
+      "dropout": 0.0,
+      "early_stopping": false,
+      "grad_clip_norm": 5.0,
+      "hidden_depth": 1,
+      "hidden_width": 16,
+      "initializer_mode": "scaled_activation_aware",
+      "input_noise_std": 0.0,
+      "learning_rate": 0.001,
+      "max_epochs": 3,
+      "max_log_scale": 3.0,
+      "memorization_mode": false,
+      "mixing_mode": "alternating_only",
+      "number_of_blocks": 2,
+      "weight_decay": 0.0
+    }
+  },
+  "seed": 11,
+  "val_fraction": 0.2,
+  "test_fraction": 0.2,
+  "max_rows": 2000,
+  "allow_zero_weight": true,
+  "evaluation": {
+    "ess_sample_count": 300,
+    "c2st_sample_count": 200
+  },
+  "device": "cpu"
+}

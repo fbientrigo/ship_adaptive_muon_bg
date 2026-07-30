@@ -403,3 +403,27 @@ the bounded 15-run campaign in `configs/density_lab/estimator_validation_v0.json
 (~2 minutes CPU wall time measured), comparing all four arms on D5
 `rare_1e-3`. Neither stage declares an architecture or allocation winner;
 see the contract doc for the exact claims each arm licenses.
+
+## D7 (empirical after-MS data)
+
+D7 (`docs/contracts/density_problem_contract_v0.md` section 7) trains on real
+post-shield muon rows instead of an exact controlled target; it has no
+closed-form target density, so `forward_kl`/`importance_ess` are never
+computed (`density_lab.empirical.evaluate_empirical_run`). The repository
+afterMS sample (`data/samples/muonsFullMC_afterMS_sample.npz`, 40,000 rows)
+and a full local dataset go through the identical
+`density_lab.empirical.build_empirical_dataset` / `run_empirical_single` code
+path -- only the dataset path and bounded operational settings differ:
+
+```bash
+python scripts/build_dataset_report.py \
+    --dataset data/samples/muonsFullMC_afterMS_sample.npz \
+    --validate-only --allow-zero-weight --seed 1234
+python scripts/run_empirical_campaign.py \
+    --config configs/density_lab/empirical/d7_fixture_smoke_v0.json
+```
+
+See `docs/d7_full_local_replay_v0.md` for the full local-replay runbook
+(prerequisites, validation, smoke test, per-PDG-track runs, resume, and
+failure recovery) and its status caveat: the repository fixture is verified,
+the complete local dataset has not yet been run through this workflow.

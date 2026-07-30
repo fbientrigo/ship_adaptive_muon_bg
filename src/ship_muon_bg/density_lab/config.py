@@ -181,7 +181,7 @@ class TargetSpec:
     def validate(self) -> None:
         if not isinstance(self.target_id, str) or not self.target_id:
             raise ConfigError("TargetSpec.target_id must be a non-empty string")
-        if self.stage not in ("transformed", "base_before_d4"):
+        if self.stage not in ("transformed", "base_before_d4", "empirical"):
             raise ConfigError("TargetSpec.stage is invalid")
 
     def to_dict(self) -> Dict[str, Any]:

@@ -1,0 +1,45 @@
+{
+  "experiment_id": "d7_local_full_v0",
+  "description": "Full local D7 (empirical after-MS data) replay template. Config layer 3+4/4: used with --dry-run for validation-only (layer 3, never trains) and without --dry-run for the training/evaluation replay (layer 4). dataset_path is an environment-variable placeholder -- no machine-specific path is committed here; set SHIP_MUON_BG_LOCAL_DATA (or pass --dataset directly) before running. See docs/d7_full_local_replay_v0.md for the full runbook.",
+  "dataset_path": "${SHIP_MUON_BG_LOCAL_DATA}/muonsFullMC_afterMS.pkl",
+  "dataset_identifier": "muonsFullMC_afterMS_v1.0.0-fullmc-afterms",
+  "expected_source_sha256": "fb251be2cbfb04aed52bee215c23cbd0898eccae989523952d3b774c004f974c",
+  "pdg_ids": [13, -13],
+  "feature_view": {
+    "view_id": "identity_cartesian_v0"
+  },
+  "model": {
+    "name": "d7_local_full_affine",
+    "family": "affine_coupling",
+    "params": {
+      "activation": "relu",
+      "batch_size": 256,
+      "checkpoint_interval": 1,
+      "data_augmentation": false,
+      "dropout": 0.0,
+      "early_stopping": true,
+      "grad_clip_norm": 5.0,
+      "hidden_depth": 2,
+      "hidden_width": 64,
+      "initializer_mode": "scaled_activation_aware",
+      "input_noise_std": 0.0,
+      "learning_rate": 0.001,
+      "max_epochs": 100,
+      "max_log_scale": 3.0,
+      "memorization_mode": false,
+      "mixing_mode": "alternating_only",
+      "number_of_blocks": 4,
+      "weight_decay": 0.0
+    }
+  },
+  "seed": 11,
+  "val_fraction": 0.2,
+  "test_fraction": 0.2,
+  "max_rows": null,
+  "allow_zero_weight": true,
+  "evaluation": {
+    "ess_sample_count": 20000,
+    "c2st_sample_count": 8000
+  },
+  "device": "cpu"
+}

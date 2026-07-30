@@ -51,6 +51,18 @@ from .sampling import (
     sample_controlled,
 )
 from .doe import SAMPLING_ESTIMATOR_CONTRACT_V1, generate_blocked_maximin_lhs
+from .empirical import (
+    EMPIRICAL_TARGET_ID,
+    EmpiricalCampaignSpec,
+    EmpiricalDataError,
+    EmpiricalDataset,
+    EmpiricalDatasetSpec,
+    build_empirical_dataset,
+    evaluate_empirical_run,
+    run_empirical_campaign,
+    run_empirical_campaign_from_spec,
+    run_empirical_single,
+)
 
 __all__ = [
     "FittedFeaturePipeline",
@@ -94,4 +106,14 @@ __all__ = [
     "plan_fixed_composition_batches",
     "generate_blocked_maximin_lhs",
     "SAMPLING_ESTIMATOR_CONTRACT_V1",
+    "EMPIRICAL_TARGET_ID",
+    "EmpiricalCampaignSpec",
+    "EmpiricalDataError",
+    "EmpiricalDataset",
+    "EmpiricalDatasetSpec",
+    "build_empirical_dataset",
+    "evaluate_empirical_run",
+    "run_empirical_campaign",
+    "run_empirical_campaign_from_spec",
+    "run_empirical_single",
 ]
