@@ -19,6 +19,12 @@ size) differ (`docs/contracts/rare_aware_minibatch_estimators_v0.md`'s
 estimator mathematics and gate behavior are unmodified and out of scope for
 this document; see section "What this replay does not change" below).
 
+**Looking for the utility-tilt experiment instead?** Jump straight to
+"[D9 -- direct-sampling utility-tilt extension (v0)](#d9----direct-sampling-utility-tilt-extension-v0)"
+below -- it builds on every step in this document but adds its own
+Quickstart with copy-paste commands, so you do not need to read the D7 steps
+first if all you want is to reproduce the tilt-sampling result.
+
 ## Prerequisites
 
 **Environment.** `pip install -e .[dev,flow,lab]` (NumPy + pytest + torch +
@@ -340,6 +346,52 @@ against the repository fixture (`data/samples/muonsFullMC_afterMS_sample.npz`,
 only) as a bounded pipeline proof. **No full local dataset run has been
 executed**, in the cloud or otherwise -- everything below the fixture
 numbers is a replay recipe, not a completed result.
+
+### Quickstart (repository fixture, ~30 seconds total)
+
+These are the exact commands that produced the fixture verification numbers
+in this section -- copy-paste them to reproduce that result before adapting
+anything for a full local dataset. Run from the repository root with
+`.[dev,flow,lab]` installed (see "Prerequisites" above).
+
+```bash
+# 1. Build + validate all 20 tables for both PDG tracks (no training).
+python scripts/run_utility_tilt_campaign.py \
+    --dataset data/samples/muonsFullMC_afterMS_sample.npz \
+    --pdg-ids 13 -13 --max-rows 2000 --seed 11 \
+    --experiment-id d9_utility_tilt_v0 \
+    --build-tables --tables-only
+
+# 2. Train exactly the four bounded cloud tilt configurations on PDG 13
+#    (CPU, one epoch each, identical everything except the sampling table).
+python scripts/run_utility_tilt_campaign.py \
+    --dataset data/samples/muonsFullMC_afterMS_sample.npz \
+    --pdg-ids 13 --max-rows 2000 --seed 11 --sampler-seed 7 \
+    --experiment-id d9_utility_tilt_v0 \
+    --model-config configs/density_lab/utility_tilt/d9_fixture_smoke_v0.json \
+    --train-tilt-ids UA_d0p9_a01 UA_d0p1_a04 UP_d0p9_a01 UP_d0p1_a04 \
+    --epochs 1 --device cpu
+
+# 3. Inspect results.
+cat artifacts/density_lab/d9_utility_tilt_v0/tables/pdg_13/table_a_nominal.manifest.json
+cat artifacts/density_lab/d9_utility_tilt_v0/tables/pdg_13/table_b_tilt.manifest.json
+ls artifacts/density_lab/d9_utility_tilt_v0/D9_utility_tilt_*/metrics.json
+```
+
+Both commands are idempotent: rerunning either one skips any table/run
+already built (`status: "tables_built"` / `"skipped_completed"`); pass
+`--force` on the second command to retrain from scratch. Everything under
+`artifacts/` is gitignored -- nothing from these commands needs to be, or
+should be, committed.
+
+**To adapt this for a full local dataset**, change only three things: (a)
+`--dataset` to `"$SHIP_MUON_BG_LOCAL_DATA/muonsFullMC_afterMS.pkl"`, (b)
+`--max-rows` to your intended row budget (or drop it entirely, sizing memory
+first per "Disk and memory checks" above), and (c) add
+`--artifact-root /path/to/local/artifacts` so nothing lands under the repo.
+No other flag, config field, or source file needs to change -- see the
+step-by-step walkthrough and required caveats below before running anything
+unbounded.
 
 ### Steps
 
