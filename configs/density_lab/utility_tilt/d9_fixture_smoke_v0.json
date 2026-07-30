@@ -1,0 +1,34 @@
+{
+  "description": "Bounded CPU direct-sampling utility-tilt smoke config for D9, reusing the smallest established D7 empirical affine-coupling model (configs/density_lab/empirical/d7_fixture_smoke_v0.json) with max_epochs pinned to 1 for the bounded cloud training contract (task section 7). Wiring/pipeline verification only -- not model-quality acceptance, not a physics claim, not a claim that any tilt is scientifically superior.",
+  "feature_view": {
+    "view_id": "identity_cartesian_v0"
+  },
+  "model": {
+    "name": "d9_smoke_tiny_affine",
+    "family": "affine_coupling",
+    "params": {
+      "activation": "relu",
+      "batch_size": 32,
+      "checkpoint_interval": 1,
+      "data_augmentation": false,
+      "dropout": 0.0,
+      "early_stopping": false,
+      "grad_clip_norm": 5.0,
+      "hidden_depth": 1,
+      "hidden_width": 16,
+      "initializer_mode": "scaled_activation_aware",
+      "input_noise_std": 0.0,
+      "learning_rate": 0.001,
+      "max_epochs": 1,
+      "max_log_scale": 3.0,
+      "memorization_mode": false,
+      "mixing_mode": "alternating_only",
+      "number_of_blocks": 2,
+      "weight_decay": 0.0
+    }
+  },
+  "evaluation": {
+    "ess_sample_count": 300,
+    "c2st_sample_count": 200
+  }
+}

@@ -52,6 +52,7 @@ from .report import (
     write_artifacts,
 )
 from .splitting import make_split, make_three_way_split
+from .weighted_stats import WeightedQuantileError, weighted_prevalence, weighted_quantile
 from .subsampling import (
     load_muon_npz,
     representative_subset,
@@ -123,4 +124,7 @@ __all__ = [
     "process_pkl",
     "write_artifacts",
     "DEFAULT_DUPLICATE_CHECK_ROW_LIMIT",
+    "WeightedQuantileError",
+    "weighted_quantile",
+    "weighted_prevalence",
 ]

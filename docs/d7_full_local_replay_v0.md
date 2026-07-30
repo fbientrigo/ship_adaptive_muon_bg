@@ -307,3 +307,158 @@ Every failure above is a **technical** outcome (`technical_status: "failed"`
 or a raised exception before any artifact is written) and must never be
 reported as a scientific negative -- a run that never completed has no
 scientific status to report at all.
+
+## D9 -- direct-sampling utility-tilt extension (v0)
+
+`ship_muon_bg.density_lab.utility_tilt` and
+`scripts/run_utility_tilt_campaign.py` extend the D7 pipeline above with a
+direct-sampling utility-tilt experiment: given the physical MC weights `w_i`
+already preserved by every step above, it builds a nominal direct-sampling
+law `pi_nominal = w_i / sum(w_j)` and, for a 20-configuration grid of
+synthetic utility tilts, a tilted law
+`pi_tilt = w_i * r_i / sum(w_j * r_j)`, draws training rows directly (with
+replacement, via an O(1) Walker-alias sampler) from either law, and trains
+with **ordinary unweighted NLL** -- the tilt's effect lives entirely in which
+rows get drawn, so the training loss is never multiplied by `w_i`, `r_i`, or
+`w_i * r_i` again. This section extends, and never replaces, the D7 steps
+above: dataset loading, schema validation, PDG filtering, splitting, and
+`FittedFeaturePipeline` preprocessing are the exact same unmodified code
+paths.
+
+`B_toy` (thresholds on `pT = sqrt(px^2 + py^2)` and
+`R_xy = sqrt(x^2 + y^2)`) is a **project-defined synthetic diagnostic
+region**, never a validated FairShip danger metric; `U_A`/`U_P` are
+synthetic utility scores, never calibrated probabilities. Concentration
+diagnostics (`N_eff`, expected-unique-draws, top-k mass, ...) are
+diagnostic-only -- this workflow introduces no ESS threshold and no
+automatic rejection criterion.
+
+**Fixture verification status:** `DIRECT_TILT_PIPELINE_FIXTURE_VERIFIED`.
+All 20 tilt configurations were built and validated for both PDG tracks
+against the repository fixture (`data/samples/muonsFullMC_afterMS_sample.npz`,
+`--max-rows 2000`); exactly four were trained (one CPU epoch each, PDG 13
+only) as a bounded pipeline proof. **No full local dataset run has been
+executed**, in the cloud or otherwise -- everything below the fixture
+numbers is a replay recipe, not a completed result.
+
+### Steps
+
+1. **Validate the full dataset** (unchanged from D7 Step 1 above):
+   ```bash
+   python scripts/build_dataset_report.py \
+       --dataset "$SHIP_MUON_BG_LOCAL_DATA/muonsFullMC_afterMS.pkl" \
+       --validate-only --allow-zero-weight --seed 1234
+   ```
+2. **Build the nominal `w_i` sampling table** (Table A) for one PDG track:
+   ```bash
+   python scripts/run_utility_tilt_campaign.py \
+       --dataset "$SHIP_MUON_BG_LOCAL_DATA/muonsFullMC_afterMS.pkl" \
+       --pdg-ids 13 --seed 11 --tilt-ids UA_d0p9_a01 \
+       --build-tables --tables-only \
+       --artifact-root /path/to/local/artifacts/d9_full
+   ```
+   (`--tilt-ids` with a single id keeps Table B minimal while Table A -- the
+   part this step is actually about -- is always built in full.)
+3. **Inspect weight concentration** before fitting anything else: read
+   `table_a_nominal.manifest.json`'s `normalization_sum_before` /
+   `normalization_sum_after`, and compute
+   `theoretical_concentration_diagnostics(table_a.pi_nominal, draw_budget=<planned T>)`
+   (`N_eff`, top-10/top-100 mass, `fraction_zero_probability_rows`) -- a
+   heavily concentrated `w_i` column at full scale will produce very few
+   effectively-distinct nominal draws regardless of any tilt.
+4. **Fit weighted thresholds from the full training split**: this happens
+   automatically inside `build_nominal_table` (Step 2's command already did
+   it) -- `t_pT = Q^(w)_0.95(pT)`, `t_R = Q^(w)_0.05(R_xy)`, from
+   `dataset.train` only, weighted by `w_i`, per PDG track
+   (`ut.fit_toy_thresholds`). Read the fitted values from
+   `table_a_nominal.manifest.json`'s `thresholds` block.
+5. **Build `U_A` and `U_P` columns**: also automatic (`table_a_nominal.npz`'s
+   `U_A`/`U_P` arrays, from the fitted `B_toy` indicator).
+6. **Build selected or all `r_i` tilt layers** (Table B): rerun Step 2 with
+   `--tilt-ids` naming exactly the configurations you need, or omit
+   `--tilt-ids` to materialize all 20 -- at full scale, prefer a small
+   selected subset first (all-20 materialization is only asserted "acceptable"
+   for the 40,000-row fixture; a 13.8M-row Table B at 20x expansion is a
+   real memory/disk cost you should size before requesting it).
+7. **Normalize `w_i * r_i`**: automatic (`pi_tilt` in `table_b_tilt.npz`);
+   verify `pi_tilt_sum_per_tilt` in `table_b_tilt.manifest.json` reads `1.0`
+   (within floating-point tolerance) for every requested tilt.
+8. **Build alias tables**: automatic at training time
+   (`AliasSampler.from_probabilities`, inside `run_direct_sampling_training`);
+   to inspect one standalone, call
+   `ut.AliasSampler.from_probabilities(table_b.pi_tilt[<block>])` and read
+   `.table_hash()`.
+9. **Run a one-epoch smoke on one PDG**:
+   ```bash
+   python scripts/run_utility_tilt_campaign.py \
+       --dataset "$SHIP_MUON_BG_LOCAL_DATA/muonsFullMC_afterMS.pkl" \
+       --pdg-ids 13 --max-rows 2000 --seed 11 --sampler-seed 7 \
+       --model-config configs/density_lab/utility_tilt/d9_fixture_smoke_v0.json \
+       --train-tilt-ids UA_d0p9_a01 --epochs 1 --device cpu \
+       --artifact-root /path/to/local/artifacts/d9_full
+   ```
+   (`--max-rows 2000` here mirrors the fixture-smoke row budget on purpose --
+   drop it, or raise it deliberately, once the smoke run is confirmed; an
+   unbounded full-scale run against 13.8M rows should not be your first local
+   attempt.)
+10. **Run selected tilts for both PDGs**: repeat Step 9 with
+    `--pdg-ids 13 -13 --train-tilt-ids <tilt id> [<tilt id> ...]`; each
+    `(pdg, tilt_id)` pair is one independent run, exactly like every other
+    per-PDG run in this repository -- a failure on one never aborts another.
+11. **Resume/skip behavior**: identical contract to D7 Step 5 above --
+    `run_id` is derived from the canonical config hash (dataset + PDG + tilt
+    id via `target.variant` + feature view + model + seed + evaluation), so
+    rerunning the same command skips any run already `status: "completed"`
+    with a matching hash, and `--force` reruns it anyway. There is no
+    mid-epoch resume (same limitation as D7).
+12. **Verify table and campaign hashes**: `table_a_nominal.manifest.json` /
+    `table_b_tilt.manifest.json`'s `table_hash` fields are deterministic
+    given identical inputs (rebuild and compare); each training run's
+    `run_status.json` records `hashes.sampler_table_hash` and
+    `hashes.source_table_hash` so a trained checkpoint's sampling law is
+    always traceable back to the exact table that produced it.
+
+### Fixture reference numbers (PDG 13, `--max-rows 2000`, seed 11)
+
+For orientation only -- **these values are fixture-specific and must never
+be copied to a full-data run** (see caveats below): `t_pT = 3.192`,
+`t_R = 1.588` (definition `d9_b_toy_v0_pt_q095_rxy_q005`), Table A
+`table_hash` prefix `9596e4b3...` (1,280 train rows), Table B (all 20 tilts)
+`table_hash` prefix `c866f2d1...`. The four bounded cloud runs (CPU, 1 epoch,
+`draw_budget = n_train = 1280`) all reported finite train/validation NLL and
+`sample_weight_applied_to_loss: false`; the strong tilts (`alpha=4,
+delta=0.1`) drove empirical `B_toy` draw occupancy to ~99.7% with only ~109
+unique rows reused up to 25 times each, while the mild tilts (`alpha=1,
+delta=0.9`) stayed close to the untilted ~2% `B_toy` occupancy -- exactly the
+qualitative behavior the tilt transform is designed to produce, not a
+scientific claim about either configuration.
+
+### Required caveats
+
+- **Full local tables use the same code.** Every function above
+  (`fit_toy_thresholds`, `build_nominal_table`, `build_tilt_table`,
+  `AliasSampler`, `run_direct_sampling_training`) is scale-agnostic; only
+  `--dataset`, `--max-rows`, and `--artifact-root` differ between the
+  fixture and a full local run.
+- **Fixture results do not establish full-data scientific performance.**
+  One CPU epoch on a 2,000-row-capped fixture verifies the pipeline, not
+  model quality at any scale.
+- **All thresholds will change when recomputed from the full training
+  sample.** `t_pT`/`t_R` are weighted quantiles of whatever rows are in the
+  training split; a different row count and composition produces different
+  thresholds, by design (see "Synthetic region" in the mathematical
+  contract -- the joint `B_toy` prevalence is measured, never assumed).
+- **Fixture threshold values must never be copied to the full dataset.**
+  The numbers in "Fixture reference numbers" above are for this document's
+  orientation only; a full local run must always fit its own thresholds from
+  its own training split (Step 4), never hard-code the fixture's `t_pT`/`t_R`.
+- **No full-data run was executed in cloud.** Everything in this section
+  beyond "Fixture reference numbers" is a replay recipe.
+- **Extreme tilts may cause substantial row reuse and must be inspected
+  before long training.** The fixture's own `alpha=4` runs already reused
+  109 unique rows up to 25 times each out of 1,280 draws; `alpha=8`/`16`
+  (never exercised in the four bounded cloud runs) will concentrate mass
+  further still. Always read `empirical_draw_diagnostics` /
+  `theoretical_concentration` in a run's `metrics.json` -- or precompute
+  `theoretical_concentration_diagnostics` on the table before training --
+  before committing to a long full-scale training run on a strong tilt.
