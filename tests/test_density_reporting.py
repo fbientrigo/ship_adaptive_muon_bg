@@ -268,19 +268,19 @@ def test_plot_series_key_separates_scope_and_aggregates_only_matching_seeds(tmp_
     summary = build_summary_tables(records, tmp_path / "report")
     assert len(summary["aggregate"]) == 4
 
-    base_key = PlotSeriesKey("D5-1e-3", "transformed", "iid_target", False)
+    base_key = PlotSeriesKey("D5-1e-3", "transformed", "iid_target", False, "minibatch_mean")
     stats = {key: (mean, std) for key, mean, std in _series_metric_stats(records, "forward_kl")}
     assert len(stats) == 4
     assert stats[base_key] == pytest.approx((0.2, 0.1))
     assert "DIAGNOSTIC ONLY" in _plot_series_label(
-        PlotSeriesKey("D5-1e-3", "transformed", "iid_target", True)
+        PlotSeriesKey("D5-1e-3", "transformed", "iid_target", True, "minibatch_mean")
     )
 
     base_aggregate = [
         row for row in summary["aggregate"]
         if (
             row["target_label"], row["target_stage"], row["sampling_regime"],
-            row["diagnostic_only"],
+            row["diagnostic_only"], row["estimator"],
         ) == base_key
     ]
     assert len(base_aggregate) == 1

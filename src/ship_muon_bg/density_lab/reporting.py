@@ -22,34 +22,57 @@ TARGET_ORDER = ["D0", "D1", "D2", "D3", "D4", "D5"]
 
 
 class PlotSeriesKey(NamedTuple):
-    """Scientific scope that must never be merged into one plotted series."""
+    """Scientific scope that must never be merged into one plotted series.
+
+    ``sampling_regime`` alone already discriminates every estimator arm (each
+    of the four named regimes -- A/B/C/D -- is a distinct string), so
+    ``estimator`` is a redundant, defense-in-depth field: it can never split
+    or merge a group that ``sampling_regime`` did not already split, but it
+    makes the "arms are never averaged together" guarantee resilient to a
+    future regime name that happens to share an estimator kind.
+    """
 
     target_label: str
     target_stage: str
     sampling_regime: str
     diagnostic_only: bool
+    estimator: str
+
+
+def _resolved_estimator(sampling_regime: Optional[str]) -> str:
+    try:
+        from .sampling import resolve_regime
+
+        return resolve_regime(str(sampling_regime))[1]
+    except (ValueError, ImportError):
+        return "unspecified"
 
 
 def _plot_series_key(record: Dict[str, Any]) -> PlotSeriesKey:
+    regime = str(record.get("sampling_regime") or "unspecified")
     return PlotSeriesKey(
         target_label=str(record.get("target_label") or "unknown"),
         target_stage=str(record.get("target_stage") or "unspecified"),
-        sampling_regime=str(record.get("sampling_regime") or "unspecified"),
+        sampling_regime=regime,
         diagnostic_only=bool(record.get("diagnostic_only", False)),
+        estimator=record.get("estimator") or _resolved_estimator(regime),
     )
 
 
 def _plot_series_label(key: PlotSeriesKey) -> str:
     scope = "DIAGNOSTIC ONLY" if key.diagnostic_only else "non-diagnostic"
-    return "{} | stage={} | regime={} | {}".format(
-        key.target_label, key.target_stage, key.sampling_regime, scope
+    return "{} | stage={} | regime={} | estimator={} | {}".format(
+        key.target_label, key.target_stage, key.sampling_regime, key.estimator, scope
     )
 
 
 def _plot_series_sort_key(key: PlotSeriesKey):
     base = key.target_label.split("-")[0]
     target_order = TARGET_ORDER.index(base) if base in TARGET_ORDER else 99
-    return (target_order, key.target_label, key.target_stage, key.sampling_regime, key.diagnostic_only)
+    return (
+        target_order, key.target_label, key.target_stage,
+        key.sampling_regime, key.diagnostic_only, key.estimator,
+    )
 
 
 def _target_label(target_id: str, variant: Optional[str]) -> str:
@@ -116,7 +139,18 @@ def load_run_records(campaign_dir: Path) -> List[Dict[str, Any]]:
             record["feature_space_validation_main_nll"] = metrics.get("feature_space_validation_main_nll", metrics.get("validation_main_nll"))
             record["feature_space_validation_rare_nll"] = metrics.get("feature_space_validation_rare_nll", metrics.get("validation_rare_nll"))
             record["estimator_family"] = metrics.get("estimator_family")
+            record["estimator"] = metrics.get("estimator") or _resolved_estimator(
+                metrics.get("sampling_regime")
+            )
+            record["pool_law"] = metrics.get("pool_law")
+            record["weight_normalization"] = _dig(metrics, "training_final", "weight_normalization")
             record["unbiasedness_status"] = metrics.get("unbiasedness_status")
+            record["unbiasedness_assumptions"] = metrics.get("unbiasedness_assumptions")
+            record["validation_objective_law"] = metrics.get("validation_objective_law")
+            record["validation_nll_is_target_risk_estimate"] = metrics.get(
+                "validation_nll_is_target_risk_estimate"
+            )
+            record["permitted_claim"] = metrics.get("fit_claim")
             record["scientific_scope"] = metrics.get("scientific_scope")
             record["rare_mode_interpretation"] = (
                 "inconclusive_low_power" if _dig(metrics, "rare_mode", "zero_rare_samples_flag") else None
@@ -193,7 +227,9 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
         "feature_space_train_nll", "feature_space_train_main_nll",
         "feature_space_train_rare_nll", "feature_space_validation_nll",
         "feature_space_validation_main_nll", "feature_space_validation_rare_nll",
-        "estimator_family", "unbiasedness_status", "scientific_scope",
+        "estimator_family", "estimator", "weight_normalization",
+        "unbiasedness_status", "scientific_scope", "validation_objective_law",
+        "permitted_claim",
     ]
     # CSV (one row per run, failed runs included)
     with (out_dir / "benchmark_summary.csv").open("w", newline="") as handle:
@@ -236,9 +272,14 @@ def build_summary_tables(records: List[Dict[str, Any]], out_dir: Path) -> Dict[s
                 "model": model,
                 "device": device,
                 "sampling_regime": series_key.sampling_regime,
+                "estimator": series_key.estimator,
                 "diagnostic_only": series_key.diagnostic_only,
                 "target_stage": series_key.target_stage,
                 "fit_claim": rows[0].get("fit_claim"),
+                "permitted_claim": rows[0].get("permitted_claim"),
+                "weight_normalization": rows[0].get("weight_normalization"),
+                "validation_objective_law": rows[0].get("validation_objective_law"),
+                "unbiasedness_status": rows[0].get("unbiasedness_status"),
                 "n_seeds": len(rows),
                 "scientific_status_counts": dict(sci_counts),
                 "n_scientific_catastrophic": sci_counts.get("catastrophic", 0),
@@ -504,8 +545,25 @@ def write_limitations(records, out_dir: Path) -> None:
         "  (pass/fail/catastrophic/inconclusive): a completed run may be catastrophic.",
         "- Wall times mix CPU/GPU only within, never across, a single curve.",
         "- Provisional engineering gates are not preregistered physics criteria.",
-        "- stratified_unweighted_diagnostic rows are diagnostic-only and are never a fit claim for the original target density.",
-        "- stratified_self_normalized_provisional is a self-normalized minibatch estimator; unbiasedness is not established.",
+        "- stratified_unweighted_diagnostic (arm B) is intentionally biased for the",
+        "  original target risk: it fits the shifted fixed-composition sampling",
+        "  distribution, not the original target density, and is never reported as",
+        "  fitting it.",
+        "- stratified_self_normalized_provisional (arm D) is a self-normalized",
+        "  minibatch estimator with a random per-batch weight-sum denominator;",
+        "  unbiasedness is not established and it is never relabelled unbiased.",
+        "- stratified_horvitz_thompson_fixed_composition (arm C) is unbiased for the",
+        "  target risk and its gradient only under the recorded assumptions A1-A6",
+        "  (exact exhaustive strata, unmodified conditional sampling, non-empty",
+        "  fixed allocation, a fixed known denominator, integrability/gradient",
+        "  interchange, and unit physical weights); see",
+        "  docs/contracts/rare_aware_minibatch_estimators_v0.md. This does not",
+        "  automatically transfer to unlabeled real data without exact known",
+        "  stratum masses and component labels.",
+        "- Physical/MC event weights are out of scope in this stage; arm C requires",
+        "  unit physical weights and raises a technical error otherwise.",
+        "- No minibatch stratum allocation (including 50/50) is promoted as optimal;",
+        "  allocation choice is reported, not selected as a winner.",
         "- Zero rare-region samples at the bounded smoke budget are inconclusive_low_power, not demonstrated rare-mode collapse.",
     ]
     (out_dir / "limitations.md").write_text("\n".join(text) + "\n")

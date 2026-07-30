@@ -27,8 +27,29 @@ from .evaluator import evaluate_run
 from .feature_pipeline import FittedFeaturePipeline
 from .gates import SCIENTIFIC_STATUSES, STATUS_UNAVAILABLE, evaluate_scientific_gates
 from .config import canonical_hash
+from .sampling import (
+    ESTIMATOR_HORVITZ_THOMPSON_FIXED,
+    IID_TARGET,
+    plan_fixed_composition_batches,
+    resolve_regime,
+)
 
 DIMENSION = 5
+
+# Mirrors sampling.py's _ESTIMATOR_FAMILY_BY_REGIME values; kept as an
+# explicit dict (rather than re-deriving the legacy nested ternary) so the
+# fit-claim mapping is a single, auditable source of truth per estimator
+# family. Unknown families fall back to the pre-existing ternary's default.
+_FIT_CLAIM_BY_ESTIMATOR_FAMILY = {
+    "unweighted_iid_target": "fit_to_original_target_density",
+    "unweighted_stratified_diagnostic": "diagnostic_only_not_a_fit_to_original_target_density",
+    "self_normalized_importance_weighted_minibatch": (
+        "provisional_target_estimator_not_validated_as_original_target_density"
+    ),
+    "fixed_composition_horvitz_thompson_minibatch": (
+        "unbiased_target_risk_estimator_under_stated_assumptions"
+    ),
+}
 
 
 def _make_feature_view(spec) -> FeatureView:
@@ -74,6 +95,11 @@ def _dataset_key(run_spec) -> tuple:
         run_spec.dataset.n_test,
         run_spec.sampling.regime,
         run_spec.sampling.sampling_rare_fraction,
+        # Only the dataset-affecting field: which regime draws the
+        # validation partition. Minibatch-plan fields (rare count, batch
+        # size, replacement, ...) affect the trainer, not the dataset, so
+        # they stay out of the dataset cache key.
+        run_spec.sampling.resolved_validation_partition_law(),
     )
 
 
@@ -112,6 +138,7 @@ def run_single(
                 regime=run_spec.sampling.regime,
                 sampling_rare_fraction=run_spec.sampling.sampling_rare_fraction,
                 target_stage=run_spec.target.stage,
+                validation_partition_law=run_spec.sampling.resolved_validation_partition_law(),
             )
             if dataset_cache is not None:
                 dataset_cache[key] = dataset
@@ -137,8 +164,47 @@ def run_single(
         model = create_density_estimator(
             run_spec.model, dimension=DIMENSION, device=device
         )
+        pool_law, estimator_kind = resolve_regime(run_spec.sampling.regime)
+        minibatch_plan = None
         fit_kwargs = {}
-        if run_spec.model.family == "affine_coupling":
+        if estimator_kind == ESTIMATOR_HORVITZ_THOMPSON_FIXED:
+            # Explicit capability check -- never silently drop the plan or
+            # correction weights onto a family that cannot honor them.
+            supported = getattr(model, "supported_loss_normalizations", ("sum_weights",))
+            if "fixed_batch_size" not in supported:
+                raise NotImplementedError(
+                    "model family {!r} does not support the fixed-composition "
+                    "Horvitz-Thompson estimator (loss_normalization='fixed_batch_size'); "
+                    "it supports {}".format(run_spec.model.family, supported)
+                )
+            rare_id = target.rare_component_id(pdg_id=run_spec.pdg_id)
+            minibatch_plan = plan_fixed_composition_batches(
+                component_id=dataset.train.component_id,
+                rare_id=rare_id,
+                target_stratum_masses=target.stratum_masses(pdg_id=run_spec.pdg_id),
+                batch_size=run_spec.sampling.minibatch_batch_size,
+                counts={
+                    "rare": run_spec.sampling.minibatch_rare_count,
+                    "main": (
+                        run_spec.sampling.minibatch_batch_size
+                        - run_spec.sampling.minibatch_rare_count
+                    ),
+                },
+                replacement=run_spec.sampling.replacement,
+                steps_per_epoch_rule=run_spec.sampling.steps_per_epoch_rule,
+                seed=run_spec.seed,
+                physical_weight=dataset.train.sample_weight,
+            )
+            fit_kwargs = {
+                "sample_weight": dataset.train.sample_weight,
+                "validation_sample_weight": dataset.validation.sample_weight,
+                "component_id": dataset.train.component_id,
+                "validation_component_id": dataset.validation.component_id,
+                "rare_component_id": rare_id,
+                "batch_plan": minibatch_plan,
+                "loss_normalization": "fixed_batch_size",
+            }
+        elif run_spec.model.family == "affine_coupling":
             fit_kwargs = {
                 "sample_weight": dataset.train.sample_weight,
                 "validation_sample_weight": dataset.validation.sample_weight,
@@ -190,16 +256,26 @@ def run_single(
         )
         metrics["training_sampling"] = dataset.train.sampling_manifest
         metrics["sampling_regime"] = run_spec.sampling.regime
+        metrics["pool_law"] = pool_law
+        metrics["estimator"] = estimator_kind
         metrics["diagnostic_only"] = bool(dataset.train.sampling_manifest.get("diagnostic_only", False))
-        for key in ("estimator_family", "unbiasedness_status", "scientific_scope"):
+        for key in (
+            "estimator_family", "unbiasedness_status", "scientific_scope",
+            "unbiasedness_assumptions", "physical_weights_unit",
+            "physical_weight_semantics",
+        ):
             metrics[key] = dataset.train.sampling_manifest.get(key)
-        metrics["fit_claim"] = (
+        metrics["fit_claim"] = _FIT_CLAIM_BY_ESTIMATOR_FAMILY.get(
+            metrics["estimator_family"],
             "diagnostic_only_not_a_fit_to_original_target_density"
-            if metrics["diagnostic_only"] else (
-                "provisional_target_estimator_not_validated_as_original_target_density"
-                if metrics["estimator_family"] == "self_normalized_importance_weighted_minibatch"
-                else "fit_to_original_target_density"
-            )
+            if metrics["diagnostic_only"] else "fit_to_original_target_density",
+        )
+        metrics["validation_objective_law"] = dataset.validation_partition_law
+        metrics["validation_nll_is_target_risk_estimate"] = (
+            dataset.validation.sampling_manifest.get("regime") == IID_TARGET
+        )
+        metrics["minibatch_plan"] = (
+            minibatch_plan.to_manifest() if minibatch_plan is not None else None
         )
         if fit_result.train_history:
             final = fit_result.train_history[-1]
@@ -234,6 +310,9 @@ def run_single(
             "test_dataset_hash": dataset.test_nominal.raw_dataset_hash,
             "checkpoint_hash": save_manifest.get("checkpoint_hash"),
             "sampling_manifest_hash": canonical_hash(dataset.train.sampling_manifest),
+            "minibatch_plan_hash": (
+                minibatch_plan.plan_hash if minibatch_plan is not None else None
+            ),
         }
         store.write_run(
             run_spec,

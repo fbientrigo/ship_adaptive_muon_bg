@@ -55,6 +55,10 @@ class DatasetPartition:
                 if self.rare_region_mask is not None
                 else None
             ),
+            # Direct top-level aliases into ``sampling_manifest`` (already
+            # authoritative) so a reader never has to know its exact key path.
+            "partition_sampling_law": self.sampling_manifest.get("regime"),
+            "stratum_pool_counts": self.sampling_manifest.get("stratum_pool_counts"),
             "sampling": self.sampling_manifest,
         }
 
@@ -69,6 +73,7 @@ class ControlledDataset:
     train: DatasetPartition
     validation: DatasetPartition
     test_nominal: DatasetPartition
+    validation_partition_law: str = "matches_training_regime"
 
     def manifest(self) -> Dict[str, Any]:
         hashes = [
@@ -83,6 +88,10 @@ class ControlledDataset:
             "pdg_id": self.pdg_id,
             "base_seed": self.base_seed,
             "validation_no_leakage": len(set(hashes)) == 3,
+            "validation_partition_law": self.validation_partition_law,
+            "validation_partition_is_iid_target": (
+                self.validation.sampling_manifest.get("regime") == IID_TARGET
+            ),
             "partitions": {
                 "train": self.train.manifest(),
                 "validation": self.validation.manifest(),
@@ -129,20 +138,42 @@ def build_controlled_dataset(
     regime: str = IID_TARGET,
     sampling_rare_fraction: Optional[float] = None,
     target_stage: str = "transformed",
+    validation_partition_law: str = "matches_training_regime",
 ) -> ControlledDataset:
-    """Build independent train/validation/test partitions for one target arm."""
+    """Build independent train/validation/test partitions for one target arm.
 
+    ``validation_partition_law`` (default ``"matches_training_regime"``, the
+    exact pre-existing behavior) draws the validation partition under the
+    same regime/fraction as training. ``"iid_target"`` -- required for arm C
+    (``STRATIFIED_HT_FIXED_COMPOSITION``; see
+    ``SamplingSpec.resolved_validation_partition_law``) -- draws it IID from
+    the target instead, exactly like ``test_nominal``: a stratified
+    validation partition without a correction does not estimate the original
+    target risk, so best-checkpoint selection and reported validation NLL
+    would silently stop being target-risk estimates otherwise.
+    """
+
+    if validation_partition_law not in ("matches_training_regime", "iid_target"):
+        raise ValueError(
+            "validation_partition_law must be 'matches_training_regime' or "
+            "'iid_target', got {!r}".format(validation_partition_law)
+        )
     target = resolve_target(target_id, variant=variant, stage=target_stage)
     region_id = None
     if hasattr(target, "declared_regions") and target.declared_regions():
         region_id = target.declared_regions()[0]
     train_seed, val_seed, test_seed = _partition_seeds(seed)
+    if validation_partition_law == "iid_target":
+        validation_regime, validation_fraction = IID_TARGET, None
+    else:
+        validation_regime, validation_fraction = regime, sampling_rare_fraction
     dataset = ControlledDataset(
         target_id=target_id,
         target_variant=getattr(target, "target_variant", variant),
         target_config_hash=target.config_hash(),
         pdg_id=int(pdg_id),
         base_seed=int(seed),
+        validation_partition_law=validation_partition_law,
         train=_make_partition(
             target,
             partition="train",
@@ -160,8 +191,8 @@ def build_controlled_dataset(
             n_rows=n_validation,
             seed=val_seed,
             region_id=region_id,
-            regime=regime,
-            sampling_rare_fraction=sampling_rare_fraction,
+            regime=validation_regime,
+            sampling_rare_fraction=validation_fraction,
         ),
         test_nominal=_make_partition(
             target,

@@ -1,0 +1,84 @@
+{
+  "experiment_id": "rare_aware_estimator_validation_v0",
+  "description": "Bounded D5 validation of the rare-aware fixed-composition Horvitz-Thompson estimator (arm C) against IID (arm A), fixed-composition diagnostic (arm B), and legacy self-normalized (arm D). See docs/contracts/rare_aware_minibatch_estimators_v0.md. No architecture or allocation winner is selected; this is estimator validation, not a capacity study.",
+  "targets": [
+    {
+      "target_id": "D5",
+      "variant": "rare_1e-3",
+      "stage": "transformed"
+    }
+  ],
+  "pdg_ids": [13],
+  "feature_views": [
+    {"view_id": "identity_cartesian_v0"}
+  ],
+  "models": [
+    {
+      "family": "affine_coupling",
+      "name": "estimator_validation_small",
+      "params": {
+        "activation": "relu",
+        "batch_size": 128,
+        "checkpoint_interval": 1,
+        "data_augmentation": false,
+        "dropout": 0.0,
+        "early_stopping": false,
+        "grad_clip_norm": 5.0,
+        "hidden_depth": 1,
+        "hidden_width": 64,
+        "initializer_mode": "scaled_activation_aware",
+        "input_noise_std": 0.0,
+        "learning_rate": 0.001,
+        "max_epochs": 30,
+        "max_log_scale": 3.0,
+        "memorization_mode": false,
+        "mixing_mode": "alternating_only",
+        "number_of_blocks": 4,
+        "weight_decay": 0.0
+      }
+    }
+  ],
+  "seeds": [11, 22, 33],
+  "dataset": {
+    "n_train": 8192,
+    "n_validation": 4096,
+    "n_test": 4096
+  },
+  "evaluation": {
+    "ess_sample_count": 2000,
+    "c2st_sample_count": 1000,
+    "rare_sample_count": 2000
+  },
+  "resources": {
+    "device": "cpu"
+  },
+  "tracking": {
+    "mode": "local",
+    "experiment_name": "rare_aware_estimator_validation_v0"
+  },
+  "sampling_regimes": [
+    {
+      "regime": "iid_target"
+    },
+    {
+      "regime": "stratified_unweighted_diagnostic",
+      "sampling_rare_fraction": 0.5
+    },
+    {
+      "regime": "stratified_horvitz_thompson_fixed_composition",
+      "sampling_rare_fraction": 0.05,
+      "minibatch_rare_count": 6,
+      "minibatch_batch_size": 128
+    },
+    {
+      "regime": "stratified_horvitz_thompson_fixed_composition",
+      "sampling_rare_fraction": 0.5,
+      "minibatch_rare_count": 64,
+      "minibatch_batch_size": 128
+    },
+    {
+      "regime": "stratified_self_normalized_provisional",
+      "sampling_rare_fraction": 0.5
+    }
+  ]
+}

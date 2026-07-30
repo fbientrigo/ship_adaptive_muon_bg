@@ -277,6 +277,39 @@ class SampleBatch:
         return embed_physical_to_raw(self.physical, pdg_id=self.pdg_id, plane_z=plane_z)
 
 
+def _sample_component_subset(
+    components: Tuple[GaussianComponent, ...],
+    indices: np.ndarray,
+    n: int,
+    seed: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Sample ``n`` rows from a re-normalized sub-mixture of ``components``.
+
+    ``indices`` selects the sub-mixture; component weights are renormalized
+    to sum to one over the subset. Returns ``(physical, component_id)``.
+    """
+
+    rng = np.random.default_rng(int(seed))
+    weights = np.asarray([components[i].weight for i in indices], dtype=np.float64)
+    weights = weights / weights.sum()
+    if indices.size > 1:
+        labels = rng.choice(indices, size=n, p=weights)
+    else:
+        labels = np.full(n, int(indices[0]), dtype=np.int64)
+    eps = rng.standard_normal((n, N_PHYSICAL_DIMS))
+    physical = np.empty((n, N_PHYSICAL_DIMS), dtype=np.float64)
+    for index in indices:
+        mask = labels == index
+        if np.any(mask):
+            physical[mask] = (
+                components[index].mean + eps[mask] @ components[index]._cholesky.T
+            )
+    return (
+        np.ascontiguousarray(physical, dtype=np.float64),
+        np.ascontiguousarray(labels.astype(np.int64)),
+    )
+
+
 class ControlledTarget:
     """A PDG-id-conditioned exact Gaussian/Gaussian-mixture density target."""
 
@@ -347,6 +380,53 @@ class ControlledTarget:
                     self.target_id, pdg_id
                 )
             ) from exc
+
+    def components_for(self, pdg_id: int) -> Tuple[GaussianComponent, ...]:
+        """Public accessor for this target's mixture components at ``pdg_id``.
+
+        Exists so callers needing a labelled sub-mixture (e.g. rare-aware
+        stratified sampling) never reach through the private
+        ``_components_for`` / ``_cholesky`` attributes.
+        """
+
+        pdg_id = _validate_pdg_id(pdg_id)
+        return self._components_for(pdg_id)
+
+    def sample_component_subset(
+        self, n: int, *, pdg_id: int, indices: Sequence[int], seed: int
+    ) -> SampleBatch:
+        """Draw ``n`` rows from the re-normalized sub-mixture at ``indices``.
+
+        Component weights within the subset are renormalized to sum to one,
+        so this draws exactly from the target's conditional distribution
+        given membership in that subset of components (A2 in the rare-aware
+        estimator contract).
+        """
+
+        n = _validate_n(n)
+        pdg_id = _validate_pdg_id(pdg_id)
+        seed = _validate_seed(seed)
+        components = self._components_for(pdg_id)
+        unique_indices = sorted({int(i) for i in indices})
+        if not unique_indices or any(
+            i < 0 or i >= len(components) for i in unique_indices
+        ):
+            raise ControlledTargetConfigError(
+                "invalid component subset indices {} for target {} pdg_id {} "
+                "(has {} components)".format(
+                    unique_indices, self.target_id, pdg_id, len(components)
+                )
+            )
+        physical, component_id = _sample_component_subset(
+            components, np.asarray(unique_indices, dtype=np.int64), n, seed
+        )
+        return SampleBatch(
+            physical=physical,
+            component_id=component_id,
+            pdg_id=pdg_id,
+            target_id=self.target_id,
+            seed=seed,
+        )
 
     def sample(self, n: int, *, pdg_id: int, seed: int) -> SampleBatch:
         n = _validate_n(n)
@@ -741,6 +821,66 @@ class TransformedControlledTarget:
     def rare_component_id(self, *, pdg_id: int) -> int:
         pdg_id = _validate_pdg_id(pdg_id)
         return int(self._rare_component_id_by_pdg_id[pdg_id])
+
+    # -- rare-aware stratum API -----------------------------------------
+
+    def stratum_masses(self, *, pdg_id: int) -> Dict[str, float]:
+        """Exact target stratum masses ``{"main": 1 - p_rare, "rare": p_rare}``.
+
+        Requires a target with an explicitly labelled rare component (D5).
+        Masses are exact by construction (see ``_d5_base_params``), never
+        estimated.
+        """
+
+        pdg_id = _validate_pdg_id(pdg_id)
+        if self.rare_mass is None:
+            raise ControlledTargetConfigError(
+                "target {} has no labelled rare component; stratum_masses is "
+                "undefined".format(self.target_id)
+            )
+        return {"main": 1.0 - float(self.rare_mass), "rare": float(self.rare_mass)}
+
+    def sample_stratum(
+        self, n: int, *, pdg_id: int, stratum: str, seed: int
+    ) -> SampleBatch:
+        """Draw ``n`` rows from one stratum's unmodified target conditional.
+
+        ``stratum`` is ``"main"`` (the renormalized sub-mixture over every
+        non-rare component) or ``"rare"`` (the labelled rare component).
+        Rows are drawn from the base mixture and mapped through the same
+        forward transform as :meth:`sample`, so this is the exact conditional
+        distribution required by assumption A2 of the rare-aware minibatch
+        estimator contract, not an approximation.
+        """
+
+        pdg_id = _validate_pdg_id(pdg_id)
+        if self.rare_mass is None:
+            raise ControlledTargetConfigError(
+                "target {} has no labelled rare component; sample_stratum is "
+                "undefined".format(self.target_id)
+            )
+        if stratum not in ("main", "rare"):
+            raise ValueError(
+                "stratum must be 'main' or 'rare', got {!r}".format(stratum)
+            )
+        rare_id = self.rare_component_id(pdg_id=pdg_id)
+        n_components = len(self._base.components_for(pdg_id))
+        if stratum == "rare":
+            indices = [rare_id]
+        else:
+            indices = [i for i in range(n_components) if i != rare_id]
+        base_batch = self._base.sample_component_subset(
+            n, pdg_id=pdg_id, indices=indices, seed=seed
+        )
+        transformed = self._transform.forward(base_batch.physical)
+        transformed = np.ascontiguousarray(transformed, dtype=np.float64)
+        return SampleBatch(
+            physical=transformed,
+            component_id=base_batch.component_id,
+            pdg_id=pdg_id,
+            target_id=self.target_id,
+            seed=seed,
+        )
 
     def region_mask(
         self, physical: np.ndarray, *, pdg_id: int, region_id: str

@@ -254,6 +254,10 @@ class AffineCouplingFlow:
     """DensityEstimator wrapper around the affine-coupling flow module."""
 
     family = "affine_coupling"
+    # "sum_weights": legacy self-normalized/unweighted minibatch loss.
+    # "fixed_batch_size": arm-C fixed-composition Horvitz-Thompson loss
+    # (requires a batch_plan; see Nflow.torch_models.trainer.train_flow).
+    supported_loss_normalizations = ("sum_weights", "fixed_batch_size")
 
     def __init__(
         self,
@@ -338,6 +342,7 @@ class AffineCouplingFlow:
             )
         self._module: Optional[_FlowModule] = None
         self._init_seed = 0
+        self._loss_normalization = "sum_weights"
         self._build_module(seed=self._init_seed)
 
     def _build_module(self, *, seed: int = 0) -> None:
@@ -378,7 +383,21 @@ class AffineCouplingFlow:
         component_id: Optional[np.ndarray] = None,
         validation_component_id: Optional[np.ndarray] = None,
         rare_component_id: Optional[int] = None,
+        batch_plan: Optional[Any] = None,
+        loss_normalization: Optional[str] = None,
     ) -> FitResult:
+        if (
+            loss_normalization is not None
+            and loss_normalization not in self.supported_loss_normalizations
+        ):
+            raise NotImplementedError(
+                "{} supports loss_normalization in {}; got {!r}".format(
+                    self.family, self.supported_loss_normalizations, loss_normalization
+                )
+            )
+        self._loss_normalization = (
+            "fixed_batch_size" if batch_plan is not None else "sum_weights"
+        )
         # Reset weights deterministically from the run seed so identical
         # RunSpecs with the same seed produce identical checkpoints/metrics.
         self._build_module(seed=int(seed))
@@ -391,6 +410,8 @@ class AffineCouplingFlow:
             component_id=component_id,
             validation_component_id=validation_component_id,
             rare_component_id=rare_component_id,
+            batch_plan=batch_plan,
+            loss_normalization=loss_normalization,
         )
 
     def _to_tensor(self, x: np.ndarray) -> torch.Tensor:
@@ -464,7 +485,9 @@ class AffineCouplingFlow:
                 "init_seed": self._init_seed,
                 "permutations": self._module.permutations(),
                 "permutation_log_abs_det": 0.0,
-                "loss_normalization": "sum_weights",
+                "estimator_family": self.family,
+                "loss_normalization": self._loss_normalization,
+                "supported_loss_normalizations": list(self.supported_loss_normalizations),
                 "checkpoint_hash": self.checkpoint_hash(),
                 "checkpoint_hash_schema": _CHECKPOINT_HASH_SCHEMA,
             }

@@ -25,6 +25,7 @@ class GaussianMixtureEstimator:
     """Full-covariance Gaussian mixture (analytic inference from saved params)."""
 
     family = "gaussian_mixture"
+    supported_loss_normalizations = ("sum_weights",)
 
     def __init__(
         self,
@@ -66,6 +67,8 @@ class GaussianMixtureEstimator:
         component_id: Optional[np.ndarray] = None,
         validation_component_id: Optional[np.ndarray] = None,
         rare_component_id: Optional[int] = None,
+        batch_plan: Optional[Any] = None,
+        loss_normalization: Optional[str] = None,
     ) -> FitResult:
         for name, value in (
             ("sample_weight", sample_weight),
@@ -73,11 +76,18 @@ class GaussianMixtureEstimator:
             ("component_id", component_id),
             ("validation_component_id", validation_component_id),
             ("rare_component_id", rare_component_id),
+            ("batch_plan", batch_plan),
         ):
             if value is not None:
                 raise NotImplementedError(
                     "{} does not support {}; pass None".format(self.family, name)
                 )
+        if loss_normalization is not None and loss_normalization not in self.supported_loss_normalizations:
+            raise NotImplementedError(
+                "{} supports loss_normalization in {}; got {!r}".format(
+                    self.family, self.supported_loss_normalizations, loss_normalization
+                )
+            )
         start = time.perf_counter()
         x = np.asarray(x_train, dtype=np.float64)
         if x.ndim != 2 or x.shape[1] != self.dimension:

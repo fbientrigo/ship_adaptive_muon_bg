@@ -57,10 +57,29 @@ def _reject_unsupported_fit_arguments(family: str, **arguments: Any) -> None:
             )
 
 
+def _reject_unsupported_loss_normalization(
+    family: str, loss_normalization: Optional[str], supported: tuple
+) -> None:
+    """Raise unless ``loss_normalization`` is ``None`` or explicitly supported.
+
+    ``None`` selects legacy behavior. A non-``None`` value the family cannot
+    honor (e.g. arm C's ``"fixed_batch_size"`` on a NumPy baseline) must raise
+    -- it must never be silently dropped.
+    """
+
+    if loss_normalization is not None and loss_normalization not in supported:
+        raise NotImplementedError(
+            "{} supports loss_normalization in {}; got {!r}".format(
+                family, supported, loss_normalization
+            )
+        )
+
+
 class DiagonalGaussian:
     """Diagonal-covariance Gaussian with a configurable, recorded variance floor."""
 
     family = "diagonal_gaussian"
+    supported_loss_normalizations = ("sum_weights",)
 
     def __init__(self, *, dimension: int, variance_floor: float = 1e-6) -> None:
         self.dimension = int(dimension)
@@ -81,6 +100,8 @@ class DiagonalGaussian:
         component_id: Optional[np.ndarray] = None,
         validation_component_id: Optional[np.ndarray] = None,
         rare_component_id: Optional[int] = None,
+        batch_plan: Optional[Any] = None,
+        loss_normalization: Optional[str] = None,
     ) -> FitResult:
         _reject_unsupported_fit_arguments(
             self.family,
@@ -88,6 +109,10 @@ class DiagonalGaussian:
             component_id=component_id,
             validation_component_id=validation_component_id,
             rare_component_id=rare_component_id,
+            batch_plan=batch_plan,
+        )
+        _reject_unsupported_loss_normalization(
+            self.family, loss_normalization, self.supported_loss_normalizations
         )
         start = time.perf_counter()
         x = _validate_fit_array(x_train, self.dimension)
@@ -173,6 +198,7 @@ class FullGaussian:
     """Full-covariance Gaussian with configurable, recorded covariance regularization."""
 
     family = "full_gaussian"
+    supported_loss_normalizations = ("sum_weights",)
 
     def __init__(
         self, *, dimension: int, covariance_regularization: float = 1e-6
@@ -207,6 +233,8 @@ class FullGaussian:
         component_id: Optional[np.ndarray] = None,
         validation_component_id: Optional[np.ndarray] = None,
         rare_component_id: Optional[int] = None,
+        batch_plan: Optional[Any] = None,
+        loss_normalization: Optional[str] = None,
     ) -> FitResult:
         _reject_unsupported_fit_arguments(
             self.family,
@@ -214,6 +242,10 @@ class FullGaussian:
             component_id=component_id,
             validation_component_id=validation_component_id,
             rare_component_id=rare_component_id,
+            batch_plan=batch_plan,
+        )
+        _reject_unsupported_loss_normalization(
+            self.family, loss_normalization, self.supported_loss_normalizations
         )
         start = time.perf_counter()
         x = _validate_fit_array(x_train, self.dimension)

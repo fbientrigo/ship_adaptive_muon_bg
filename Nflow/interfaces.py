@@ -77,6 +77,19 @@ class DensityEstimator(Protocol):
     training data. Weights must be either honored or rejected explicitly
     (never silently ignored). Models are trained separately per PDG id; no
     charge conditioning is built in.
+
+    ``fit`` additionally accepts an optional ``batch_plan`` (a
+    ``density_lab.sampling.MinibatchPlan`` for fixed-composition
+    Horvitz-Thompson training; see Issue #17) and an optional
+    ``loss_normalization`` (``"sum_weights"`` or ``"fixed_batch_size"``).
+    ``None`` for either means exact legacy behavior: minibatches drawn by a
+    permutation over the training rows, loss normalized by the weight sum.
+    An estimator family that cannot honor a supplied ``batch_plan`` or
+    ``loss_normalization`` must raise explicitly -- it must never silently
+    ignore the plan and fall back to legacy behavior. A family declares what
+    it supports via a ``supported_loss_normalizations`` class/instance
+    attribute (a tuple of strings); the NumPy baselines declare only
+    ``("sum_weights",)``.
     """
 
     def fit(
@@ -90,8 +103,15 @@ class DensityEstimator(Protocol):
         component_id: Optional[np.ndarray] = None,
         validation_component_id: Optional[np.ndarray] = None,
         rare_component_id: Optional[int] = None,
+        batch_plan: Optional[Any] = None,
+        loss_normalization: Optional[str] = None,
     ) -> FitResult:
-        """Fit normalized rows with optional loss weights and component labels."""
+        """Fit normalized rows with optional loss weights and component labels.
+
+        ``batch_plan=None`` and ``loss_normalization=None`` (the defaults)
+        select exact legacy behavior. A non-``None`` value that the family
+        cannot honor must raise, never be silently dropped.
+        """
         ...
 
     def log_prob(self, x: np.ndarray) -> np.ndarray:

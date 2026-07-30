@@ -5,16 +5,30 @@ from __future__ import annotations
 import hashlib
 import io
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
 
 from Nflow.interfaces import FIT_STATUS_FAILED, FIT_STATUS_OK, FitResult
 
+# Absolute tolerance for the arm-C invariant sum_h m_h * w_h == batch_size
+# (Horvitz-Thompson weights built from realized integer counts sum exactly to
+# the batch size; this only ever fires on a real construction bug).
+_HT_WEIGHT_SUM_TOLERANCE = 1e-6
+
 
 class NonFiniteLossError(RuntimeError):
     """Raised when training or validation produces a non-finite value."""
+
+
+class HTInvariantError(RuntimeError):
+    """Raised when a fixed-composition batch's weight sum deviates from B.
+
+    This is the A4 fixed-denominator invariant (sum_h m_h * w_h == batch_size)
+    failing at runtime -- a technical construction failure, never silently
+    absorbed into a biased loss.
+    """
 
 
 def _validated_weight(value: Optional[np.ndarray], n: int, name: str) -> np.ndarray:
@@ -47,6 +61,64 @@ def _weighted_nll(module, tensor: torch.Tensor, weight: torch.Tensor) -> torch.T
     """
 
     return torch.sum(weight * -module.log_prob(tensor)) / torch.sum(weight)
+
+
+def _fixed_denominator_nll(
+    module, tensor: torch.Tensor, weight: torch.Tensor, denominator: float
+) -> torch.Tensor:
+    """Fixed-composition Horvitz-Thompson loss: never normalizes by sum(weight).
+
+    Parameters
+    ----------
+    module:
+        Flow module exposing ``log_prob``.
+    tensor:
+        Normalized rows for one fixed-composition minibatch.
+    weight:
+        Per-row Horvitz-Thompson correction weights ``w_h = p_h * B / m_h``.
+    denominator:
+        The fixed, known batch size ``B`` (never the random ``sum(weight)``;
+        assumption A4).
+
+    Returns
+    -------
+    torch.Tensor
+        ``sum(weight * nll) / denominator``.
+    """
+
+    return torch.sum(weight * -module.log_prob(tensor)) / denominator
+
+
+def _derived_seed(seed: int, *salts: int) -> int:
+    seq = np.random.SeedSequence([int(seed), *[int(s) for s in salts]])
+    return int(seq.generate_state(1)[0])
+
+
+def _stratum_gradient_norms(
+    module, x: torch.Tensor, weight: torch.Tensor, labels: torch.Tensor, rare_id: int
+) -> Dict[str, Optional[float]]:
+    """Diagnostic rare/main gradient norms on one batch.
+
+    Computed via separate backward passes that never call ``optimizer.step``
+    and never alter optimizer state; gradients are cleared before returning
+    so the next real training step starts clean. Never affects clipping.
+    """
+
+    norms: Dict[str, Optional[float]] = {}
+    rare_mask = labels == int(rare_id)
+    for name, mask in (("rare", rare_mask), ("main", ~rare_mask)):
+        if not bool(mask.any()):
+            norms[name] = None
+            continue
+        module.zero_grad(set_to_none=True)
+        sub_loss = torch.mean(-module.log_prob(x[mask]))
+        sub_loss.backward()
+        norm = torch.sqrt(sum(
+            torch.sum(p.grad * p.grad) for p in module.parameters() if p.grad is not None
+        ))
+        norms[name] = float(norm)
+    module.zero_grad(set_to_none=True)
+    return norms
 
 
 def _state_hash(module) -> str:
@@ -87,11 +159,25 @@ def train_flow(
     component_id: Optional[np.ndarray] = None,
     validation_component_id: Optional[np.ndarray] = None,
     rare_component_id: Optional[int] = None,
+    batch_plan: Optional[Any] = None,
+    loss_normalization: Optional[str] = None,
 ) -> FitResult:
     """Fit an affine flow with deterministic batches and weighted NLL.
 
-    Weights retain their supplied values. Every loss is normalized only by the
-    sum of weights in the rows being reported.
+    ``batch_plan=None`` (the default) is the exact legacy path: minibatches
+    are permutation slices of the training partition and the loss is
+    normalized by the sum of weights in the rows being reported
+    (``_weighted_nll``, ``loss_normalization=="sum_weights"``).
+
+    ``batch_plan`` (a ``density_lab.sampling.MinibatchPlan``) selects the
+    fixed-composition Horvitz-Thompson path (arm C, Issue #17): minibatches
+    are the plan's explicit precomputed index arrays and the loss
+    (``_fixed_denominator_nll``) is normalized by the fixed, known batch size
+    -- never by the (here deterministic, but never trusted as such)
+    ``sum(weight)``. The same precomputed plan is replayed identically every
+    epoch (only cosmetic within-batch row order varies by epoch); see the
+    rare-aware estimator contract for why this does not affect per-step
+    unbiasedness.
     """
 
     started = time.perf_counter()
@@ -106,6 +192,18 @@ def train_flow(
     train_tensor = torch.as_tensor(train, dtype=dtype, device=device)
     train_weight_tensor = torch.as_tensor(train_weight, dtype=dtype, device=device)
     train_labels_tensor = None if train_labels is None else torch.as_tensor(train_labels, device=device)
+
+    if batch_plan is not None:
+        if loss_normalization is not None and loss_normalization != batch_plan.denominator_mode:
+            raise ValueError(
+                "loss_normalization {!r} is inconsistent with batch_plan.denominator_mode "
+                "{!r}".format(loss_normalization, batch_plan.denominator_mode)
+            )
+        if train_labels_tensor is None or rare_component_id is None:
+            raise ValueError(
+                "batch_plan requires component_id and rare_component_id (per-stratum "
+                "diagnostics and the fixed-composition loss both need labelled rows)"
+            )
 
     val_tensor = val_weight_tensor = val_labels_tensor = None
     if x_validation is not None:
@@ -137,23 +235,93 @@ def train_flow(
     try:
         for epoch in range(estimator.max_epochs):
             module.train()
-            permutation = torch.randperm(n, generator=generator, device=device)
-            max_gradient_norm = 0.0
-            for start in range(0, n, batch_size):
-                idx = permutation[start:start + batch_size]
-                optimizer.zero_grad()
-                loss = _weighted_nll(module, train_tensor[idx], train_weight_tensor[idx])
-                if not torch.isfinite(loss):
-                    raise NonFiniteLossError("non-finite training loss at epoch {}".format(epoch))
-                loss.backward()
-                if estimator.grad_clip_norm is not None:
-                    norm = torch.nn.utils.clip_grad_norm_(module.parameters(), estimator.grad_clip_norm)
-                else:
-                    norm = torch.sqrt(sum(
-                        torch.sum(p.grad * p.grad) for p in module.parameters() if p.grad is not None
-                    ))
-                max_gradient_norm = max(max_gradient_norm, float(norm))
-                optimizer.step()
+            if batch_plan is None:
+                # -- legacy path: exact permutation-sliced, sum-weights loss --
+                permutation = torch.randperm(n, generator=generator, device=device)
+                max_gradient_norm = 0.0
+                for start in range(0, n, batch_size):
+                    idx = permutation[start:start + batch_size]
+                    optimizer.zero_grad()
+                    loss = _weighted_nll(module, train_tensor[idx], train_weight_tensor[idx])
+                    if not torch.isfinite(loss):
+                        raise NonFiniteLossError("non-finite training loss at epoch {}".format(epoch))
+                    loss.backward()
+                    if estimator.grad_clip_norm is not None:
+                        norm = torch.nn.utils.clip_grad_norm_(module.parameters(), estimator.grad_clip_norm)
+                    else:
+                        norm = torch.sqrt(sum(
+                            torch.sum(p.grad * p.grad) for p in module.parameters() if p.grad is not None
+                        ))
+                    max_gradient_norm = max(max_gradient_norm, float(norm))
+                    optimizer.step()
+                plan_fields: Dict[str, Any] = {}
+            else:
+                # -- arm C: explicit fixed-composition plan, fixed-B loss --
+                max_gradient_norm = 0.0
+                rare_counts: List[int] = []
+                batch_weight_sums: List[float] = []
+                ht_losses: List[float] = []
+                unweighted_losses: List[float] = []
+                last_x = last_weight = last_labels = None
+                for step in range(batch_plan.steps_per_epoch):
+                    shuffle_seed = _derived_seed(seed, epoch, step)
+                    idx_np = batch_plan.step_indices(step, shuffle_seed=shuffle_seed)
+                    weight_np = batch_plan.step_weights(step, shuffle_seed=shuffle_seed)
+                    weight_sum = float(weight_np.sum())
+                    if abs(weight_sum - batch_plan.batch_size) > _HT_WEIGHT_SUM_TOLERANCE:
+                        raise HTInvariantError(
+                            "fixed-composition weight sum {} deviates from batch_size {} "
+                            "by more than tolerance {} at epoch {} step {}".format(
+                                weight_sum, batch_plan.batch_size,
+                                _HT_WEIGHT_SUM_TOLERANCE, epoch, step,
+                            )
+                        )
+                    batch_weight_sums.append(weight_sum)
+                    idx = torch.as_tensor(idx_np, device=device, dtype=torch.long)
+                    weight_tensor = torch.as_tensor(weight_np, dtype=dtype, device=device)
+                    x_batch = train_tensor[idx]
+                    labels_batch = train_labels_tensor[idx]
+                    optimizer.zero_grad()
+                    loss = _fixed_denominator_nll(
+                        module, x_batch, weight_tensor, float(batch_plan.batch_size)
+                    )
+                    if not torch.isfinite(loss):
+                        raise NonFiniteLossError("non-finite training loss at epoch {}".format(epoch))
+                    loss.backward()
+                    if estimator.grad_clip_norm is not None:
+                        norm = torch.nn.utils.clip_grad_norm_(module.parameters(), estimator.grad_clip_norm)
+                    else:
+                        norm = torch.sqrt(sum(
+                            torch.sum(p.grad * p.grad) for p in module.parameters() if p.grad is not None
+                        ))
+                    max_gradient_norm = max(max_gradient_norm, float(norm))
+                    optimizer.step()
+                    with torch.no_grad():
+                        ht_losses.append(float(loss))
+                        unweighted_losses.append(float(torch.mean(-module.log_prob(x_batch))))
+                    rare_counts.append(int(torch.sum(labels_batch == int(rare_component_id))))
+                    last_x, last_weight, last_labels = x_batch, weight_tensor, labels_batch
+
+                # Diagnostic per-stratum gradient norms: bounded cadence (once
+                # per epoch, on the epoch's last batch), never updates
+                # parameters or optimizer state, never affects clipping.
+                stratum_norms = _stratum_gradient_norms(
+                    module, last_x, last_weight, last_labels, rare_component_id
+                )
+                plan_fields = {
+                    "minibatch_rare_count_min": min(rare_counts),
+                    "minibatch_rare_count_max": max(rare_counts),
+                    "minibatch_rare_count_mean": float(np.mean(rare_counts)),
+                    "batch_weight_sum_min": min(batch_weight_sums),
+                    "batch_weight_sum_max": max(batch_weight_sums),
+                    "steps": batch_plan.steps_per_epoch,
+                    "dropped_steps": 0,
+                    "horvitz_thompson_loss": float(np.mean(ht_losses)),
+                    "unweighted_minibatch_mean_loss": float(np.mean(unweighted_losses)),
+                    "rare_gradient_norm": stratum_norms["rare"],
+                    "main_gradient_norm": stratum_norms["main"],
+                    "gradient_norm_cadence": "per_epoch_last_step",
+                }
 
             module.eval()
             record = {"step": epoch, "epoch": epoch + 1}
@@ -163,8 +331,11 @@ def train_flow(
             ))
             record["gradient_norm"] = max_gradient_norm
             record["max_abs_log_scale"] = float(module.max_abs_log_scale(train_tensor))
-            record["weight_normalization"] = "sum_weights"
+            record["weight_normalization"] = (
+                "sum_weights" if batch_plan is None else batch_plan.denominator_mode
+            )
             record["train_weight_total"] = float(train_weight.sum())
+            record.update(plan_fields)
             if val_tensor is not None:
                 record.update(_component_metrics(
                     module, val_tensor, val_weight_tensor, val_labels_tensor,

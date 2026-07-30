@@ -619,6 +619,52 @@ def _rare_region_mass_ratio_gate(
     )
 
 
+def _estimator_evidence_scope_gate(metrics: Mapping[str, Any]) -> Dict[str, Any]:
+    """Report the rare-aware minibatch estimator arm and its permitted claim.
+
+    Inactive and report-only (like ``_rare_region_mass_ratio_gate``): it
+    classifies which claim a run's estimator evidence licenses, but it never
+    changes ``scientific_status`` -- a run's fit quality is judged by the
+    other gates exactly as before. This exists so a reader of
+    ``scientific_gates.gate_results`` sees the permitted/forbidden claim next
+    to the rest of the run's scientific evidence without having to know the
+    ``metrics.fit_claim`` / ``metrics.estimator_family`` key paths.
+    """
+
+    estimator_family = _fetch(metrics, ("estimator_family",))
+    fit_claim = _fetch(metrics, ("fit_claim",))
+    unbiasedness_status = _fetch(metrics, ("unbiasedness_status",))
+    if estimator_family is _MISSING:
+        return _gate(
+            "estimator_evidence_scope",
+            THRESHOLD_PREREGISTERED_SCIENTIFIC,
+            OUTCOME_REPORT,
+            active=False,
+            value=None,
+            threshold=None,
+            message="no estimator_family recorded; permitted claim unknown",
+        )
+    message = (
+        "estimator_family={} permits claim={!r} (unbiasedness_status={}); "
+        "reported only, never a pass/fail selector".format(
+            estimator_family, fit_claim, unbiasedness_status
+        )
+    )
+    return _gate(
+        "estimator_evidence_scope",
+        THRESHOLD_PREREGISTERED_SCIENTIFIC,
+        OUTCOME_REPORT,
+        active=False,
+        value={
+            "estimator_family": estimator_family,
+            "permitted_claim": fit_claim,
+            "unbiasedness_status": unbiasedness_status,
+        },
+        threshold=None,
+        message=message,
+    )
+
+
 def _reported_scientific_reference(
     gate_id: str, metrics: Mapping[str, Any], path: Tuple[str, ...], label: str
 ) -> Dict[str, Any]:
@@ -702,6 +748,7 @@ def evaluate_scientific_gates(
             "c2st_reference", metrics, ("c2st", "c2st_accuracy"), "C2ST accuracy"
         )
     )
+    gates.append(_estimator_evidence_scope_gate(metrics))
 
     # Aggregate by documented severity precedence.
     worst = 0

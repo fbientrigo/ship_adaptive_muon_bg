@@ -53,13 +53,32 @@ class DatasetSpec:
         return asdict(self)
 
 
+_SAMPLING_REPLACEMENT_MODES = ("without_replacement_within_epoch", "with_replacement")
+_SAMPLING_STEPS_PER_EPOCH_RULES = ("min_stratum_pass", "recycle_scarce_stratum")
+_SAMPLING_VALIDATION_PARTITION_LAWS = ("inherit", "iid_target")
+# Only "drop_last" is implemented in this stage (see
+# density_lab.sampling.plan_fixed_composition_batches); "allow_short_last" is
+# a named-but-unimplemented value so config validation rejects it explicitly
+# rather than silently mishandling a short final batch.
+_SAMPLING_INCOMPLETE_BATCH_RULES = ("drop_last",)
+
+
 @dataclass(frozen=True)
 class SamplingSpec:
     regime: str = "iid_target"
     sampling_rare_fraction: Optional[float] = None
+    # Arm-C-only (STRATIFIED_HT_FIXED_COMPOSITION) fixed-composition minibatch
+    # fields. Integer counts are the primary API (fractional allocation is not
+    # exposed here); see docs/contracts/rare_aware_minibatch_estimators_v0.md.
+    minibatch_rare_count: Optional[int] = None
+    minibatch_batch_size: Optional[int] = None
+    replacement: str = "without_replacement_within_epoch"
+    incomplete_batch_rule: str = "drop_last"
+    steps_per_epoch_rule: str = "min_stratum_pass"
+    validation_partition_law: str = "inherit"
 
     def validate(self) -> None:
-        from .sampling import SAMPLING_REGIMES
+        from .sampling import SAMPLING_REGIMES, STRATIFIED_HT_FIXED_COMPOSITION
 
         if self.regime not in SAMPLING_REGIMES:
             raise ConfigError("unknown sampling regime {!r}".format(self.regime))
@@ -67,9 +86,90 @@ class SamplingSpec:
             value = self.sampling_rare_fraction
             if value is None or not 0.0 < float(value) < 1.0:
                 raise ConfigError("stratified sampling requires 0 < sampling_rare_fraction < 1")
+        if self.replacement not in _SAMPLING_REPLACEMENT_MODES:
+            raise ConfigError(
+                "SamplingSpec.replacement must be one of {}, got {!r}".format(
+                    _SAMPLING_REPLACEMENT_MODES, self.replacement
+                )
+            )
+        if self.incomplete_batch_rule not in _SAMPLING_INCOMPLETE_BATCH_RULES:
+            raise ConfigError(
+                "SamplingSpec.incomplete_batch_rule must be one of {} in this "
+                "implementation stage, got {!r}".format(
+                    _SAMPLING_INCOMPLETE_BATCH_RULES, self.incomplete_batch_rule
+                )
+            )
+        if self.steps_per_epoch_rule not in _SAMPLING_STEPS_PER_EPOCH_RULES:
+            raise ConfigError(
+                "SamplingSpec.steps_per_epoch_rule must be one of {}, got {!r}".format(
+                    _SAMPLING_STEPS_PER_EPOCH_RULES, self.steps_per_epoch_rule
+                )
+            )
+        if self.validation_partition_law not in _SAMPLING_VALIDATION_PARTITION_LAWS:
+            raise ConfigError(
+                "SamplingSpec.validation_partition_law must be one of {}, got {!r}".format(
+                    _SAMPLING_VALIDATION_PARTITION_LAWS, self.validation_partition_law
+                )
+            )
+        if self.regime == STRATIFIED_HT_FIXED_COMPOSITION:
+            for name in ("minibatch_rare_count", "minibatch_batch_size"):
+                value = getattr(self, name)
+                if not isinstance(value, int) or isinstance(value, bool):
+                    raise ConfigError(
+                        "regime {!r} requires an integer {}".format(self.regime, name)
+                    )
+            if not (0 < self.minibatch_rare_count < self.minibatch_batch_size):
+                raise ConfigError(
+                    "regime {!r} requires 1 <= minibatch_rare_count < "
+                    "minibatch_batch_size".format(self.regime)
+                )
+        elif self.minibatch_rare_count is not None or self.minibatch_batch_size is not None:
+            raise ConfigError(
+                "minibatch_rare_count/minibatch_batch_size are only valid for "
+                "regime {!r}".format(STRATIFIED_HT_FIXED_COMPOSITION)
+            )
+
+    def resolved_validation_partition_law(self) -> str:
+        """Explicit, never-silent resolution of ``"inherit"``.
+
+        Arm C (``STRATIFIED_HT_FIXED_COMPOSITION``) always resolves to
+        ``"iid_target"``: a stratified validation partition without a
+        correction does not estimate the original target risk. Every other
+        regime resolves ``"inherit"`` to ``"matches_training_regime"`` (today's
+        legacy behavior: the validation partition uses the same regime as
+        training).
+        """
+
+        from .sampling import STRATIFIED_HT_FIXED_COMPOSITION
+
+        if self.validation_partition_law != "inherit":
+            return self.validation_partition_law
+        if self.regime == STRATIFIED_HT_FIXED_COMPOSITION:
+            return "iid_target"
+        return "matches_training_regime"
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        # Explicit default-omitting serialization (the EvaluationSpec idiom):
+        # every field added after the original two must serialize only when
+        # it differs from its default, so every existing committed config's
+        # canonical hash and derived run_id stay byte-identical.
+        payload: Dict[str, Any] = {
+            "regime": self.regime,
+            "sampling_rare_fraction": self.sampling_rare_fraction,
+        }
+        defaults = SamplingSpec(regime=self.regime, sampling_rare_fraction=self.sampling_rare_fraction)
+        for name in (
+            "minibatch_rare_count",
+            "minibatch_batch_size",
+            "replacement",
+            "incomplete_batch_rule",
+            "steps_per_epoch_rule",
+            "validation_partition_law",
+        ):
+            value = getattr(self, name)
+            if value != getattr(defaults, name):
+                payload[name] = value
+        return payload
 
 
 @dataclass(frozen=True)

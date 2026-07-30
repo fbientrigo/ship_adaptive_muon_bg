@@ -29,6 +29,54 @@ BLOCKS = {
     "C": {"activation": "silu", "mixing_mode": "fixed_random_permutation"},
 }
 
+# The estimator contract embedded in the frozen D5 memorization DOE v0
+# payload (``sampling_estimator_contract`` below) describes only the three
+# regimes that existed at DOE v0 generation time; it is a versioned, frozen
+# fact about that DOE and must never be edited in place (its canonical hash
+# is pinned by tests/test_rare_aware_estimators.py). A future v1 DOE
+# generation that plans campaigns including the fixed-composition
+# Horvitz-Thompson arm (Issue #17) should embed this v1 contract instead --
+# it is additive here only (no v0 payload, hash, or committed artifact is
+# touched by adding it). See
+# docs/contracts/rare_aware_minibatch_estimators_v0.md for the full contract.
+SAMPLING_ESTIMATOR_CONTRACT_V1 = {
+    "schema_version": "1",
+    "regimes": {
+        "iid_target": {
+            "estimator_family": "unweighted_iid_target",
+            "unbiasedness_status": "not_applicable",
+            "diagnostic_only": False,
+            "scientific_scope": "target_density",
+        },
+        "stratified_unweighted_diagnostic": {
+            "estimator_family": "unweighted_stratified_diagnostic",
+            "unbiasedness_status": "not_applicable",
+            "diagnostic_only": True,
+            "scientific_scope": "diagnostic_capacity_only",
+        },
+        "stratified_self_normalized_provisional": {
+            "estimator_family": "self_normalized_importance_weighted_minibatch",
+            "unbiasedness_status": "not_established",
+            "diagnostic_only": False,
+            "scientific_scope": "provisional_target_estimator",
+        },
+        "stratified_horvitz_thompson_fixed_composition": {
+            "estimator_family": "fixed_composition_horvitz_thompson_minibatch",
+            "unbiasedness_status": "established_under_stated_assumptions",
+            "diagnostic_only": False,
+            "scientific_scope": "unbiased_target_risk_estimator_under_stated_assumptions",
+            "unbiasedness_assumptions": [
+                "A1_exact_exhaustive_mutually_exclusive_strata",
+                "A2_unmodified_target_conditional_sampling",
+                "A3_nonempty_fixed_allocation_before_draw",
+                "A4_fixed_known_denominator_never_random_weight_sum",
+                "A5_integrability_and_gradient_interchange",
+                "A6_unit_physical_weights",
+            ],
+        },
+    },
+}
+
 
 def _snap(value: float, spec: Mapping[str, Any]):
     if spec["kind"] == "continuous":

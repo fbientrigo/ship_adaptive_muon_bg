@@ -38,13 +38,19 @@ from .gates import (
     evaluate_scientific_gates,
 )
 from .sampling import (
+    ESTIMATORS,
     IID_TARGET,
+    POOL_LAWS,
     SAMPLING_REGIMES,
+    STRATIFIED_HT_FIXED_COMPOSITION,
     STRATIFIED_SELF_NORMALIZED_PROVISIONAL,
     STRATIFIED_DIAGNOSTIC,
+    MinibatchPlan,
+    plan_fixed_composition_batches,
+    resolve_regime,
     sample_controlled,
 )
-from .doe import generate_blocked_maximin_lhs
+from .doe import SAMPLING_ESTIMATOR_CONTRACT_V1, generate_blocked_maximin_lhs
 
 __all__ = [
     "FittedFeaturePipeline",
@@ -78,7 +84,14 @@ __all__ = [
     "IID_TARGET",
     "STRATIFIED_DIAGNOSTIC",
     "STRATIFIED_SELF_NORMALIZED_PROVISIONAL",
+    "STRATIFIED_HT_FIXED_COMPOSITION",
     "SAMPLING_REGIMES",
+    "POOL_LAWS",
+    "ESTIMATORS",
+    "resolve_regime",
     "sample_controlled",
+    "MinibatchPlan",
+    "plan_fixed_composition_batches",
     "generate_blocked_maximin_lhs",
+    "SAMPLING_ESTIMATOR_CONTRACT_V1",
 ]

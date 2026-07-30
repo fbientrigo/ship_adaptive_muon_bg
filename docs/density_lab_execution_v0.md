@@ -352,3 +352,54 @@ checkpoint hashes. It does not define or claim exact duplicate memorization.
 The smoke subset is wiring evidence only. One seed cannot establish a winner,
 a capacity frontier, rare-mode fidelity, or a physics conclusion. Do not run
 the full matrix without a separately reviewed budget and comparison plan.
+
+## Rare-aware minibatch estimators (Issue #17)
+
+A fourth sampling regime,
+`stratified_horvitz_thompson_fixed_composition`, implements the
+fixed-composition unbiased estimator deferred above. Full mathematical
+contract, assumptions, and permitted/forbidden claims:
+`docs/contracts/rare_aware_minibatch_estimators_v0.md`.
+
+In one sentence: unlike the legacy `stratified_self_normalized_provisional`
+regime (which fixes composition at the *training-partition* level but still
+normalizes each minibatch by its own random weight sum), this regime
+additionally fixes composition at the *minibatch* level (an explicit
+`density_lab.sampling.MinibatchPlan`, built by
+`plan_fixed_composition_batches`) and normalizes by the fixed, known batch
+size -- never by `sum(weight)`. Under exact fixed composition the two
+formulas are numerically identical (`sum_h m_h * w_h == B`), so all of the
+legacy regime's bias comes from its minibatch composition being random, not
+from its choice of denominator.
+
+Config surface (`SamplingSpec`, additive, default-omitting serialization so
+every existing config hash/run_id is untouched): `minibatch_rare_count`,
+`minibatch_batch_size` (required integers for this regime, `1 <=
+minibatch_rare_count < minibatch_batch_size`), `replacement` (default
+`without_replacement_within_epoch`), `steps_per_epoch_rule` (default
+`min_stratum_pass`), and `validation_partition_law` (`inherit` resolves to
+`iid_target` for this regime -- a stratified validation partition without a
+correction does not estimate the original target risk).
+
+Only `affine_coupling` currently declares
+`supported_loss_normalizations = ("sum_weights", "fixed_batch_size")`; the
+NumPy baselines (`diagonal_gaussian`, `full_gaussian`, `gaussian_mixture`)
+support only `"sum_weights"` and raise an explicit `NotImplementedError`
+(a technical failure, never a scientific negative) if paired with this
+regime.
+
+Validate before running any campaign with this regime:
+
+```bash
+python scripts/validate_rare_aware_estimators.py --stage analytic
+python scripts/validate_rare_aware_estimators.py --stage d5 \
+    --artifact-root /tmp/rare_aware_d5_validation
+```
+
+`--stage analytic` is a NumPy-only, sub-minute Monte Carlo check that the
+arm-C mean gradient converges to an exact analytic quadratic-loss gradient
+(and that arms B/D show a detectable, non-vanishing bias). `--stage d5` runs
+the bounded 15-run campaign in `configs/density_lab/estimator_validation_v0.json`
+(~2 minutes CPU wall time measured), comparing all four arms on D5
+`rare_1e-3`. Neither stage declares an architecture or allocation winner;
+see the contract doc for the exact claims each arm licenses.

@@ -29,6 +29,23 @@ class D5BaseStageTarget:
     def rare_component_id(self, *, pdg_id):
         return self._source.rare_component_id(pdg_id=pdg_id)
 
+    def stratum_masses(self, *, pdg_id):
+        return self._source.stratum_masses(pdg_id=pdg_id)
+
+    def sample_stratum(self, n, *, pdg_id, stratum, seed):
+        """Draw n rows from one stratum's conditional, before the D4 transform."""
+
+        if stratum not in ("main", "rare"):
+            raise ValueError("stratum must be 'main' or 'rare', got {!r}".format(stratum))
+        rare_id = self._source.rare_component_id(pdg_id=pdg_id)
+        n_components = len(self._base.components_for(pdg_id))
+        indices = [rare_id] if stratum == "rare" else [
+            i for i in range(n_components) if i != rare_id
+        ]
+        return self._base.sample_component_subset(
+            n, pdg_id=pdg_id, indices=indices, seed=seed
+        )
+
     def declared_regions(self):
         return self._source.declared_regions()
 
