@@ -462,3 +462,68 @@ scientific claim about either configuration.
   `theoretical_concentration` in a run's `metrics.json` -- or precompute
   `theoretical_concentration_diagnostics` on the table before training --
   before committing to a long full-scale training run on a strong tilt.
+
+## D9 -- controlled utility-tilt arena (v1)
+
+`ARENA_VARIANT_IDS` (`ship_muon_bg.density_lab.utility_tilt`) names a bounded
+9-variant arena: the explicit un-tilted `NOMINAL_PHYSICAL` arm (draws directly
+from Table A's `pi_nominal`, `sampling_regime = direct_nominal_physical`) plus
+exactly eight existing tilt configurations from the 20-config grid above --
+mild `delta=0.9`, `alpha in {4, 8, 16}` and strong `delta=0.1`, `alpha=1`, for
+both U-A and U-P. No new alpha/delta value is introduced. `NOMINAL_PHYSICAL`
+shares every step with the tilted arms (dataset build, preprocessing, model
+init, optimizer, draw budget, evaluation path) -- only which probability
+vector feeds the Walker-alias sampler differs
+(`run_direct_sampling_training`'s `is_nominal` branch).
+
+`scripts/run_utility_tilt_campaign.py --train-tilt-ids <ids> --arena-report`
+validates the requested id list (`ut.validate_arena_variant_ids`: rejects
+duplicates/unknown ids) and, after training, writes a deterministic
+`arena_summary.{json,csv,md}` under
+`<artifact-root>/<experiment-id>/arena_report/pdg_<id>/` -- one row per
+variant, sorted by the declared `ARENA_VARIANT_IDS` order, never a composite
+score, never a declared winner (`ut.build_arena_report`). Pass `--arena`
+as shorthand for `--train-tilt-ids` set to the full 9-variant grid.
+
+**Pilot status:** `ARENA_V1_PILOT_VERIFIED` on the repository fixture only.
+All 9 variants were trained on the full fixture's PDG 13 track (no
+`--max-rows` cap, ~11,873 pooled train rows after the three-way split), one
+model-init seed (`--seed 11`), one deterministic sampler seed per variant
+(`--sampler-seed 7` through `15`), 10 CPU epochs each, ~93 seconds total wall
+time for all 9 (well under the 30-minute bounded-pilot budget). Every run
+reported finite train/validation NLL, `sample_weight_applied_to_loss: false`,
+and a `source_table_hash` identical across all 9 variants (Table A is built
+once per PDG track, independent of tilt). Stronger tilts visibly increased
+both the theoretical/empirical `B_toy` occupancy and row reuse (max reuse
+count grew from 39 at `NOMINAL_PHYSICAL`/mild tilts to 235 at the strongest
+tilt, `UA_d0p1_a01`) -- qualitative pipeline behavior, not a claim that any
+tilt is scientifically preferable. **No full local (13.8M-row) dataset run,
+FairShip run, or multiseed campaign was executed under this arena.**
+
+Exact commands:
+
+```bash
+# One variant per invocation (a distinct --sampler-seed per variant; run_id
+# does not depend on sampler_seed, so a later combined invocation with any
+# --sampler-seed value correctly resumes/skips every already-completed run):
+python scripts/run_utility_tilt_campaign.py \
+    --dataset data/samples/muonsFullMC_afterMS_sample.npz \
+    --pdg-ids 13 --seed 11 --sampler-seed <7..15> \
+    --model-config configs/density_lab/utility_tilt/d9_fixture_smoke_v0.json \
+    --train-tilt-ids <one of ut.ARENA_VARIANT_IDS> \
+    --epochs 10 --device cpu --experiment-id d9_arena_stageC_pilot_v1
+
+# Build the aggregate report once every variant has completed:
+python scripts/run_utility_tilt_campaign.py \
+    --dataset data/samples/muonsFullMC_afterMS_sample.npz \
+    --pdg-ids 13 --seed 11 --sampler-seed 7 \
+    --model-config configs/density_lab/utility_tilt/d9_fixture_smoke_v0.json \
+    --arena --arena-report --epochs 10 --device cpu \
+    --experiment-id d9_arena_stageC_pilot_v1
+```
+
+A future full-local three-seed campaign (outside this task's scope) would
+repeat the above with `--dataset "$SHIP_MUON_BG_LOCAL_DATA/muonsFullMC_afterMS.pkl"`,
+no `--max-rows` cap, `--seed` in `{11, 22, 33}`, and per-variant sampler seeds
+derived the same deterministic way, sized only after a runtime probe on the
+full dataset (see "Disk and memory checks" above).

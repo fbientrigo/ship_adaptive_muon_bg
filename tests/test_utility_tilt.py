@@ -12,6 +12,7 @@ optional torch stack, see ``tests/conftest.py``).
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import subprocess
 import sys
@@ -502,3 +503,316 @@ def test_exactly_four_cloud_configurations_train_with_identical_config_except_sa
         # The only intentional difference: which tilt the run's target variant names.
     variants = {c["target"]["variant"] for c in configs}
     assert variants == set(ut.FOUR_CLOUD_TILT_IDS)
+
+
+# --- 6. NOMINAL_PHYSICAL direct-sampling arm (D9 arena, task section 5A) -------
+
+
+def test_nominal_physical_variant_id_is_not_a_tilt_config():
+    assert ut.NOMINAL_PHYSICAL_VARIANT_ID == "NOMINAL_PHYSICAL"
+    assert ut.NOMINAL_PHYSICAL_VARIANT_ID not in ut.TILT_CONFIG_BY_ID
+
+
+def test_alias_sampler_on_pi_nominal_directly_reproduces_pi_nominal():
+    """Requirement 1: nominal direct sampling reproduces ``pi_nominal`` (math-only, no torch)."""
+
+    dataset = _real_dataset(max_rows=800)
+    table_a = ut.build_nominal_table(dataset)
+    validation = ut.validate_alias_sampler_against_table(table_a.pi_nominal, n_draws=200000, seed=3)
+    assert validation["within_tolerance"]
+    sampler = ut.AliasSampler.from_probabilities(table_a.pi_nominal, source_hash=table_a.table_hash())
+    drawn = sampler.draw(200000, seed=3)
+    empirical_freq = np.bincount(drawn, minlength=table_a.pi_nominal.shape[0]) / 200000.0
+    assert np.max(np.abs(empirical_freq - table_a.pi_nominal)) < 0.01
+
+
+@pytest.mark.flow
+def test_run_direct_sampling_training_nominal_variant_samples_pi_nominal_and_records_regime(tmp_path):
+    from ship_muon_bg.density_lab.artifacts import ArtifactStore
+    from ship_muon_bg.density_lab.config import FeatureViewSpec
+    from ship_muon_bg.density_lab.empirical import EmpiricalDatasetSpec
+
+    store = ArtifactStore("d9_test_nominal", root=tmp_path)
+    dataset_spec = EmpiricalDatasetSpec(dataset_path=FIXTURE, pdg_id=13, seed=11, max_rows=150)
+    record = ut.run_direct_sampling_training(
+        dataset_spec, store, experiment_id="d9_test_nominal", tilt_id=ut.NOMINAL_PHYSICAL_VARIANT_ID,
+        feature_view=FeatureViewSpec("identity_cartesian_v0"), model=_smoke_model_spec(),
+        sampler_seed=7, device="cpu",
+    )
+    assert record["status"] == "completed"
+    metrics = record["metrics"]
+    # Requirement 1 (training path): not a disguised utility configuration --
+    # the un-tilted law is sampled directly, so nominal and "theoretical
+    # target" B_toy prevalence must agree exactly (r=1 for every row).
+    assert metrics["sampling_regime"] == "direct_nominal_physical"
+    assert metrics["tilt_config"]["tilt_id"] == ut.NOMINAL_PHYSICAL_VARIANT_ID
+    assert metrics["tilt_config"]["mode"] is None
+    assert metrics["nominal_b_toy_prevalence"] == pytest.approx(metrics["theoretical_target_b_toy_prevalence"])
+    assert metrics["estimator_family"] == "unweighted_iid_direct_sample_from_pi_nominal"
+    # Requirement 2: nominal training never applies sample weights to the loss.
+    assert metrics["sample_weight_applied_to_loss"] is False
+    assert np.isfinite(metrics["nominal_validation_nll_weighted_by_w"])
+    assert np.isfinite(metrics["tilted_validation_nll_weighted_by_w_times_r"])
+    # An identity tilt (r=1 everywhere): nominal and "tilted" validation NLL
+    # (weighted by w*1) must be numerically identical.
+    assert metrics["tilted_validation_nll_weighted_by_w_times_r"] == pytest.approx(
+        metrics["nominal_validation_nll_weighted_by_w"]
+    )
+
+
+@pytest.mark.flow
+def test_nominal_and_tilted_arms_share_preprocessing_and_budget_contracts(tmp_path):
+    """Requirement 3: NOMINAL_PHYSICAL and a tilted arm use identical preprocessing/budget."""
+
+    from ship_muon_bg.density_lab.artifacts import ArtifactStore
+    from ship_muon_bg.density_lab.config import FeatureViewSpec
+    from ship_muon_bg.density_lab.empirical import EmpiricalDatasetSpec
+
+    store = ArtifactStore("d9_test_nominal_vs_tilt", root=tmp_path)
+    dataset_spec = EmpiricalDatasetSpec(dataset_path=FIXTURE, pdg_id=13, seed=11, max_rows=150)
+    model = _smoke_model_spec()
+    fv = FeatureViewSpec("identity_cartesian_v0")
+
+    nominal_record = ut.run_direct_sampling_training(
+        dataset_spec, store, experiment_id="d9_test_nominal_vs_tilt", tilt_id=ut.NOMINAL_PHYSICAL_VARIANT_ID,
+        feature_view=fv, model=model, sampler_seed=7, device="cpu",
+    )
+    tilt_record = ut.run_direct_sampling_training(
+        dataset_spec, store, experiment_id="d9_test_nominal_vs_tilt", tilt_id="UA_d0p9_a04",
+        feature_view=fv, model=model, sampler_seed=7, device="cpu",
+    )
+    assert nominal_record["status"] == "completed"
+    assert tilt_record["status"] == "completed"
+
+    import json as _json
+
+    nominal_dir = tmp_path / "d9_test_nominal_vs_tilt" / nominal_record["run_id"]
+    tilt_dir = tmp_path / "d9_test_nominal_vs_tilt" / tilt_record["run_id"]
+    nominal_config = _json.loads((nominal_dir / "experiment_config.json").read_text())
+    tilt_config = _json.loads((tilt_dir / "experiment_config.json").read_text())
+    nominal_pipeline = _json.loads((nominal_dir / "feature_pipeline_manifest.json").read_text())
+    tilt_pipeline = _json.loads((tilt_dir / "feature_pipeline_manifest.json").read_text())
+
+    for key in ("model", "feature_view", "device", "seed", "pdg_id", "dataset"):
+        assert nominal_config[key] == tilt_config[key], key
+    assert nominal_pipeline == tilt_pipeline
+    assert nominal_record["metrics"]["draw_budget"] == tilt_record["metrics"]["draw_budget"]
+    assert nominal_record["metrics"]["init_seed"] == tilt_record["metrics"]["init_seed"]
+    assert nominal_record["metrics"]["generated_sample_count"] == tilt_record["metrics"]["generated_sample_count"]
+    # The only intentional difference: which sampling table fed the alias draw.
+    assert nominal_record["metrics"]["sampler_table_hash"] != tilt_record["metrics"]["sampler_table_hash"]
+
+
+# --- 7. D9 arena: variant validation and aggregate report (task section 5B/5D) -
+
+
+def test_arena_variant_ids_match_declared_nine_variant_grid():
+    assert len(ut.ARENA_VARIANT_IDS) == 9
+    assert ut.ARENA_VARIANT_IDS[0] == ut.NOMINAL_PHYSICAL_VARIANT_ID
+    expected_tilts = {
+        "UA_d0p9_a04", "UA_d0p9_a08", "UA_d0p9_a16", "UA_d0p1_a01",
+        "UP_d0p9_a04", "UP_d0p9_a08", "UP_d0p9_a16", "UP_d0p1_a01",
+    }
+    assert set(ut.ARENA_VARIANT_IDS[1:]) == expected_tilts
+    assert len(set(ut.ARENA_VARIANT_IDS)) == 9  # no duplicates
+
+
+def test_validate_arena_variant_ids_accepts_the_declared_grid():
+    assert ut.validate_arena_variant_ids(ut.ARENA_VARIANT_IDS) == tuple(ut.ARENA_VARIANT_IDS)
+
+
+def test_validate_arena_variant_ids_rejects_duplicates():
+    with pytest.raises(ut.UtilityTiltError):
+        ut.validate_arena_variant_ids([ut.NOMINAL_PHYSICAL_VARIANT_ID, ut.NOMINAL_PHYSICAL_VARIANT_ID])
+    with pytest.raises(ut.UtilityTiltError):
+        ut.validate_arena_variant_ids(["UA_d0p9_a04", "UA_d0p9_a04"])
+
+
+def test_validate_arena_variant_ids_rejects_unknown_ids():
+    with pytest.raises(ut.UtilityTiltError):
+        ut.validate_arena_variant_ids(["NOT_A_REAL_VARIANT"])
+    with pytest.raises(ut.UtilityTiltError):
+        ut.validate_arena_variant_ids([])
+
+
+def _fake_arena_record(variant_id, *, run_id=None, status="completed", extra_metrics=None):
+    metrics = {
+        "sampling_regime": "direct_nominal_physical" if variant_id == ut.NOMINAL_PHYSICAL_VARIANT_ID else "direct_utility_tilt",
+        "init_seed": 11, "sampler_seed": 7, "draw_budget": 1000,
+        "source_table_hash": "abc123", "sampler_table_hash": "def456" + variant_id,
+        "nominal_b_toy_prevalence": 0.02, "theoretical_target_b_toy_prevalence": 0.05,
+        "theoretical_concentration": {"n_eff": 900.0, "top_10_mass": 0.01, "top_100_mass": 0.05, "expected_n_unique": 950.0},
+        "empirical_draw_diagnostics": {
+            "unique_rows_drawn": 800, "unique_rows_fraction": 0.8, "max_reuse_count": 3,
+            "empirical_b_toy_fraction": 0.049,
+        },
+        "final_train_nll": 1.23, "finite_train_loss": True,
+        "nominal_validation_nll_weighted_by_w": 1.30, "tilted_validation_nll_weighted_by_w_times_r": 1.10,
+        "generated_sample_count": 500, "generated_b_toy_occupancy": 0.04,
+        "generated_log_prob_finite_fraction": 1.0,
+        "generated_distribution_summary": {"available": True, "finite_fraction": 1.0},
+        "sample_weight_applied_to_loss": False,
+        "estimator_family": "unweighted_iid_direct_sample_from_pi_tilt",
+        "scientific_scope": "pipeline_verification_only_not_model_ranking",
+    }
+    if extra_metrics:
+        metrics.update(extra_metrics)
+    return {
+        "run_id": run_id or "run_{}".format(variant_id), "status": status,
+        "technical_status": status, "tilt_id": variant_id,
+        "metrics": metrics if status == "completed" else None,
+    }
+
+
+def test_arena_report_ordering_and_schema_are_deterministic(tmp_path):
+    """Requirement 5: aggregate report ordering/schema are deterministic regardless of input order."""
+
+    from ship_muon_bg.density_lab.artifacts import ArtifactStore
+
+    store = ArtifactStore("d9_test_arena_report", root=tmp_path)
+    variant_ids = list(ut.ARENA_VARIANT_IDS)
+    records_in_order = [_fake_arena_record(v) for v in variant_ids]
+    records_shuffled = [records_in_order[i] for i in (3, 0, 7, 1, 8, 2, 5, 4, 6)]
+
+    report_a = ut.build_arena_report(
+        records_in_order, store, out_dir=tmp_path / "report_a", pdg_id=13,
+        experiment_id="d9_test_arena_report", epochs=2,
+    )
+    report_b = ut.build_arena_report(
+        records_shuffled, store, out_dir=tmp_path / "report_b", pdg_id=13,
+        experiment_id="d9_test_arena_report", epochs=2,
+    )
+    order_a = [row["variant_id"] for row in report_a["rows"]]
+    order_b = [row["variant_id"] for row in report_b["rows"]]
+    assert order_a == order_b == variant_ids  # declared ARENA_VARIANT_IDS order, not input order
+    assert report_a["rows"] == report_b["rows"]
+
+    for out_dir in ("report_a", "report_b"):
+        assert (tmp_path / out_dir / "arena_summary.json").exists()
+        assert (tmp_path / out_dir / "arena_summary.csv").exists()
+        assert (tmp_path / out_dir / "arena_summary.md").exists()
+
+    # No composite score, no declared winner (task section 5D).
+    assert report_a["no_composite_score"] is True
+    assert report_a["no_winner_declared"] is True
+    for row in report_a["rows"]:
+        assert "composite_score" not in row
+        assert "rank" not in row
+        assert "winner" not in row
+
+
+def test_arena_report_keeps_technical_failure_separate_from_scientific_interpretation(tmp_path):
+    """Requirement 6: a technical failure stays visible and distinct from scientific status."""
+
+    from ship_muon_bg.density_lab.artifacts import ArtifactStore
+
+    store = ArtifactStore("d9_test_arena_failure", root=tmp_path)
+    ok_record = _fake_arena_record(ut.NOMINAL_PHYSICAL_VARIANT_ID)
+    failed_record = {
+        "run_id": "run_failed", "status": "failed", "technical_status": "failed",
+        "tilt_id": "UA_d0p9_a04", "reason": "fit_failed",
+    }
+    report = ut.build_arena_report(
+        [ok_record, failed_record], store, out_dir=tmp_path / "report", pdg_id=13,
+        experiment_id="d9_test_arena_failure", epochs=2,
+    )
+    rows_by_variant = {row["variant_id"]: row for row in report["rows"]}
+    assert rows_by_variant[ut.NOMINAL_PHYSICAL_VARIANT_ID]["technical_status"] == "completed"
+    assert rows_by_variant["UA_d0p9_a04"]["technical_status"] == "failed"
+    # A technical failure is never relabeled a scientific negative: it still
+    # carries the same "not_applicable" scientific-status placeholder as a
+    # completed diagnostic-only run, never something implying a bad result.
+    assert rows_by_variant["UA_d0p9_a04"]["scientific_status"] == "not_applicable"
+    assert rows_by_variant[ut.NOMINAL_PHYSICAL_VARIANT_ID]["scientific_status"] == "not_applicable"
+    # The failed row is still present (never silently dropped) with no
+    # fabricated metrics.
+    assert rows_by_variant["UA_d0p9_a04"]["final_train_nll"] is None
+
+
+# --- 8. Train-only thresholds are unaffected by validation/test contents ------
+
+
+def test_thresholds_unchanged_by_mutated_validation_or_test_contents():
+    """Requirement 7: train-only thresholds stay fixed regardless of validation/test contents."""
+
+    dataset = _real_dataset(max_rows=600)
+    table_before = ut.build_nominal_table(dataset)
+
+    mutated_validation = dataclasses.replace(
+        dataset.validation, raw=np.full_like(dataset.validation.raw, 999.0)
+    )
+    mutated_test = dataclasses.replace(
+        dataset.test, raw=np.full_like(dataset.test.raw, -999.0)
+    )
+    mutated_dataset = dataclasses.replace(dataset, validation=mutated_validation, test=mutated_test)
+
+    table_after = ut.build_nominal_table(mutated_dataset)
+    assert table_after.thresholds.t_pT == pytest.approx(table_before.thresholds.t_pT)
+    assert table_after.thresholds.t_R == pytest.approx(table_before.thresholds.t_R)
+    assert table_after.table_hash() == table_before.table_hash()
+
+
+# --- 9. Compact generated-distribution diagnostics (finite-or-unavailable) ----
+
+
+def test_compact_distribution_summary_finite_data_reports_available_and_finite_stats():
+    rng = np.random.default_rng(21)
+    physical = rng.normal(size=(500, 5))
+    result = ut.compact_distribution_summary(physical)
+    assert result["available"] is True
+    assert result["finite_fraction"] == pytest.approx(1.0)
+    for name in ut.PHYSICAL_FEATURE_NAMES:
+        stats = result["per_feature"][name]
+        assert all(np.isfinite(v) for v in stats.values())
+    corr = np.array(result["correlation_matrix"])
+    assert np.isfinite(corr).all()
+    assert corr.shape == (5, 5)
+
+
+def test_compact_distribution_summary_all_non_finite_rows_marked_unavailable_not_fabricated():
+    """Requirement 8: generated diagnostics are finite or explicitly marked unavailable, never fabricated."""
+
+    physical = np.full((10, 5), np.nan)
+    result = ut.compact_distribution_summary(physical)
+    assert result["available"] is False
+    assert result["finite_fraction"] == pytest.approx(0.0)
+    assert "per_feature" not in result
+    assert "correlation_matrix" not in result
+
+
+def test_compact_distribution_summary_weighted_matches_hand_computation():
+    physical = np.array([[1.0, 0, 0, 0, 0], [3.0, 0, 0, 0, 0], [5.0, 0, 0, 0, 0]])
+    weights = np.array([1.0, 1.0, 2.0])  # weighted mean of px: (1+3+10)/4 = 3.5
+    result = ut.compact_distribution_summary(physical, weights=weights)
+    assert result["available"] is True
+    assert result["weighted"] is True
+    assert result["per_feature"]["px"]["mean"] == pytest.approx(3.5)
+
+
+@pytest.mark.flow
+def test_generated_distribution_diagnostics_present_and_well_typed(tmp_path):
+    """Requirement 8 (training path): generated diagnostics never crash and are typed consistently."""
+
+    from ship_muon_bg.density_lab.artifacts import ArtifactStore
+    from ship_muon_bg.density_lab.config import FeatureViewSpec
+    from ship_muon_bg.density_lab.empirical import EmpiricalDatasetSpec
+
+    store = ArtifactStore("d9_test_generated_diag", root=tmp_path)
+    dataset_spec = EmpiricalDatasetSpec(dataset_path=FIXTURE, pdg_id=13, seed=11, max_rows=150)
+    record = ut.run_direct_sampling_training(
+        dataset_spec, store, experiment_id="d9_test_generated_diag", tilt_id="UA_d0p9_a04",
+        feature_view=FeatureViewSpec("identity_cartesian_v0"), model=_smoke_model_spec(),
+        sampler_seed=7, device="cpu",
+    )
+    assert record["status"] == "completed"
+    metrics = record["metrics"]
+    summary = metrics["generated_distribution_summary"]
+    assert isinstance(summary["available"], bool)
+    if summary["available"]:
+        assert set(summary["per_feature"]) == set(ut.PHYSICAL_FEATURE_NAMES)
+    occupancy = metrics["generated_b_toy_occupancy"]
+    assert occupancy is None or (isinstance(occupancy, float) and 0.0 <= occupancy <= 1.0)
+    finite_frac = metrics["generated_log_prob_finite_fraction"]
+    assert finite_frac is None or (isinstance(finite_frac, float) and 0.0 <= finite_frac <= 1.0)
+    target_summary = metrics["declared_target_distribution_summary"]
+    assert isinstance(target_summary["available"], bool)

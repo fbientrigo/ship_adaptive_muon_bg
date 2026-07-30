@@ -37,6 +37,7 @@ ESS threshold and no automatic rejection criterion.
 
 from __future__ import annotations
 
+import csv
 import dataclasses
 import hashlib
 import json
@@ -64,10 +65,20 @@ from .feature_pipeline import FittedFeaturePipeline
 SCHEMA_VERSION = "0"
 DIMENSION = 5
 UTILITY_TILT_TARGET_ID = "D9_utility_tilt"
+PHYSICAL_FEATURE_NAMES: Tuple[str, ...] = ("px", "py", "pz", "x", "y")
+DISTRIBUTION_SUMMARY_QUANTILES: Tuple[float, ...] = (0.01, 0.05, 0.5, 0.95, 0.99)
 
 UTILITY_MODES: Tuple[str, ...] = ("UA", "UP")
 TILT_DELTAS: Tuple[float, ...] = (0.1, 0.9)
 TILT_ALPHAS: Tuple[float, ...] = (1, 2, 4, 8, 16)
+
+# The explicit un-tilted arm (task section 5A): sampling from Table A's
+# pi_nominal directly, never a disguised utility configuration. Reserved and
+# never a member of TILT_CONFIG_BY_ID / ALL_TILT_CONFIGS -- callers branch on
+# this sentinel explicitly rather than looking up a fabricated TiltConfig.
+NOMINAL_PHYSICAL_VARIANT_ID = "NOMINAL_PHYSICAL"
+NOMINAL_SAMPLING_REGIME = "direct_nominal_physical"
+TILT_SAMPLING_REGIME = "direct_utility_tilt"
 
 PT_QUANTILE = 0.95
 RXY_QUANTILE = 0.05
@@ -286,6 +297,45 @@ FOUR_CLOUD_TILT_IDS: Tuple[str, ...] = tuple(
 for _tid in FOUR_CLOUD_TILT_IDS:
     assert _tid in TILT_CONFIG_BY_ID, "cloud tilt id {} missing from the 20-config grid".format(_tid)
 
+# The bounded D9 utility-tilt arena (task section 5B): NOMINAL_PHYSICAL plus
+# exactly eight tilt configurations -- mild delta=0.9 alpha in {4, 8, 16} and
+# strong delta=0.1 alpha=1, for both U-A and U-P. No new alpha/delta value is
+# introduced beyond the existing 20-config grid.
+ARENA_TILT_MODES_DELTAS_ALPHAS: Tuple[Tuple[str, float, float], ...] = (
+    ("UA", 0.9, 4), ("UA", 0.9, 8), ("UA", 0.9, 16), ("UA", 0.1, 1),
+    ("UP", 0.9, 4), ("UP", 0.9, 8), ("UP", 0.9, 16), ("UP", 0.1, 1),
+)
+ARENA_TILT_IDS: Tuple[str, ...] = tuple(
+    make_tilt_id(mode, delta, alpha) for mode, delta, alpha in ARENA_TILT_MODES_DELTAS_ALPHAS
+)
+for _tid in ARENA_TILT_IDS:
+    assert _tid in TILT_CONFIG_BY_ID, "arena tilt id {} missing from the 20-config grid".format(_tid)
+ARENA_VARIANT_IDS: Tuple[str, ...] = (NOMINAL_PHYSICAL_VARIANT_ID,) + ARENA_TILT_IDS
+
+
+def validate_arena_variant_ids(variant_ids: Sequence[str]) -> Tuple[str, ...]:
+    """Reject an empty, duplicated, or unknown arena variant list.
+
+    A variant is either :data:`NOMINAL_PHYSICAL_VARIANT_ID` or a key of
+    :data:`TILT_CONFIG_BY_ID`; nothing else is a valid arena arm.
+    """
+
+    variant_ids = list(variant_ids)
+    if not variant_ids:
+        raise UtilityTiltError("arena variant_ids must be non-empty")
+    seen: Dict[str, int] = {}
+    for vid in variant_ids:
+        seen[vid] = seen.get(vid, 0) + 1
+    duplicates = sorted(vid for vid, count in seen.items() if count > 1)
+    if duplicates:
+        raise UtilityTiltError("arena variant_ids contains duplicates: {}".format(duplicates))
+    unknown = sorted(
+        vid for vid in variant_ids if vid != NOMINAL_PHYSICAL_VARIANT_ID and vid not in TILT_CONFIG_BY_ID
+    )
+    if unknown:
+        raise UtilityTiltError("arena variant_ids contains unknown variant(s): {}".format(unknown))
+    return tuple(variant_ids)
+
 
 # --- pi_nominal / pi_tilt -----------------------------------------------------
 
@@ -423,14 +473,105 @@ def empirical_draw_diagnostics(drawn_indices: np.ndarray, *, b_toy: Optional[np.
 
     drawn_indices = np.asarray(drawn_indices, dtype=np.int64)
     unique, counts = np.unique(drawn_indices, return_counts=True)
+    total_draws = int(drawn_indices.shape[0])
     result: Dict[str, Any] = {
-        "total_draws": int(drawn_indices.shape[0]),
+        "total_draws": total_draws,
         "unique_rows_drawn": int(unique.shape[0]),
+        "unique_rows_fraction": (float(unique.shape[0]) / total_draws) if total_draws else None,
         "max_reuse_count": int(counts.max()) if counts.size else 0,
     }
     if b_toy is not None:
         b_toy = np.asarray(b_toy, dtype=np.float64)
         result["empirical_b_toy_fraction"] = float(np.mean(b_toy[drawn_indices])) if drawn_indices.size else None
+    return result
+
+
+# --- compact distribution diagnostics (descriptive only) ---------------------
+
+
+def _weighted_mean_std(values: np.ndarray, weights: np.ndarray) -> Tuple[float, float]:
+    mean = float(np.average(values, weights=weights))
+    variance = float(np.average((values - mean) ** 2, weights=weights))
+    return mean, float(np.sqrt(max(variance, 0.0)))
+
+
+def _weighted_correlation_matrix(physical: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    """Weighted Pearson correlation over ``physical`` columns, weights need not sum to 1."""
+
+    weights = np.asarray(weights, dtype=np.float64)
+    total = float(weights.sum())
+    mean = np.average(physical, axis=0, weights=weights)
+    centered = physical - mean
+    cov = (centered * weights[:, None]).T @ centered / total
+    std = np.sqrt(np.diag(cov))
+    denom = np.outer(std, std)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        corr = np.where(denom > 0.0, cov / denom, np.nan)
+    return corr
+
+
+def compact_distribution_summary(
+    physical: np.ndarray,
+    *,
+    weights: Optional[np.ndarray] = None,
+    feature_names: Sequence[str] = PHYSICAL_FEATURE_NAMES,
+    quantile_levels: Sequence[float] = DISTRIBUTION_SUMMARY_QUANTILES,
+) -> Dict[str, Any]:
+    """Mean/std/quantiles per feature plus a Pearson correlation matrix.
+
+    Descriptive only -- no pass/fail threshold. ``weights`` (optional) makes
+    this the *declared empirical target* summary (weighted by ``pi``); no
+    ``weights`` makes this a plain *generated-sample* summary. Non-finite rows
+    are dropped before computing anything and reported via
+    ``finite_fraction``; if zero rows remain, ``available`` is ``False`` and
+    no statistic is fabricated.
+    """
+
+    physical = np.asarray(physical, dtype=np.float64)
+    n_total = int(physical.shape[0])
+    finite_mask = np.isfinite(physical).all(axis=1) if n_total else np.zeros(0, dtype=bool)
+    n_finite = int(finite_mask.sum())
+    result: Dict[str, Any] = {
+        "n_rows": n_total,
+        "n_finite_rows": n_finite,
+        "finite_fraction": (float(n_finite) / n_total) if n_total else None,
+        "available": n_finite > 0,
+    }
+    if n_finite == 0:
+        return result
+
+    physical_f = physical[finite_mask]
+    w = None if weights is None else np.asarray(weights, dtype=np.float64)[finite_mask]
+    if w is not None and float(w.sum()) <= 0.0:
+        result["available"] = False
+        result["reason"] = "non_positive_weight_sum_after_finite_filter"
+        return result
+
+    per_feature: Dict[str, Any] = {}
+    for i, name in enumerate(feature_names):
+        column = physical_f[:, i]
+        if w is not None:
+            mean, std = _weighted_mean_std(column, w)
+            quantiles = {
+                "q{:02d}".format(int(round(q * 100))): weighted_quantile(column, w, q)
+                for q in quantile_levels
+            }
+        else:
+            mean, std = float(np.mean(column)), float(np.std(column))
+            quantiles = {
+                "q{:02d}".format(int(round(q * 100))): float(np.quantile(column, q))
+                for q in quantile_levels
+            }
+        per_feature[name] = {"mean": mean, "std": std, **quantiles}
+    result["per_feature"] = per_feature
+
+    if w is not None:
+        corr = _weighted_correlation_matrix(physical_f, w)
+    else:
+        corr = np.corrcoef(physical_f, rowvar=False)
+    result["correlation_matrix"] = corr.tolist()
+    result["correlation_feature_order"] = list(feature_names)
+    result["weighted"] = w is not None
     return result
 
 
@@ -778,10 +919,16 @@ def run_direct_sampling_training(
     device: str = "cpu",
     force: bool = False,
 ) -> Dict[str, Any]:
-    """Build one PDG track's D9 dataset, draw training rows directly from ``pi_tilt``, train, evaluate.
+    """Build one PDG track's D9 dataset, draw training rows directly, train, evaluate.
 
-    Mirrors ``empirical.run_empirical_single``'s resume/skip and technical
-    status contract. The training loss receives no second ``w``/``r``/``w*r``
+    ``tilt_id`` is either :data:`NOMINAL_PHYSICAL_VARIANT_ID` (draw from
+    ``pi_nominal``, the untilted physical law) or a key of
+    :data:`TILT_CONFIG_BY_ID` (draw from ``pi_tilt``); both branches share
+    every other step (dataset build, preprocessing, model init, optimizer,
+    draw budget, evaluation path) so the nominal and tilted arms can never
+    diverge except in which sampling table feeds the alias sampler. Mirrors
+    ``empirical.run_empirical_single``'s resume/skip and technical status
+    contract. The training loss receives no second ``w``/``r``/``w*r``
     factor: ``estimator.fit`` is called with ``sample_weight=None`` on the
     *resampled* array, which is the established unweighted-IID legacy path
     (arm A) applied to rows already drawn from the intended target law.
@@ -789,9 +936,14 @@ def run_direct_sampling_training(
 
     from Nflow.registry import create_density_estimator
 
-    if tilt_id not in TILT_CONFIG_BY_ID:
-        raise UtilityTiltError("unknown tilt_id {!r}".format(tilt_id))
-    tilt_config = TILT_CONFIG_BY_ID[tilt_id]
+    is_nominal = tilt_id == NOMINAL_PHYSICAL_VARIANT_ID
+    if not is_nominal and tilt_id not in TILT_CONFIG_BY_ID:
+        raise UtilityTiltError(
+            "unknown tilt_id {!r}; expected {!r} or a key of TILT_CONFIG_BY_ID".format(
+                tilt_id, NOMINAL_PHYSICAL_VARIANT_ID
+            )
+        )
+    tilt_config = None if is_nominal else TILT_CONFIG_BY_ID[tilt_id]
     evaluation = evaluation or EvaluationSpec()
     model.validate()
 
@@ -820,7 +972,7 @@ def run_direct_sampling_training(
     started_at = utc_timestamp()
     try:
         table_a = build_nominal_table(dataset)
-        pi = tilt_pi_vector(table_a, tilt_config)
+        pi = table_a.pi_nominal if is_nominal else tilt_pi_vector(table_a, tilt_config)
         alias_sampler = AliasSampler.from_probabilities(pi, source_hash=table_a.table_hash())
 
         draw_budget = int(n_draws) if n_draws is not None else int(dataset.train.n_rows)
@@ -849,19 +1001,42 @@ def run_direct_sampling_training(
         val_physical = dataset.validation.physical
         val_weights = np.ascontiguousarray(dataset.validation.raw[:, _W_COLUMN], dtype=np.float64)
         val_b_toy = compute_b_toy(val_physical, table_a.thresholds)
-        val_r = tilt_config.r_utility_for_b_toy(val_b_toy)
+        val_r = np.ones_like(val_b_toy) if is_nominal else tilt_config.r_utility_for_b_toy(val_b_toy)
         normalized_lp_val = np.asarray(estimator.log_prob(normalized_val), dtype=np.float64)
         physical_log_q_val = pipeline.normalized_to_physical_log_prob(normalized_lp_val, dataset.validation.raw)
 
         theoretical_diag = theoretical_concentration_diagnostics(pi, draw_budget=draw_budget)
         empirical_diag = empirical_draw_diagnostics(drawn_indices, b_toy=table_a.B_toy)
-        theoretical_prevalence = theoretical_tilted_prevalence(
-            nominal_prevalence(table_a.B_toy, table_a.w_mc), tilt_config.r_positive(), tilt_config.r_negative(),
+        p0_b_toy = nominal_prevalence(table_a.B_toy, table_a.w_mc)
+        theoretical_prevalence = (
+            p0_b_toy if is_nominal
+            else theoretical_tilted_prevalence(p0_b_toy, tilt_config.r_positive(), tilt_config.r_negative())
         )
+
+        # Generated-distribution diagnostics: draw the same evaluation-sample
+        # budget from the trained model for every variant, descriptive only
+        # (no pass/fail threshold; see compact_distribution_summary).
+        generated_sample_count = int(max(evaluation.ess_sample_count, evaluation.c2st_sample_count))
+        generated_sample_seed = _derived_seed(run_spec.seed, 101)
+        normalized_generated = estimator.sample(generated_sample_count, seed=generated_sample_seed)
+        physical_generated = pipeline.inverse_to_physical(normalized_generated)
+        generated_log_prob = np.asarray(estimator.log_prob(normalized_generated), dtype=np.float64)
+        generated_finite_mask = np.isfinite(physical_generated).all(axis=1)
+        physical_generated_finite = physical_generated[generated_finite_mask]
+        generated_b_toy_occupancy = (
+            float(np.mean(compute_b_toy(physical_generated_finite, table_a.thresholds)))
+            if physical_generated_finite.shape[0] else None
+        )
+        generated_distribution_summary = compact_distribution_summary(physical_generated)
+        declared_target_distribution_summary = compact_distribution_summary(dataset.train.physical, weights=pi)
 
         metrics: Dict[str, Any] = {
             "tilt_id": tilt_id,
-            "tilt_config": tilt_config.to_dict(),
+            "variant_id": tilt_id,
+            "tilt_config": (
+                {"tilt_id": NOMINAL_PHYSICAL_VARIANT_ID, "mode": None, "delta": None, "alpha": None}
+                if is_nominal else tilt_config.to_dict()
+            ),
             "sampler_table_hash": alias_sampler.table_hash(),
             "source_table_hash": table_a.table_hash(),
             "init_seed": run_spec.seed,
@@ -869,16 +1044,29 @@ def run_direct_sampling_training(
             "draw_budget": draw_budget,
             "theoretical_concentration": theoretical_diag,
             "empirical_draw_diagnostics": empirical_diag,
+            "nominal_b_toy_prevalence": p0_b_toy,
+            "theoretical_target_b_toy_prevalence": theoretical_prevalence,
             "theoretical_tilted_b_toy_prevalence": theoretical_prevalence,
             "sample_weight_applied_to_loss": False,
-            "sampling_regime": "direct_utility_tilt",
+            "sampling_regime": NOMINAL_SAMPLING_REGIME if is_nominal else TILT_SAMPLING_REGIME,
             "nominal_validation_nll_weighted_by_w": _weighted_nll_from_log_prob(physical_log_q_val, val_weights),
             "tilted_validation_nll_weighted_by_w_times_r": _weighted_nll_from_log_prob(physical_log_q_val, val_weights * val_r),
             "fit_wall_time_seconds": fit_result.wall_time_seconds,
             "training_final": fit_result.train_history[-1] if fit_result.train_history else {},
-            "estimator_family": "unweighted_iid_direct_sample_from_pi_tilt",
+            "estimator_family": (
+                "unweighted_iid_direct_sample_from_pi_nominal" if is_nominal
+                else "unweighted_iid_direct_sample_from_pi_tilt"
+            ),
             "scientific_scope": "pipeline_verification_only_not_model_ranking",
             "diagnostic_only": True,
+            "generated_sample_count": generated_sample_count,
+            "generated_sample_seed": generated_sample_seed,
+            "generated_b_toy_occupancy": generated_b_toy_occupancy,
+            "generated_log_prob_finite_fraction": (
+                float(np.mean(np.isfinite(generated_log_prob))) if generated_log_prob.size else None
+            ),
+            "generated_distribution_summary": generated_distribution_summary,
+            "declared_target_distribution_summary": declared_target_distribution_summary,
             "ended_at": utc_timestamp(),
         }
         final_record = metrics["training_final"] if isinstance(metrics["training_final"], dict) else {}
@@ -1007,3 +1195,219 @@ def validate_alias_sampler_against_table(pi: np.ndarray, *, n_draws: int, seed: 
         "within_tolerance": abs(target_top_mass - empirical_top_mass) <= atol,
         "sampler_table_hash": sampler.table_hash(),
     }
+
+
+# --- D9 arena aggregate report (task section 5D) -----------------------------
+
+ARENA_SCIENTIFIC_SCOPE = (
+    "This arena compares physical-nominal versus moderately utility-tilted "
+    "direct-sampling distributions on a bounded fixture pilot. It does not "
+    "declare an optimal tilt, does not claim FairShip background enrichment, "
+    "does not estimate a final background rate, does not treat B_toy as a "
+    "physical endpoint, and does not treat U-A/U-P as calibrated "
+    "probabilities. No composite score is computed and no variant is ranked "
+    "a winner; FairShip/GEANT4 remains the final physical oracle."
+)
+
+
+def _maybe_json(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _load_run_artifacts(store: ArtifactStore, run_id: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Best-effort read of a run's persisted ``run_status.json`` / ``metrics.json`` by ``run_id``.
+
+    Used only as a fallback when a caller's in-memory record (e.g. a
+    ``skipped_completed`` result from :func:`run_direct_sampling_training`)
+    does not itself carry a ``metrics`` payload.
+    """
+
+    if not run_id:
+        return None, None
+    run_dir = store.experiment_dir / run_id
+    return _maybe_json(run_dir / "run_status.json"), _maybe_json(run_dir / "metrics.json")
+
+
+def _arena_row_from_record(record: Dict[str, Any], store: ArtifactStore, *, pdg_id: int, epochs: Optional[int]) -> Dict[str, Any]:
+    """Flatten one variant's training record (plus, if needed, its on-disk artifacts) into one report row."""
+
+    variant_id = record.get("tilt_id") or record.get("variant_id")
+    run_id = record.get("run_id")
+    metrics = record.get("metrics")
+    status_payload = None
+    if metrics is None:
+        status_payload, metrics = _load_run_artifacts(store, run_id)
+    technical_status = (
+        record.get("technical_status") or record.get("status")
+        or (status_payload or {}).get("technical_status") or "unknown"
+    )
+    metrics = metrics or {}
+    theoretical_concentration = metrics.get("theoretical_concentration") or {}
+    empirical_draw = metrics.get("empirical_draw_diagnostics") or {}
+    generated_summary = metrics.get("generated_distribution_summary") or {}
+
+    return {
+        "variant_id": variant_id,
+        "run_id": run_id,
+        "pdg_id": int(pdg_id),
+        "epochs": epochs,
+        "technical_status": technical_status,
+        "scientific_status": "not_applicable",
+        "decision_scope": "diagnostic_pipeline_verification_only",
+        "sampling_regime": metrics.get("sampling_regime"),
+        "init_seed": metrics.get("init_seed"),
+        "sampler_seed": metrics.get("sampler_seed"),
+        "draw_budget": metrics.get("draw_budget"),
+        "source_table_hash": metrics.get("source_table_hash"),
+        "sampler_table_hash": metrics.get("sampler_table_hash"),
+        "nominal_b_toy_prevalence": metrics.get("nominal_b_toy_prevalence"),
+        "theoretical_target_b_toy_prevalence": metrics.get("theoretical_target_b_toy_prevalence"),
+        "n_eff": theoretical_concentration.get("n_eff"),
+        "top_10_mass": theoretical_concentration.get("top_10_mass"),
+        "top_100_mass": theoretical_concentration.get("top_100_mass"),
+        "expected_n_unique": theoretical_concentration.get("expected_n_unique"),
+        "empirical_unique_rows_drawn": empirical_draw.get("unique_rows_drawn"),
+        "empirical_unique_rows_fraction": empirical_draw.get("unique_rows_fraction"),
+        "empirical_max_reuse_count": empirical_draw.get("max_reuse_count"),
+        "empirical_sampled_b_toy_fraction": empirical_draw.get("empirical_b_toy_fraction"),
+        "final_train_nll": metrics.get("final_train_nll"),
+        "finite_train_loss": metrics.get("finite_train_loss"),
+        "nominal_validation_nll_weighted_by_w": metrics.get("nominal_validation_nll_weighted_by_w"),
+        "tilted_validation_nll_weighted_by_w_times_r": metrics.get("tilted_validation_nll_weighted_by_w_times_r"),
+        "generated_sample_count": metrics.get("generated_sample_count"),
+        "generated_b_toy_occupancy": metrics.get("generated_b_toy_occupancy"),
+        "generated_log_prob_finite_fraction": metrics.get("generated_log_prob_finite_fraction"),
+        "generated_distribution_available": generated_summary.get("available"),
+        "generated_distribution_finite_fraction": generated_summary.get("finite_fraction"),
+        "sample_weight_applied_to_loss": metrics.get("sample_weight_applied_to_loss"),
+        "estimator_family": metrics.get("estimator_family"),
+        "scientific_scope": metrics.get("scientific_scope"),
+    }
+
+
+_ARENA_ROW_SORT_INDEX: Dict[str, int] = {vid: i for i, vid in enumerate(ARENA_VARIANT_IDS)}
+
+
+def _arena_row_sort_key(row: Dict[str, Any]) -> Tuple[int, str]:
+    variant_id = row.get("variant_id") or ""
+    return (_ARENA_ROW_SORT_INDEX.get(variant_id, len(_ARENA_ROW_SORT_INDEX)), variant_id)
+
+
+ARENA_REPORT_COLUMNS: Tuple[str, ...] = (
+    "variant_id", "run_id", "pdg_id", "epochs", "technical_status", "scientific_status",
+    "decision_scope", "sampling_regime", "init_seed", "sampler_seed", "draw_budget",
+    "source_table_hash", "sampler_table_hash", "nominal_b_toy_prevalence",
+    "theoretical_target_b_toy_prevalence", "n_eff", "top_10_mass", "top_100_mass",
+    "expected_n_unique", "empirical_unique_rows_drawn", "empirical_unique_rows_fraction",
+    "empirical_max_reuse_count", "empirical_sampled_b_toy_fraction", "final_train_nll",
+    "finite_train_loss", "nominal_validation_nll_weighted_by_w",
+    "tilted_validation_nll_weighted_by_w_times_r", "generated_sample_count",
+    "generated_b_toy_occupancy", "generated_log_prob_finite_fraction",
+    "generated_distribution_available", "generated_distribution_finite_fraction",
+    "sample_weight_applied_to_loss", "estimator_family", "scientific_scope",
+)
+
+
+def build_arena_report(
+    records: Sequence[Dict[str, Any]],
+    store: ArtifactStore,
+    *,
+    out_dir: Path,
+    pdg_id: int,
+    experiment_id: str,
+    epochs: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Build the deterministic D9 arena summary (JSON authoritative, CSV, Markdown).
+
+    One row per variant (never a composite score, never a declared winner),
+    sorted deterministically by :data:`ARENA_VARIANT_IDS` order (any variant
+    id outside that list, e.g. from a future extension, sorts after it,
+    alphabetically). ``records`` are the dicts returned by
+    :func:`run_direct_sampling_training` -- a ``skipped_completed`` record
+    (no in-memory ``metrics``) is transparently backfilled from the run's
+    persisted ``metrics.json`` via ``store``.
+    """
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = [
+        _arena_row_from_record(record, store, pdg_id=pdg_id, epochs=epochs) for record in records
+    ]
+    rows.sort(key=_arena_row_sort_key)
+
+    generated_variant_ids = tuple(r["variant_id"] for r in rows)
+    payload: Dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment_id": experiment_id,
+        "pdg_id": int(pdg_id),
+        "arena_variant_ids_declared": list(ARENA_VARIANT_IDS),
+        "arena_variant_ids_present": list(generated_variant_ids),
+        "epochs": epochs,
+        "scientific_scope": ARENA_SCIENTIFIC_SCOPE,
+        "no_composite_score": True,
+        "no_winner_declared": True,
+        "rows": rows,
+    }
+    (out_dir / "arena_summary.json").write_text(json.dumps(payload, indent=2, sort_keys=True, default=str))
+
+    with (out_dir / "arena_summary.csv").open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(ARENA_REPORT_COLUMNS), extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({c: row.get(c) for c in ARENA_REPORT_COLUMNS})
+
+    lines = [
+        "# D9 Utility-Tilt Arena — Summary (v1)",
+        "",
+        "**Scientific scope.** {}".format(ARENA_SCIENTIFIC_SCOPE),
+        "",
+        "No composite score is computed; no variant is ranked or declared a winner. "
+        "Rows are sorted deterministically by the declared arena variant order.",
+        "",
+        "| variant | technical | draw budget | nominal p(B_toy) | target p(B_toy) | "
+        "empirical B_toy frac | unique rows frac | max reuse | final train NLL | "
+        "nominal val NLL(w) | tilted val NLL(w*r) | generated B_toy occ |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        lines.append(
+            "| {variant_id} | {technical_status} | {draw_budget} | {p0} | {ptarget} | "
+            "{ebtoy} | {ufrac} | {reuse} | {trainnll} | {nomnll} | {tiltnll} | {genbtoy} |".format(
+                variant_id=row["variant_id"],
+                technical_status=row["technical_status"],
+                draw_budget=_fmt_arena(row["draw_budget"]),
+                p0=_fmt_arena(row["nominal_b_toy_prevalence"]),
+                ptarget=_fmt_arena(row["theoretical_target_b_toy_prevalence"]),
+                ebtoy=_fmt_arena(row["empirical_sampled_b_toy_fraction"]),
+                ufrac=_fmt_arena(row["empirical_unique_rows_fraction"]),
+                reuse=_fmt_arena(row["empirical_max_reuse_count"]),
+                trainnll=_fmt_arena(row["final_train_nll"]),
+                nomnll=_fmt_arena(row["nominal_validation_nll_weighted_by_w"]),
+                tiltnll=_fmt_arena(row["tilted_validation_nll_weighted_by_w_times_r"]),
+                genbtoy=_fmt_arena(row["generated_b_toy_occupancy"]),
+            )
+        )
+    lines.append("")
+    lines.append(
+        "Diagnostics only: ESS/N_eff, top-k mass, uniqueness, and reuse never gate a "
+        "run's technical or scientific status (task section 3)."
+    )
+    (out_dir / "arena_summary.md").write_text("\n".join(lines) + "\n")
+
+    return payload
+
+
+def _fmt_arena(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)):
+        return "{:.4g}".format(value)
+    return str(value)
