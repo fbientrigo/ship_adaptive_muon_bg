@@ -60,4 +60,5 @@ markers = [
     "lab: tests that require the optional scikit-learn/matplotlib stack (.[lab])",
     "tracking: tests that require the optional mlflow stack (.[tracking])",
     "slow: slower tests (small training runs); not performance benchmarks",
+    "reference_golden: exact state_dict byte identity in a frozen reference environment",
 ]

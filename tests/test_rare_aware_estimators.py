@@ -13,6 +13,7 @@ Section order mirrors the implementation plan:
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -69,7 +70,35 @@ _GOLDEN_ARM_A_STATE_DICT_HASH = "afcaa5215fc4c24113ae42a91ef473d2847eaac7e044edb
 _GOLDEN_ARM_A_BEST_STEP = 2
 _GOLDEN_ARM_A_N_HISTORY = 3
 _GOLDEN_ARM_A_FEATURE_SPACE_TRAIN_NLL = 1015.8333740234375
+_GOLDEN_ARM_A_FEATURE_SPACE_VALIDATION_NLL = 978.6005859375
 _GOLDEN_ARM_A_WEIGHT_NORMALIZATION = "sum_weights"
+_GOLDEN_ARM_A_STATE_DICT_SHAPES = {
+    "layers.0.mask": (5,),
+    "layers.0.net.0.weight": (16, 5),
+    "layers.0.net.0.bias": (16,),
+    "layers.0.net.2.weight": (16, 16),
+    "layers.0.net.2.bias": (16,),
+    "layers.0.net.4.weight": (10, 16),
+    "layers.0.net.4.bias": (10,),
+    "layers.1.mask": (5,),
+    "layers.1.net.0.weight": (16, 5),
+    "layers.1.net.0.bias": (16,),
+    "layers.1.net.2.weight": (16, 16),
+    "layers.1.net.2.bias": (16,),
+    "layers.1.net.4.weight": (10, 16),
+    "layers.1.net.4.bias": (10,),
+}
+_GOLDEN_ARM_A_PARAMETER_COUNT = 1076
+_GOLDEN_ARM_A_PROBE = np.asarray(
+    [[0.0, 0.0, 0.0, 0.0, 0.0],
+     [0.25, -0.5, 1.0, -1.5, 2.0],
+     [-1.0, 0.5, -0.25, 0.75, -0.8]],
+    dtype=np.float32,
+)
+_GOLDEN_ARM_A_PROBE_LOG_PROB = np.asarray(
+    [-4.720993995666504, -8.852683067321777, -5.9291276931762695],
+    dtype=np.float64,
+)
 
 
 @pytest.mark.parametrize(
@@ -138,7 +167,7 @@ def test_density_lab_import_stays_numpy_only():
     assert "ok" in result.stdout
 
 
-def test_golden_arm_a_training_history_and_state_dict_hash_unchanged():
+def _run_golden_arm_a():
     torch = pytest.importorskip("torch")
     from ship_muon_bg.density_lab.datasets import build_controlled_dataset
     from ship_muon_bg.density_lab.sampling import IID_TARGET
@@ -161,13 +190,63 @@ def test_golden_arm_a_training_history_and_state_dict_hash_unchanged():
         validation_component_id=dataset.validation.component_id,
         rare_component_id=None,
     )
+    return flow, result
+
+
+def test_golden_arm_a_portable_functional_regression():
+    torch = pytest.importorskip("torch")
+    flow_a, result_a = _run_golden_arm_a()
+    flow_b, result_b = _run_golden_arm_a()
+
+    assert result_a.status == "ok"
+    assert result_a.best_step == _GOLDEN_ARM_A_BEST_STEP
+    assert len(result_a.train_history) == _GOLDEN_ARM_A_N_HISTORY
+    final = result_a.train_history[-1]
+    assert final["weight_normalization"] == _GOLDEN_ARM_A_WEIGHT_NORMALIZATION
+    assert final["feature_space_train_nll"] == pytest.approx(
+        _GOLDEN_ARM_A_FEATURE_SPACE_TRAIN_NLL, rel=1e-7, abs=1e-5
+    )
+    assert final["feature_space_validation_nll"] == pytest.approx(
+        _GOLDEN_ARM_A_FEATURE_SPACE_VALIDATION_NLL, rel=1e-7, abs=1e-5
+    )
+
+    state = flow_a._module.state_dict()
+    assert list(state) == list(_GOLDEN_ARM_A_STATE_DICT_SHAPES)
+    assert {name: tuple(value.shape) for name, value in state.items()} == _GOLDEN_ARM_A_STATE_DICT_SHAPES
+    assert flow_a.parameter_count() == _GOLDEN_ARM_A_PARAMETER_COUNT
+    assert all(bool(torch.isfinite(value).all()) for value in state.values())
+
+    assert result_b.status == result_a.status
+    assert result_b.best_step == result_a.best_step
+    assert result_b.train_history[-1]["state_dict_hash"] == final["state_dict_hash"]
+    np.testing.assert_allclose(
+        flow_a.log_prob(_GOLDEN_ARM_A_PROBE),
+        _GOLDEN_ARM_A_PROBE_LOG_PROB,
+        rtol=1e-6,
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        flow_a.log_prob(_GOLDEN_ARM_A_PROBE),
+        flow_b.log_prob(_GOLDEN_ARM_A_PROBE),
+        rtol=1e-7,
+        atol=1e-7,
+    )
+
+
+@pytest.mark.reference_golden
+def test_golden_arm_a_reference_state_dict_hash():
+    if os.environ.get("SHIP_RUN_REFERENCE_GOLDEN") != "1":
+        pytest.skip(
+            "exact model-byte identity requires the frozen reference environment; "
+            "set SHIP_RUN_REFERENCE_GOLDEN=1 to run this check"
+        )
+    _torch = pytest.importorskip("torch")
+    _flow, result = _run_golden_arm_a()
     assert result.status == "ok"
     assert result.best_step == _GOLDEN_ARM_A_BEST_STEP
     assert len(result.train_history) == _GOLDEN_ARM_A_N_HISTORY
     final = result.train_history[-1]
     assert final["state_dict_hash"] == _GOLDEN_ARM_A_STATE_DICT_HASH
-    assert final["weight_normalization"] == _GOLDEN_ARM_A_WEIGHT_NORMALIZATION
-    assert final["feature_space_train_nll"] == pytest.approx(_GOLDEN_ARM_A_FEATURE_SPACE_TRAIN_NLL)
 
 
 # --- Section 2: planner unit tests ------------------------------------------
