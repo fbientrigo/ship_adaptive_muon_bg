@@ -598,6 +598,8 @@ def _write_artifacts(
                 **dict(generated_row, **row)
             )
         )
-    (output_dir / "report.md").write_text(
-        "\n".join(lines) + "\n", encoding="utf-8"
+    markdown = "\n".join(lines) + "\n"
+    (output_dir / "report.md").write_text(markdown, encoding="utf-8")
+    (output_dir / "conditional_fixture_summary.md").write_text(
+        markdown, encoding="utf-8"
     )

@@ -142,6 +142,7 @@ def test_fixture_smoke_writes_deterministic_contract_artifacts(tmp_path):
         "symmetry_audit.json",
         "conditional_fixture_summary.json",
         "conditional_fixture_summary.csv",
+        "conditional_fixture_summary.md",
         "report.md",
     ):
         assert (tmp_path / name).is_file()
