@@ -18,6 +18,12 @@ from Nflow.interfaces import FIT_STATUS_FAILED, FIT_STATUS_OK, FitResult
 _HT_WEIGHT_SUM_TOLERANCE = 1e-6
 
 
+def _log_prob(module, tensor: torch.Tensor, condition: Optional[torch.Tensor] = None):
+    """Preserve one-argument compatibility for legacy test doubles/models."""
+
+    return module.log_prob(tensor) if condition is None else module.log_prob(tensor, condition)
+
+
 class NonFiniteLossError(RuntimeError):
     """Raised when training or validation produces a non-finite value."""
 
@@ -65,7 +71,7 @@ def _weighted_nll(
         ``sum(weight * nll) / sum(weight)``.
     """
 
-    return torch.sum(weight * -module.log_prob(tensor, condition)) / torch.sum(weight)
+    return torch.sum(weight * -_log_prob(module, tensor, condition)) / torch.sum(weight)
 
 
 def _fixed_denominator_nll(
@@ -95,7 +101,7 @@ def _fixed_denominator_nll(
         ``sum(weight * nll) / denominator``.
     """
 
-    return torch.sum(weight * -module.log_prob(tensor, condition)) / denominator
+    return torch.sum(weight * -_log_prob(module, tensor, condition)) / denominator
 
 
 def _derived_seed(seed: int, *salts: int) -> int:
@@ -126,7 +132,7 @@ def _stratum_gradient_norms(
             continue
         module.zero_grad(set_to_none=True)
         sub_condition = None if condition is None else condition[mask]
-        sub_loss = torch.mean(-module.log_prob(x[mask], sub_condition))
+        sub_loss = torch.mean(-_log_prob(module, x[mask], sub_condition))
         sub_loss.backward()
         norm = torch.sqrt(sum(
             torch.sum(p.grad * p.grad) for p in module.parameters() if p.grad is not None
@@ -146,7 +152,7 @@ def _component_metrics(
     module, x, weight, labels, rare_id, prefix, condition=None
 ):
     with torch.no_grad():
-        row_nll = -module.log_prob(x, condition)
+        row_nll = -_log_prob(module, x, condition)
     value = float(torch.sum(weight * row_nll) / torch.sum(weight))
     feature_prefix = "feature_space_" + prefix
     out = {feature_prefix + "_nll": value, prefix + "_nll": value}
@@ -345,7 +351,7 @@ def train_flow(
                         unweighted_losses.append(
                             float(
                                 torch.mean(
-                                    -module.log_prob(x_batch, condition_batch)
+                                    -_log_prob(module, x_batch, condition_batch)
                                 )
                             )
                         )
