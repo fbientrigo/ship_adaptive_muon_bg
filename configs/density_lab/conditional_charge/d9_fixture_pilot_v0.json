@@ -1,0 +1,34 @@
+{
+  "schema_version": "0",
+  "experiment_id": "d9_conditional_charge_nf_fixture_pilot_v0",
+  "description": "Ten-epoch two-charge conditional affine-coupling fixture pilot.",
+  "fixture_only": true,
+  "dataset_path": "data/samples/muonsFullMC_afterMS_sample.npz",
+  "pdg_ids": [13, -13],
+  "seed": 11,
+  "max_rows_per_charge": 40000,
+  "train_rows_per_charge": 4096,
+  "validation_fraction": 0.2,
+  "test_fraction": 0.2,
+  "sample_count_per_charge": 2048,
+  "feature_view": {"view_id": "identity_cartesian_v0"},
+  "model": {
+    "family": "affine_coupling",
+    "device": "cpu",
+    "conditional": true,
+    "condition_name": "charge_sign",
+    "condition_values": [-1, 1],
+    "params": {
+      "condition_dim": 1,
+      "number_of_blocks": 4,
+      "hidden_width": 32,
+      "hidden_depth": 2,
+      "max_epochs": 10,
+      "batch_size": 256,
+      "patience": 3,
+      "early_stopping": true,
+      "dtype": "float32"
+    }
+  },
+  "symmetry_audit": {"transform": "none", "sample_count": 1024}
+}

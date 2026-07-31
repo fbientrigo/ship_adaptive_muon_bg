@@ -75,8 +75,8 @@ class DensityEstimator(Protocol):
     Implementations may use torch/sklearn internally, but ``log_prob`` and
     ``sample`` take/return plain float64 arrays and ``fit`` accepts NumPy
     training data. Weights must be either honored or rejected explicitly
-    (never silently ignored). Models are trained separately per PDG id; no
-    charge conditioning is built in.
+    (never silently ignored). Optional external conditions are passed as a
+    separate array and are never part of the transformed x Jacobian.
 
     ``fit`` additionally accepts an optional ``batch_plan`` (a
     ``density_lab.sampling.MinibatchPlan`` for fixed-composition
@@ -105,6 +105,8 @@ class DensityEstimator(Protocol):
         rare_component_id: Optional[int] = None,
         batch_plan: Optional[Any] = None,
         loss_normalization: Optional[str] = None,
+        condition: Optional[np.ndarray] = None,
+        validation_condition: Optional[np.ndarray] = None,
     ) -> FitResult:
         """Fit normalized rows with optional loss weights and component labels.
 
@@ -114,11 +116,15 @@ class DensityEstimator(Protocol):
         """
         ...
 
-    def log_prob(self, x: np.ndarray) -> np.ndarray:
+    def log_prob(
+        self, x: np.ndarray, condition: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         """Per-row log-density under the model, shape ``(n,)``."""
         ...
 
-    def sample(self, n: int, *, seed: int) -> np.ndarray:
+    def sample(
+        self, n: int, *, seed: int, condition: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         """Draw ``n`` rows deterministically for a given ``seed``."""
         ...
 

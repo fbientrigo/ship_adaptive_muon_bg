@@ -63,6 +63,14 @@ from .empirical import (
     run_empirical_campaign_from_spec,
     run_empirical_single,
 )
+from .conditional_charge import (
+    CONDITIONAL_CHARGE_SCHEMA_VERSION,
+    ConditionalChargeError,
+    build_balanced_draw_pool,
+    charge_condition,
+    run_fixture_pilot,
+    run_symmetry_audit,
+)
 from . import utility_tilt
 from .utility_tilt import (
     ALL_TILT_CONFIGS,
@@ -150,6 +158,12 @@ __all__ = [
     "run_empirical_campaign",
     "run_empirical_campaign_from_spec",
     "run_empirical_single",
+    "CONDITIONAL_CHARGE_SCHEMA_VERSION",
+    "ConditionalChargeError",
+    "build_balanced_draw_pool",
+    "charge_condition",
+    "run_fixture_pilot",
+    "run_symmetry_audit",
     "utility_tilt",
     "ALL_TILT_CONFIGS",
     "FOUR_CLOUD_TILT_IDS",

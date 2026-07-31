@@ -13,8 +13,9 @@ Not adapted from ``Nflow/legacy`` -- a clean, small implementation:
 - deterministic seeded sampling;
 - checkpoint = ``state_dict`` + JSON-safe config, with a recorded hash.
 
-Trained separately per PDG id (no charge conditioning). The public data
-boundary is NumPy float64 arrays.
+Optional external conditioning is concatenated only to the coupling
+conditioner input. ``condition_dim=0`` remains the exact unconditional path
+and keeps the existing NumPy API and checkpoint shapes unchanged.
 """
 
 from __future__ import annotations
@@ -71,7 +72,12 @@ def _resolve_device(device: str) -> torch.device:
 
 
 def _build_mlp(
-    dim: int, width: int, depth: int, activation: str, initializer_mode: str
+    input_dim: int,
+    output_dim: int,
+    width: int,
+    depth: int,
+    activation: str,
+    initializer_mode: str,
 ) -> nn.Sequential:
     if activation not in _ACTIVATIONS:
         raise ValueError(
@@ -86,10 +92,10 @@ def _build_mlp(
             )
         )
     act = _ACTIVATIONS[activation]
-    layers: list = [nn.Linear(dim, width), act()]
+    layers: list = [nn.Linear(input_dim, width), act()]
     for _ in range(depth):
         layers += [nn.Linear(width, width), act()]
-    layers += [nn.Linear(width, 2 * dim)]
+    layers += [nn.Linear(width, 2 * output_dim)]
     network = nn.Sequential(*layers)
     if initializer_mode == "scaled_activation_aware":
         for layer in network[:-1]:
@@ -118,35 +124,48 @@ class _CouplingLayer(nn.Module):
         activation: str,
         max_log_scale: float,
         initializer_mode: str,
+        condition_dim: int,
     ) -> None:
         super().__init__()
         self.register_buffer("mask", mask)
-        self.net = _build_mlp(dim, width, depth, activation, initializer_mode)
+        self.condition_dim = int(condition_dim)
+        self.net = _build_mlp(
+            dim + self.condition_dim, dim, width, depth, activation, initializer_mode
+        )
         self.max_log_scale = float(max_log_scale)
         # zero-init the final layer so the flow starts near identity.
         final = self.net[-1]
         nn.init.zeros_(final.weight)
         nn.init.zeros_(final.bias)
 
-    def _s_t(self, conditioned_on: torch.Tensor):
-        h = self.net(conditioned_on * self.mask)
+    def _s_t(
+        self, conditioned_on: torch.Tensor, condition: Optional[torch.Tensor] = None
+    ):
+        network_input = conditioned_on * self.mask
+        if self.condition_dim:
+            network_input = torch.cat((network_input, condition), dim=-1)
+        h = self.net(network_input)
         s_raw, t = h.chunk(2, dim=-1)
         keep = 1.0 - self.mask
         s = torch.tanh(s_raw) * self.max_log_scale * keep
         t = t * keep
         return s, t
 
-    def forward_map(self, z: torch.Tensor):
+    def forward_map(
+        self, z: torch.Tensor, condition: Optional[torch.Tensor] = None
+    ):
         """latent -> data; returns (x, log|det dx/dz|)."""
 
-        s, t = self._s_t(z)
+        s, t = self._s_t(z, condition)
         x = z * torch.exp(s) + t
         return x, s.sum(dim=-1)
 
-    def inverse_map(self, x: torch.Tensor):
+    def inverse_map(
+        self, x: torch.Tensor, condition: Optional[torch.Tensor] = None
+    ):
         """data -> latent; returns (z, log|det dz/dx|)."""
 
-        s, t = self._s_t(x)
+        s, t = self._s_t(x, condition)
         z = (x - t) * torch.exp(-s)
         return z, -s.sum(dim=-1)
 
@@ -166,9 +185,11 @@ class _FlowModule(nn.Module):
         mixing_mode: str,
         seed: int,
         initializer_mode: str = "scaled_activation_aware",
+        condition_dim: int = 0,
     ) -> None:
         super().__init__()
         self.dim = dim
+        self.condition_dim = int(condition_dim)
         if mixing_mode not in ("alternating_only", "fixed_random_permutation"):
             raise ValueError("unknown mixing_mode {!r}".format(mixing_mode))
         if initializer_mode not in _INITIALIZER_MODES:
@@ -186,7 +207,7 @@ class _FlowModule(nn.Module):
             layers.append(
                 _CouplingLayer(
                     dim, mask, hidden_width, hidden_depth, activation, max_log_scale,
-                    initializer_mode,
+                    initializer_mode, self.condition_dim,
                 )
             )
             permutation = (
@@ -202,21 +223,49 @@ class _FlowModule(nn.Module):
             )
         self._log_base_const = 0.5 * dim * float(np.log(2.0 * np.pi))
 
-    def inverse(self, x: torch.Tensor):
+    def _validate_condition(
+        self, x: torch.Tensor, condition: Optional[torch.Tensor]
+    ) -> Optional[torch.Tensor]:
+        if self.condition_dim == 0:
+            if condition is not None:
+                raise ValueError("condition is not supported when condition_dim=0")
+            return None
+        if condition is None:
+            raise ValueError(
+                "condition is required when condition_dim={}".format(self.condition_dim)
+            )
+        if condition.ndim != 2 or condition.shape != (
+            x.shape[0],
+            self.condition_dim,
+        ):
+            raise ValueError(
+                "condition must have shape ({}, {})".format(
+                    x.shape[0], self.condition_dim
+                )
+            )
+        return condition
+
+    def inverse(
+        self, x: torch.Tensor, condition: Optional[torch.Tensor] = None
+    ):
+        condition = self._validate_condition(x, condition)
         z = x
         total = torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
         for index, layer in enumerate(self.layers):
             permutation = getattr(self, "permutation_{}".format(index))
             z = z[:, permutation]
-            z, ld = layer.inverse_map(z)
+            z, ld = layer.inverse_map(z, condition)
             total = total + ld
         return z, total
 
-    def forward(self, z: torch.Tensor):
+    def forward(
+        self, z: torch.Tensor, condition: Optional[torch.Tensor] = None
+    ):
+        condition = self._validate_condition(z, condition)
         x = z
         for index in reversed(range(len(self.layers))):
             layer = self.layers[index]
-            x, _ = layer.forward_map(x)
+            x, _ = layer.forward_map(x, condition)
             permutation = getattr(self, "permutation_{}".format(index))
             inverse_permutation = torch.argsort(permutation)
             x = x[:, inverse_permutation]
@@ -231,22 +280,27 @@ class _FlowModule(nn.Module):
     def base_log_prob(self, z: torch.Tensor) -> torch.Tensor:
         return -self._log_base_const - 0.5 * torch.sum(z * z, dim=-1)
 
-    def log_prob(self, x: torch.Tensor) -> torch.Tensor:
-        z, log_det = self.inverse(x)
+    def log_prob(
+        self, x: torch.Tensor, condition: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        z, log_det = self.inverse(x, condition)
         return self.base_log_prob(z) + log_det
 
-    def max_abs_log_scale(self, x: torch.Tensor) -> torch.Tensor:
+    def max_abs_log_scale(
+        self, x: torch.Tensor, condition: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """Maximum absolute realized coupling log scale on ``x``."""
 
+        condition = self._validate_condition(x, condition)
         value = torch.zeros((), dtype=x.dtype, device=x.device)
         current = x
         with torch.no_grad():
             for index, layer in enumerate(self.layers):
                 permutation = getattr(self, "permutation_{}".format(index))
                 current = current[:, permutation]
-                scale, _ = layer._s_t(current)
+                scale, _ = layer._s_t(current, condition)
                 value = torch.maximum(value, torch.max(torch.abs(scale)))
-                current, _ = layer.inverse_map(current)
+                current, _ = layer.inverse_map(current, condition)
         return value
 
 
@@ -284,8 +338,14 @@ class AffineCouplingFlow:
         input_noise_std: float = 0.0,
         early_stopping: bool = True,
         checkpoint_interval: int = 1,
+        condition_dim: int = 0,
     ) -> None:
         self.dimension = int(dimension)
+        if isinstance(condition_dim, bool) or int(condition_dim) != condition_dim:
+            raise ValueError("condition_dim must be a nonnegative integer")
+        self.condition_dim = int(condition_dim)
+        if self.condition_dim < 0:
+            raise ValueError("condition_dim must be a nonnegative integer")
         self.requested_device = device
         self.device = _resolve_device(device)
         self.number_of_blocks = int(number_of_blocks)
@@ -365,6 +425,7 @@ class AffineCouplingFlow:
                 mixing_mode=self.mixing_mode,
                 seed=int(seed),
                 initializer_mode=self.initializer_mode,
+                condition_dim=self.condition_dim,
             )
         finally:
             torch.set_default_dtype(prev)
@@ -385,6 +446,8 @@ class AffineCouplingFlow:
         rare_component_id: Optional[int] = None,
         batch_plan: Optional[Any] = None,
         loss_normalization: Optional[str] = None,
+        condition: Optional[np.ndarray] = None,
+        validation_condition: Optional[np.ndarray] = None,
     ) -> FitResult:
         if (
             loss_normalization is not None
@@ -412,6 +475,8 @@ class AffineCouplingFlow:
             rare_component_id=rare_component_id,
             batch_plan=batch_plan,
             loss_normalization=loss_normalization,
+            condition=condition,
+            validation_condition=validation_condition,
         )
 
     def _to_tensor(self, x: np.ndarray) -> torch.Tensor:
@@ -422,26 +487,53 @@ class AffineCouplingFlow:
             )
         return torch.as_tensor(array, dtype=self.torch_dtype, device=self.device)
 
-    def log_prob(self, x: np.ndarray) -> np.ndarray:
+    def _condition_to_tensor(
+        self, condition: Optional[np.ndarray], n: int
+    ) -> Optional[torch.Tensor]:
+        if self.condition_dim == 0:
+            if condition is not None:
+                raise ValueError("condition is not supported when condition_dim=0")
+            return None
+        if condition is None:
+            raise ValueError(
+                "condition is required when condition_dim={}".format(self.condition_dim)
+            )
+        array = np.asarray(condition, dtype=np.float64)
+        if array.shape != (n, self.condition_dim) or not np.isfinite(array).all():
+            raise ValueError(
+                "condition must be finite with shape ({}, {})".format(
+                    n, self.condition_dim
+                )
+            )
+        return torch.as_tensor(array, dtype=self.torch_dtype, device=self.device)
+
+    def log_prob(
+        self, x: np.ndarray, condition: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         self._module.eval()
         with torch.no_grad():
             tensor = self._to_tensor(x)
-            lp = self._module.log_prob(tensor)
+            condition_tensor = self._condition_to_tensor(condition, tensor.shape[0])
+            lp = self._module.log_prob(tensor, condition_tensor)
         return lp.detach().cpu().numpy().astype(np.float64)
 
-    def sample(self, n: int, *, seed: int) -> np.ndarray:
+    def sample(
+        self, n: int, *, seed: int, condition: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         self._module.eval()
+        n = int(n)
+        condition_tensor = self._condition_to_tensor(condition, n)
         generator = torch.Generator(device=self.device)
         generator.manual_seed(int(seed))
         with torch.no_grad():
             z = torch.randn(
-                int(n),
+                n,
                 self.dimension,
                 dtype=self.torch_dtype,
                 device=self.device,
                 generator=generator,
             )
-            x = self._module(z)
+            x = self._module(z, condition_tensor)
         return x.detach().cpu().numpy().astype(np.float64)
 
     def parameter_count(self) -> int:
@@ -471,6 +563,7 @@ class AffineCouplingFlow:
             "input_noise_std": self.input_noise_std,
             "early_stopping": self.early_stopping,
             "checkpoint_interval": self.checkpoint_interval,
+            "condition_dim": self.condition_dim,
         }
 
     def manifest(self) -> Dict[str, Any]:
@@ -515,6 +608,7 @@ class AffineCouplingFlow:
             "mixing_mode": self.mixing_mode,
             "initializer_mode": self.initializer_mode,
             "dimension": self.dimension,
+            "condition_dim": self.condition_dim,
             "number_of_blocks": self.number_of_blocks,
             "hidden_width": self.hidden_width,
             "hidden_depth": self.hidden_depth,
