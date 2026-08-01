@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import numpy as np
 import torch
@@ -173,7 +173,7 @@ def _component_metrics(
 
 def train_flow(
     estimator,
-    x_train: np.ndarray,
+    x_train: Optional[np.ndarray],
     x_validation: Optional[np.ndarray],
     *,
     seed: int,
@@ -186,13 +186,15 @@ def train_flow(
     loss_normalization: Optional[str] = None,
     condition: Optional[np.ndarray] = None,
     validation_condition: Optional[np.ndarray] = None,
+    epoch_sampler: Optional[Callable[[int], Mapping[str, Any]]] = None,
 ) -> FitResult:
     """Fit an affine flow with deterministic batches and weighted NLL.
 
-    ``batch_plan=None`` (the default) is the exact legacy path: minibatches
-    are permutation slices of the training partition and the loss is
-    normalized by the sum of weights in the rows being reported
-    (``_weighted_nll``, ``loss_normalization=="sum_weights"``).
+    ``batch_plan=None`` and ``epoch_sampler=None`` (the default) is the exact
+    legacy path: minibatches are permutation slices of the fixed training
+    partition ``x_train`` and the loss is normalized by the sum of weights in
+    the rows being reported (``_weighted_nll``, ``loss_normalization ==
+    "sum_weights"``).
 
     ``batch_plan`` (a ``density_lab.sampling.MinibatchPlan``) selects the
     fixed-composition Horvitz-Thompson path (arm C, Issue #17): minibatches
@@ -203,23 +205,48 @@ def train_flow(
     epoch (only cosmetic within-batch row order varies by epoch); see the
     rare-aware estimator contract for why this does not affect per-step
     unbiasedness.
+
+    ``epoch_sampler`` (arm D, direct per-epoch sampling) is a callable
+    ``epoch_sampler(epoch) -> {"x": ndarray, "condition": Optional[ndarray],
+    "metadata": dict}`` invoked once per epoch to draw that epoch's entire
+    training set fresh (e.g. macro-balanced physical-nominal draws with
+    replacement). ``x_train`` is ignored (may be ``None``) in this mode; the
+    loss is always the ordinary unweighted NLL (``sample_weight`` must be
+    ``None``), and ``batch_plan`` must not also be supplied. Each epoch's
+    ``metadata`` is recorded verbatim onto that epoch's history record under
+    ``"epoch_sampler_metadata"``. This makes each step's gradient an unbiased
+    estimator of the macro-balanced population gradient
+    ``E_epoch_draws[gradient] = (1/2) grad L_13 + (1/2) grad L_-13``; it does
+    *not* imply the final trained parameters are themselves an unbiased
+    estimator of any macro target -- SGD over a nonconvex loss has no such
+    guarantee even with per-step-unbiased gradients.
     """
 
     started = time.perf_counter()
     module, device, dtype = estimator._module, estimator.device, estimator.torch_dtype
-    train = np.asarray(x_train, dtype=np.float64)
-    if train.ndim != 2 or train.shape[1] != estimator.dimension or not np.isfinite(train).all():
-        raise ValueError("x_train must be finite (n, {})".format(estimator.dimension))
-    train_weight = _validated_weight(sample_weight, train.shape[0], "sample_weight")
-    train_labels = None if component_id is None else np.asarray(component_id, dtype=np.int64)
-    if train_labels is not None and train_labels.shape != (train.shape[0],):
-        raise ValueError("component_id must have shape (n_train,)")
-    train_tensor = torch.as_tensor(train, dtype=dtype, device=device)
-    train_condition_tensor = estimator._condition_to_tensor(
-        condition, train.shape[0]
-    )
-    train_weight_tensor = torch.as_tensor(train_weight, dtype=dtype, device=device)
-    train_labels_tensor = None if train_labels is None else torch.as_tensor(train_labels, device=device)
+
+    if epoch_sampler is not None:
+        if batch_plan is not None:
+            raise ValueError("epoch_sampler is mutually exclusive with batch_plan")
+        if sample_weight is not None:
+            raise ValueError(
+                "epoch_sampler implies the ordinary unweighted NLL; sample_weight must be None"
+            )
+        train_tensor = train_weight_tensor = train_labels_tensor = train_condition_tensor = None
+    else:
+        train = np.asarray(x_train, dtype=np.float64)
+        if train.ndim != 2 or train.shape[1] != estimator.dimension or not np.isfinite(train).all():
+            raise ValueError("x_train must be finite (n, {})".format(estimator.dimension))
+        train_weight = _validated_weight(sample_weight, train.shape[0], "sample_weight")
+        train_labels = None if component_id is None else np.asarray(component_id, dtype=np.int64)
+        if train_labels is not None and train_labels.shape != (train.shape[0],):
+            raise ValueError("component_id must have shape (n_train,)")
+        train_tensor = torch.as_tensor(train, dtype=dtype, device=device)
+        train_condition_tensor = estimator._condition_to_tensor(
+            condition, train.shape[0]
+        )
+        train_weight_tensor = torch.as_tensor(train_weight, dtype=dtype, device=device)
+        train_labels_tensor = None if train_labels is None else torch.as_tensor(train_labels, device=device)
 
     if batch_plan is not None:
         if loss_normalization is not None and loss_normalization != batch_plan.denominator_mode:
@@ -255,8 +282,9 @@ def train_flow(
         module.parameters(), lr=estimator.learning_rate,
         weight_decay=estimator.weight_decay,
     )
-    n = train_tensor.shape[0]
-    batch_size = min(estimator.batch_size, n)
+    if train_tensor is not None:
+        n = train_tensor.shape[0]
+        batch_size = min(estimator.batch_size, n)
     history: List[dict] = []
     warnings: List[str] = []
     best_val = float("inf")
@@ -266,7 +294,60 @@ def train_flow(
     try:
         for epoch in range(estimator.max_epochs):
             module.train()
-            if batch_plan is None:
+            if epoch_sampler is not None:
+                # -- arm D: fresh per-epoch direct sampling, ordinary unweighted NLL --
+                draw = epoch_sampler(int(epoch))
+                x_epoch = np.asarray(draw["x"], dtype=np.float64)
+                if (
+                    x_epoch.ndim != 2
+                    or x_epoch.shape[1] != estimator.dimension
+                    or not np.isfinite(x_epoch).all()
+                ):
+                    raise ValueError(
+                        "epoch_sampler(epoch) 'x' must be finite (n, {})".format(estimator.dimension)
+                    )
+                epoch_condition = draw.get("condition")
+                epoch_metadata = dict(draw.get("metadata", {}))
+                train_tensor = torch.as_tensor(x_epoch, dtype=dtype, device=device)
+                train_condition_tensor = estimator._condition_to_tensor(
+                    epoch_condition, x_epoch.shape[0]
+                )
+                train_weight_tensor = torch.ones(x_epoch.shape[0], dtype=dtype, device=device)
+                train_labels_tensor = None
+                n = train_tensor.shape[0]
+                batch_size = min(estimator.batch_size, n)
+                epoch_seed = _derived_seed(seed, epoch, 0x64395F)
+                epoch_generator = torch.Generator(device=device)
+                epoch_generator.manual_seed(epoch_seed)
+                permutation = torch.randperm(n, generator=epoch_generator, device=device)
+                max_gradient_norm = 0.0
+                for start in range(0, n, batch_size):
+                    idx = permutation[start:start + batch_size]
+                    optimizer.zero_grad()
+                    batch_condition = (
+                        None
+                        if train_condition_tensor is None
+                        else train_condition_tensor[idx]
+                    )
+                    loss = _weighted_nll(
+                        module,
+                        train_tensor[idx],
+                        train_weight_tensor[idx],
+                        batch_condition,
+                    )
+                    if not torch.isfinite(loss):
+                        raise NonFiniteLossError("non-finite training loss at epoch {}".format(epoch))
+                    loss.backward()
+                    if estimator.grad_clip_norm is not None:
+                        norm = torch.nn.utils.clip_grad_norm_(module.parameters(), estimator.grad_clip_norm)
+                    else:
+                        norm = torch.sqrt(sum(
+                            torch.sum(p.grad * p.grad) for p in module.parameters() if p.grad is not None
+                        ))
+                    max_gradient_norm = max(max_gradient_norm, float(norm))
+                    optimizer.step()
+                plan_fields = {"epoch_sampler_metadata": epoch_metadata}
+            elif batch_plan is None:
                 # -- legacy path: exact permutation-sliced, sum-weights loss --
                 permutation = torch.randperm(n, generator=generator, device=device)
                 max_gradient_norm = 0.0
@@ -399,10 +480,13 @@ def train_flow(
             record["max_abs_log_scale"] = float(
                 module.max_abs_log_scale(train_tensor, train_condition_tensor)
             )
-            record["weight_normalization"] = (
-                "sum_weights" if batch_plan is None else batch_plan.denominator_mode
-            )
-            record["train_weight_total"] = float(train_weight.sum())
+            if epoch_sampler is not None:
+                record["weight_normalization"] = "epoch_direct_sampling_unweighted"
+            elif batch_plan is None:
+                record["weight_normalization"] = "sum_weights"
+            else:
+                record["weight_normalization"] = batch_plan.denominator_mode
+            record["train_weight_total"] = float(train_weight_tensor.sum())
             record.update(plan_fields)
             if val_tensor is not None:
                 record.update(_component_metrics(

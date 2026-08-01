@@ -435,7 +435,7 @@ class AffineCouplingFlow:
 
     def fit(
         self,
-        x_train: np.ndarray,
+        x_train: Optional[np.ndarray],
         *,
         x_validation: Optional[np.ndarray] = None,
         seed: int = 0,
@@ -448,6 +448,7 @@ class AffineCouplingFlow:
         loss_normalization: Optional[str] = None,
         condition: Optional[np.ndarray] = None,
         validation_condition: Optional[np.ndarray] = None,
+        epoch_sampler: Optional[Any] = None,
     ) -> FitResult:
         if (
             loss_normalization is not None
@@ -477,6 +478,7 @@ class AffineCouplingFlow:
             loss_normalization=loss_normalization,
             condition=condition,
             validation_condition=validation_condition,
+            epoch_sampler=epoch_sampler,
         )
 
     def _to_tensor(self, x: np.ndarray) -> torch.Tensor:
