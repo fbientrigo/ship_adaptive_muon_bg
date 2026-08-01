@@ -142,3 +142,118 @@ def test_config_hash_deterministic():
     a = FittedFeaturePipeline.fit(raw, FeatureView(IDENTITY_CARTESIAN_VIEW_ID))
     b = FittedFeaturePipeline.fit(raw, FeatureView(IDENTITY_CARTESIAN_VIEW_ID))
     assert a.config_hash() == b.config_hash()
+
+
+# --- fit_macro_weighted: exact charge-macro-balanced physical-weight measure ----
+
+
+def _shifted_raw(px, weight, *, pdg_id):
+    """One synthetic (n, 8) raw block; every feature is an affine shift of px.
+
+    Shift-invariance of variance (``Var(px + c) == Var(px)``) means every
+    column's expected weighted std equals column 0's, without redoing the
+    hand computation per column.
+    """
+
+    px = np.asarray(px, dtype=np.float64)
+    n = px.shape[0]
+    raw = np.zeros((n, 8), dtype=np.float64)
+    raw[:, 0] = px
+    raw[:, 1] = px + 10.0
+    raw[:, 2] = px + 100.0
+    raw[:, 3] = px + 1000.0
+    raw[:, 4] = px + 10000.0
+    raw[:, 6] = float(pdg_id)
+    raw[:, 7] = np.asarray(weight, dtype=np.float64)
+    return raw
+
+
+def test_fit_macro_weighted_matches_exact_manual_formula_small_array():
+    raw_13 = _shifted_raw([1.0, 3.0], [1.0, 3.0], pdg_id=13)
+    raw_m13 = _shifted_raw([2.0, 4.0, 6.0], [1.0, 1.0, 2.0], pdg_id=-13)
+
+    pipeline = FittedFeaturePipeline.fit_macro_weighted(
+        raw_by_charge={13: raw_13, -13: raw_m13},
+        weights_by_charge={13: raw_13[:, 7], -13: raw_m13[:, 7]},
+        feature_view=FeatureView(IDENTITY_CARTESIAN_VIEW_ID),
+    )
+
+    pi_13 = np.array([1.0, 3.0]) / 4.0
+    pi_m13 = np.array([1.0, 1.0, 2.0]) / 4.0
+    mean_13 = float(np.sum(pi_13 * raw_13[:, 0]))
+    mean_m13 = float(np.sum(pi_m13 * raw_m13[:, 0]))
+    expected_mean_px = 0.5 * (mean_13 + mean_m13)
+    var_13 = float(np.sum(pi_13 * (raw_13[:, 0] - expected_mean_px) ** 2))
+    var_m13 = float(np.sum(pi_m13 * (raw_m13[:, 0] - expected_mean_px) ** 2))
+    expected_std_px = float(np.sqrt(0.5 * (var_13 + var_m13)))
+
+    manifest = pipeline.manifest()
+    mean = manifest["standardization"]["mean"]
+    std = manifest["standardization"]["std"]
+    assert mean[0] == pytest.approx(expected_mean_px)
+    assert std[0] == pytest.approx(expected_std_px)
+    # Shift-invariance: every other column shares the same std, mean shifted.
+    for i, shift in enumerate((10.0, 100.0, 1000.0, 10000.0), start=1):
+        assert mean[i] == pytest.approx(expected_mean_px + shift)
+        assert std[i] == pytest.approx(expected_std_px)
+    assert manifest["standardization"]["weighting"] == "macro_balanced_physical_weight_train_only"
+    assert pipeline.n_train_rows == raw_13.shape[0] + raw_m13.shape[0]
+
+
+def test_fit_macro_weighted_gives_each_charge_equal_share_regardless_of_row_count():
+    raw_a = _shifted_raw([9.0, 11.0], [1.0, 1.0], pdg_id=13)  # mean 10, 2 rows
+    raw_b = _shifted_raw([15.0, 17.0, 19.0, 21.0, 23.0], [1.0] * 5, pdg_id=-13)  # mean 19, 5 rows
+
+    pipeline = FittedFeaturePipeline.fit_macro_weighted(
+        raw_by_charge={13: raw_a, -13: raw_b},
+        weights_by_charge={13: raw_a[:, 7], -13: raw_b[:, 7]},
+        feature_view=FeatureView(IDENTITY_CARTESIAN_VIEW_ID),
+    )
+    macro_mean = pipeline.manifest()["standardization"]["mean"][0]
+    pooled_row_weighted_mean = float(np.concatenate((raw_a[:, 0], raw_b[:, 0])).mean())
+    assert macro_mean == pytest.approx(14.5)  # (1/2)*10 + (1/2)*19
+    assert macro_mean != pytest.approx(pooled_row_weighted_mean)
+
+
+def test_fit_macro_weighted_requires_matching_charge_keys():
+    raw_13 = _shifted_raw([1.0, 2.0], [1.0, 1.0], pdg_id=13)
+    with pytest.raises(FeaturePipelineError):
+        FittedFeaturePipeline.fit_macro_weighted(
+            raw_by_charge={13: raw_13},
+            weights_by_charge={-13: raw_13[:, 7]},
+            feature_view=FeatureView(IDENTITY_CARTESIAN_VIEW_ID),
+        )
+
+
+def test_fit_macro_weighted_zero_variance_error_and_unit_fallback():
+    raw_13 = _shifted_raw([5.0, 5.0], [1.0, 1.0], pdg_id=13)  # constant px
+    raw_m13 = _shifted_raw([5.0, 5.0, 5.0], [1.0, 1.0, 1.0], pdg_id=-13)  # constant px
+    charges = {13: raw_13, -13: raw_m13}
+    weights = {13: raw_13[:, 7], -13: raw_m13[:, 7]}
+    with pytest.raises(FeaturePipelineError):
+        FittedFeaturePipeline.fit_macro_weighted(
+            raw_by_charge=charges, weights_by_charge=weights,
+            feature_view=FeatureView(IDENTITY_CARTESIAN_VIEW_ID),
+        )
+    pipeline = FittedFeaturePipeline.fit_macro_weighted(
+        raw_by_charge=charges, weights_by_charge=weights,
+        feature_view=FeatureView(IDENTITY_CARTESIAN_VIEW_ID),
+        zero_variance_policy="unit",
+    )
+    assert pipeline.manifest()["standardization"]["std"][0] == 1.0
+
+
+def test_fit_macro_weighted_never_uses_a_seed_and_is_reproducible():
+    raw_13 = _shifted_raw([1.0, 3.0, 5.0], [2.0, 1.0, 1.0], pdg_id=13)
+    raw_m13 = _shifted_raw([2.0, 4.0], [1.0, 3.0], pdg_id=-13)
+    charges = {13: raw_13, -13: raw_m13}
+    weights = {13: raw_13[:, 7], -13: raw_m13[:, 7]}
+    a = FittedFeaturePipeline.fit_macro_weighted(
+        raw_by_charge=charges, weights_by_charge=weights,
+        feature_view=FeatureView(IDENTITY_CARTESIAN_VIEW_ID),
+    )
+    b = FittedFeaturePipeline.fit_macro_weighted(
+        raw_by_charge=charges, weights_by_charge=weights,
+        feature_view=FeatureView(IDENTITY_CARTESIAN_VIEW_ID),
+    )
+    assert a.config_hash() == b.config_hash()

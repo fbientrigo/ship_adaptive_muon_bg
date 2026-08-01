@@ -206,6 +206,98 @@ def test_smoke_improvement_on_d3():
     assert result.best_validation_nll < initial_val
 
 
+def test_epoch_sampler_called_once_per_epoch_with_epoch_index():
+    calls = []
+    rng = np.random.default_rng(0)
+    pool = rng.normal(size=(64, D))
+
+    def epoch_sampler(epoch):
+        calls.append(epoch)
+        idx = np.asarray([epoch % pool.shape[0]] * 16)  # trivial but epoch-dependent
+        return {"x": pool[idx], "condition": None, "metadata": {"epoch": epoch}}
+
+    flow = AffineCouplingFlow(dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1)
+    result = flow.fit(None, x_validation=None, seed=3, epoch_sampler=epoch_sampler)
+    assert result.status == FIT_STATUS_OK
+    assert calls == list(range(len(calls)))
+    assert len(calls) == flow.max_epochs  # no early stopping without a validation set
+
+
+def test_epoch_sampler_rejects_combination_with_batch_plan():
+    def epoch_sampler(epoch):
+        return {"x": np.zeros((4, D)), "condition": None, "metadata": {}}
+
+    flow = AffineCouplingFlow(dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1)
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        flow.fit(
+            None, x_validation=None, seed=3,
+            epoch_sampler=epoch_sampler, batch_plan=object(),
+        )
+
+
+def test_epoch_sampler_rejects_sample_weight():
+    def epoch_sampler(epoch):
+        return {"x": np.zeros((4, D)), "condition": None, "metadata": {}}
+
+    flow = AffineCouplingFlow(dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1)
+    with pytest.raises(ValueError, match="sample_weight"):
+        flow.fit(
+            None, x_validation=None, seed=3,
+            epoch_sampler=epoch_sampler, sample_weight=np.ones(4),
+        )
+
+
+def test_epoch_sampler_metadata_recorded_in_history():
+    rng = np.random.default_rng(1)
+    pool = rng.normal(size=(64, D))
+
+    def epoch_sampler(epoch):
+        idx = rng.integers(0, pool.shape[0], size=16)
+        return {
+            "x": pool[idx],
+            "condition": None,
+            "metadata": {"epoch": epoch, "draw_hash": "h{}".format(epoch)},
+        }
+
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=2, hidden_width=8, hidden_depth=1, max_epochs=3,
+    )
+    result = flow.fit(None, x_validation=None, seed=5, epoch_sampler=epoch_sampler)
+    assert result.status == FIT_STATUS_OK
+    assert len(result.train_history) == 3
+    for step, record in enumerate(result.train_history):
+        assert record["epoch_sampler_metadata"]["epoch"] == step
+        assert record["weight_normalization"] == "epoch_direct_sampling_unweighted"
+
+
+@pytest.mark.slow
+def test_epoch_sampler_trains_with_persistent_optimizer_state():
+    """Fresh per-epoch draws from a fixed population still converge.
+
+    If the trainer silently reset the optimizer (or the model) every epoch,
+    a flow drawing fresh i.i.d. samples each epoch from a fixed standard
+    normal population could never accumulate learning across epochs. This
+    checks the loss trend actually improves over many such epochs.
+    """
+
+    rng = np.random.default_rng(7)
+    population = rng.normal(size=(4000, D))
+
+    def epoch_sampler(epoch):
+        idx = rng.integers(0, population.shape[0], size=256)
+        return {"x": population[idx], "condition": None, "metadata": {"epoch": epoch}}
+
+    flow = AffineCouplingFlow(
+        dimension=D, number_of_blocks=4, hidden_width=32, hidden_depth=2,
+        max_epochs=60, patience=60, learning_rate=2e-3,
+    )
+    result = flow.fit(None, x_validation=None, seed=11, epoch_sampler=epoch_sampler)
+    assert result.status == FIT_STATUS_OK
+    early_nll = np.mean([r["feature_space_train_nll"] for r in result.train_history[:5]])
+    late_nll = np.mean([r["feature_space_train_nll"] for r in result.train_history[-5:]])
+    assert late_nll < early_nll
+
+
 def test_non_finite_loss_fails():
     x = _standardized("D0", n=256)
     x[0, 0] = 1e30  # force an explosive gradient / non-finite loss
