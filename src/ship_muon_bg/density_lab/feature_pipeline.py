@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Mapping
 
 import numpy as np
 
@@ -54,18 +54,22 @@ class FittedFeaturePipeline:
         std: np.ndarray,
         n_train_rows: int,
         zero_variance_policy: str,
+        weighting: str = "unweighted_train_only",
     ) -> None:
         self.feature_view = feature_view
         mean = np.array(mean, dtype=np.float64, copy=True)
         std = np.array(std, dtype=np.float64, copy=True)
         if mean.shape != (N_DENSITY_FEATURES,) or std.shape != (N_DENSITY_FEATURES,):
             raise FeaturePipelineError("mean/std must have shape (5,)")
+        if not np.isfinite(std).all() or np.any(std <= 0.0):
+            raise FeaturePipelineError("std must be finite and strictly positive")
         mean.flags.writeable = False
         std.flags.writeable = False
         self._mean = mean
         self._std = std
         self.n_train_rows = int(n_train_rows)
         self.zero_variance_policy = zero_variance_policy
+        self.weighting = weighting
         # normalization forward log-Jacobian is constant per row: sum(-log std)
         self._norm_forward_logjac = float(-np.sum(np.log(std)))
 
@@ -110,6 +114,105 @@ class FittedFeaturePipeline:
             std=std,
             n_train_rows=int(features.shape[0]),
             zero_variance_policy=zero_variance_policy,
+            weighting="unweighted_train_only",
+        )
+
+    @classmethod
+    def fit_macro_weighted(
+        cls,
+        raw_by_charge: Mapping[Any, np.ndarray],
+        weights_by_charge: Mapping[Any, np.ndarray],
+        feature_view: FeatureView,
+        *,
+        zero_variance_policy: str = "error",
+    ) -> "FittedFeaturePipeline":
+        """Fit standardization on train rows using the exact charge-macro measure.
+
+        For ``C`` charges, each with its own within-charge physical-weight
+        measure ``pi_i|c = w_i / sum_{j: C_j=c} w_j``::
+
+            mu       = (1/C) * sum_c sum_i pi_i|c * x_i
+            variance = (1/C) * sum_c sum_i pi_i|c * (x_i - mu)^2
+
+        This is the pooled train-only macro-balanced measure: every charge
+        contributes an equal 1/C share regardless of its row count, and each
+        charge's own contribution is the physical-weight nominal measure
+        restricted to that charge. Never fit on a resampled draw pool, never
+        seed-dependent, never touches validation or test rows.
+        """
+
+        if zero_variance_policy not in ("error", "unit"):
+            raise FeaturePipelineError(
+                "zero_variance_policy must be 'error' or 'unit'"
+            )
+        charges = sorted(raw_by_charge)
+        if not charges:
+            raise FeaturePipelineError("raw_by_charge must be non-empty")
+        if set(raw_by_charge) != set(weights_by_charge):
+            raise FeaturePipelineError(
+                "raw_by_charge and weights_by_charge must share the same charge keys"
+            )
+        per_charge_features: Dict[Any, np.ndarray] = {}
+        per_charge_pi: Dict[Any, np.ndarray] = {}
+        n_train_rows = 0
+        for charge in charges:
+            features = feature_view.forward(raw_by_charge[charge])  # validates + applies view
+            weights = np.asarray(weights_by_charge[charge], dtype=np.float64)
+            if weights.shape != (features.shape[0],):
+                raise FeaturePipelineError(
+                    "weights_by_charge[{!r}] must have shape ({},)".format(
+                        charge, features.shape[0]
+                    )
+                )
+            if not np.isfinite(weights).all() or np.any(weights < 0.0):
+                raise FeaturePipelineError("weights must be finite and nonnegative")
+            total = float(weights.sum())
+            if total <= 0.0:
+                raise FeaturePipelineError(
+                    "weight total must be positive for charge {!r}".format(charge)
+                )
+            per_charge_features[charge] = features
+            per_charge_pi[charge] = weights / total
+            n_train_rows += int(features.shape[0])
+
+        n_charges = float(len(charges))
+        mean = np.sum(
+            [
+                np.sum(per_charge_pi[c][:, None] * per_charge_features[c], axis=0)
+                for c in charges
+            ],
+            axis=0,
+        ) / n_charges
+        variance = np.sum(
+            [
+                np.sum(
+                    per_charge_pi[c][:, None] * (per_charge_features[c] - mean) ** 2,
+                    axis=0,
+                )
+                for c in charges
+            ],
+            axis=0,
+        ) / n_charges
+
+        zero_mask = variance <= 0.0
+        if np.any(zero_mask):
+            if zero_variance_policy == "error":
+                bad = [
+                    feature_view.feature_names[i]
+                    for i in np.flatnonzero(zero_mask)
+                ]
+                raise FeaturePipelineError(
+                    "zero-variance train features {} under policy 'error'".format(bad)
+                )
+            variance = np.where(zero_mask, 1.0, variance)
+        std = np.sqrt(variance)
+        return cls(
+            feature_view=feature_view,
+            mean=mean,
+            std=std,
+            n_train_rows=n_train_rows,
+            zero_variance_policy=zero_variance_policy,
+            weighting="macro_balanced_physical_weight_train_only",
         )
 
     # -- transforms ----------------------------------------------------------
@@ -174,6 +277,7 @@ class FittedFeaturePipeline:
             "feature_names": list(self.feature_view.feature_names),
             "standardization": {
                 "fit_on": "train",
+                "weighting": self.weighting,
                 "n_train_rows": self.n_train_rows,
                 "mean": self._mean.tolist(),
                 "std": self._std.tolist(),

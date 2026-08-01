@@ -198,13 +198,13 @@ class EmpiricalDataset:
         return canonical_hash(self.manifest())
 
 
-def build_empirical_dataset(spec: EmpiricalDatasetSpec) -> EmpiricalDataset:
-    """Load, validate, PDG-filter, (optionally) cap, and three-way split.
+def _load_filter_cap(spec: EmpiricalDatasetSpec):
+    """Shared load -> validate -> PDG-filter -> (optionally) cap step.
 
-    Identical code path for the repository afterMS sample and a full local
-    dataset -- only ``spec.dataset_path`` differs. Raises
-    :class:`EmpiricalDataError`-wrapped typed contract errors on any schema
-    violation (a technical failure, never a scientific negative).
+    Used by both :func:`build_empirical_dataset` (which also materializes the
+    test partition) and :func:`build_empirical_train_validation_dataset`
+    (which never does). Returns ``(array, source_hash, source_counts,
+    filtered, capped, capped_source_indices)``.
     """
 
     if spec.pdg_id not in schema.EXPECTED_MUON_IDS:
@@ -235,6 +235,10 @@ def build_empirical_dataset(spec: EmpiricalDatasetSpec) -> EmpiricalDataset:
     else:
         capped, capped_source_indices = filtered, source_indices
 
+    return array, source_hash, source_counts, filtered, capped, capped_source_indices
+
+
+def _build_three_way_split(spec: EmpiricalDatasetSpec, capped: np.ndarray) -> Dict[str, Any]:
     n_rows = int(capped.shape[0])
     min_rows_needed = 3  # >=1 row per split at minimum; practical floor checked below
     if n_rows < min_rows_needed:
@@ -242,7 +246,6 @@ def build_empirical_dataset(spec: EmpiricalDatasetSpec) -> EmpiricalDataset:
             "only {} row(s) available for pdg_id={} after filtering/capping; "
             "need at least {}".format(n_rows, spec.pdg_id, min_rows_needed)
         )
-
     split = make_three_way_split(
         n_rows, seed=spec.seed, val_fraction=spec.val_fraction,
         test_fraction=spec.test_fraction, dataset_hash=compute_dataset_hash(capped),
@@ -253,6 +256,20 @@ def build_empirical_dataset(spec: EmpiricalDatasetSpec) -> EmpiricalDataset:
                 "split produced {}={} rows (< 2) for pdg_id={}; increase max_rows or "
                 "adjust val_fraction/test_fraction".format(name, split[name], spec.pdg_id)
             )
+    return split
+
+
+def build_empirical_dataset(spec: EmpiricalDatasetSpec) -> EmpiricalDataset:
+    """Load, validate, PDG-filter, (optionally) cap, and three-way split.
+
+    Identical code path for the repository afterMS sample and a full local
+    dataset -- only ``spec.dataset_path`` differs. Raises
+    :class:`EmpiricalDataError`-wrapped typed contract errors on any schema
+    violation (a technical failure, never a scientific negative).
+    """
+
+    array, source_hash, source_counts, filtered, capped, capped_source_indices = _load_filter_cap(spec)
+    split = _build_three_way_split(spec, capped)
 
     partitions = {}
     for key, split_key in (("train", "train_indices"), ("validation", "val_indices"), ("test", "test_indices")):
@@ -270,10 +287,117 @@ def build_empirical_dataset(spec: EmpiricalDatasetSpec) -> EmpiricalDataset:
         source_file_n_rows=int(array.shape[0]),
         pdg_counts_in_source=source_counts,
         filtered_n_rows=int(filtered.shape[0]),
-        rows_used_after_cap=n_rows,
+        rows_used_after_cap=int(capped.shape[0]),
         train=partitions["train"],
         validation=partitions["validation"],
         test=partitions["test"],
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class EmpiricalTrainValidationDataset:
+    """Train+validation-only D7 partitions for one PDG track.
+
+    The test payload is never indexed out of ``capped`` -- only its
+    deterministic row count and split-index hash are computed, from index
+    arithmetic on ``make_three_way_split`` alone, so Gate E (test-payload
+    evaluation) stays closed for callers of
+    :func:`build_empirical_train_validation_dataset`.
+    """
+
+    dataset_spec: EmpiricalDatasetSpec
+    source_file_dataset_hash: str
+    source_file_n_rows: int
+    pdg_counts_in_source: Dict[int, int]
+    filtered_n_rows: int
+    rows_used_after_cap: int
+    train: EmpiricalDatasetPartition
+    validation: EmpiricalDatasetPartition
+    test_row_count: int
+    test_split_hash: str
+
+    def manifest(self, *, redact_path: bool = False) -> Dict[str, Any]:
+        return {
+            "schema_version": EMPIRICAL_DATASET_SCHEMA_VERSION,
+            "target_id": EMPIRICAL_TARGET_ID,
+            "dataset_path": "REDACTED" if redact_path else self.dataset_spec.dataset_path,
+            "pdg_id": int(self.dataset_spec.pdg_id),
+            "seed": int(self.dataset_spec.seed),
+            "source_file_dataset_hash": self.source_file_dataset_hash,
+            "source_file_n_rows": self.source_file_n_rows,
+            "pdg_counts_in_source": {str(k): v for k, v in self.pdg_counts_in_source.items()},
+            "filtered_n_rows": self.filtered_n_rows,
+            "row_limit_order": ROW_LIMIT_ORDER,
+            "requested_max_rows": self.dataset_spec.max_rows,
+            "rows_used_after_cap": self.rows_used_after_cap,
+            "val_fraction": self.dataset_spec.val_fraction,
+            "test_fraction": self.dataset_spec.test_fraction,
+            "weights_affect_selection": False,
+            "physical_weight_status": "preserved_in_raw_rows_not_applied_to_training_loss",
+            "physical_weight_semantics": "not_implemented",
+            "sampling_correction_weight_status": "not_applicable_no_rare_aware_arm_for_unlabeled_real_data",
+            "partitions": {
+                "train": self.train.manifest(),
+                "validation": self.validation.manifest(),
+            },
+            "test_row_count": self.test_row_count,
+            "test_split_hash": self.test_split_hash,
+            "test_payload_loaded": False,
+            "test_used_for_training": False,
+            "test_used_for_preprocessing": False,
+            "test_used_for_model_selection": False,
+            "test_used_for_evaluation": False,
+        }
+
+    def config_hash(self) -> str:
+        return canonical_hash(self.manifest())
+
+
+def build_empirical_train_validation_dataset(
+    spec: EmpiricalDatasetSpec,
+) -> EmpiricalTrainValidationDataset:
+    """Load+split like :func:`build_empirical_dataset` but never load test rows.
+
+    Same load -> validate -> filter -> cap -> three-way-split path (shared
+    via :func:`_load_filter_cap` / :func:`_build_three_way_split`, never a
+    reimplementation), but ``capped`` is only ever indexed by
+    ``train_indices``/``val_indices``; ``test_indices`` is used solely to
+    compute ``len(test_indices)`` and a hash of the index list itself --
+    never to read a single test feature value.
+    """
+
+    array, source_hash, source_counts, filtered, capped, capped_source_indices = _load_filter_cap(spec)
+    split = _build_three_way_split(spec, capped)
+
+    train_idx = np.asarray(split["train_indices"], dtype=int)
+    val_idx = np.asarray(split["val_indices"], dtype=int)
+    test_idx = np.asarray(split["test_indices"], dtype=int)
+
+    train_partition = EmpiricalDatasetPartition(
+        partition="train",
+        raw=np.ascontiguousarray(capped[train_idx], dtype=np.float64),
+        source_row_indices=capped_source_indices[train_idx],
+        n_rows=int(train_idx.size),
+    )
+    validation_partition = EmpiricalDatasetPartition(
+        partition="validation",
+        raw=np.ascontiguousarray(capped[val_idx], dtype=np.float64),
+        source_row_indices=capped_source_indices[val_idx],
+        n_rows=int(val_idx.size),
+    )
+    test_split_hash = canonical_hash({"test_indices": test_idx.tolist()})
+
+    return EmpiricalTrainValidationDataset(
+        dataset_spec=spec,
+        source_file_dataset_hash=source_hash,
+        source_file_n_rows=int(array.shape[0]),
+        pdg_counts_in_source=source_counts,
+        filtered_n_rows=int(filtered.shape[0]),
+        rows_used_after_cap=int(capped.shape[0]),
+        train=train_partition,
+        validation=validation_partition,
+        test_row_count=int(test_idx.size),
+        test_split_hash=test_split_hash,
     )
 
 

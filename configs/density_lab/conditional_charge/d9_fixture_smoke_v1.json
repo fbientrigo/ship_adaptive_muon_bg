@@ -1,0 +1,34 @@
+{
+  "schema_version": "1",
+  "experiment_id": "d9_conditional_charge_nf_fixture_smoke_v1",
+  "description": "Two-epoch wiring smoke for the corrected v1 conditional-charge affine-coupling contract (physical charge sign, macro-weighted train-only preprocessing, per-epoch direct sampling, closed test payload) on the committed afterMS fixture.",
+  "fixture_only": true,
+  "dataset_path": "data/samples/muonsFullMC_afterMS_sample.npz",
+  "pdg_ids": [13, -13],
+  "seed": 11,
+  "max_rows_per_charge": 512,
+  "draws_per_epoch_per_charge": 64,
+  "validation_fraction": 0.2,
+  "test_fraction": 0.2,
+  "sample_count_per_charge": 64,
+  "feature_view": {"view_id": "identity_cartesian_v0"},
+  "model": {
+    "family": "affine_coupling",
+    "device": "cpu",
+    "conditional": true,
+    "condition_name": "muon_electric_charge_sign",
+    "condition_values": [-1, 1],
+    "params": {
+      "condition_dim": 1,
+      "number_of_blocks": 6,
+      "hidden_width": 64,
+      "hidden_depth": 2,
+      "max_epochs": 2,
+      "batch_size": 256,
+      "patience": 2,
+      "early_stopping": false,
+      "dtype": "float32"
+    }
+  },
+  "symmetry_audit": {"transform": "none", "sample_count": 64}
+}

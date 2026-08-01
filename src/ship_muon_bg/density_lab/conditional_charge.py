@@ -1,4 +1,19 @@
-"""Fixture-only Phase 2 conditional-charge normalizing-flow pilot."""
+"""Fixture-only Phase 2 conditional-charge normalizing-flow pilot (v1).
+
+v1 corrects four v0 contract defects (``docs/reviews/d9_conditional_charge_sampling_v1.md``):
+
+1. the declared condition is the physical muon electric charge sign
+   (``muon_electric_charge_sign``), not the PDG numeric sign -- PDG 13 names
+   the negatively-charged mu- (condition -1), PDG -13 names the
+   positively-charged mu+ (condition +1);
+2. preprocessing is a single pooled train-only macro-balanced
+   physical-weight standardization fit directly on the train partitions,
+   never on a resampled draw pool;
+3. training data is drawn fresh every epoch (:class:`_EpochDirectSampler`),
+   never one fixed resample reused across all epochs;
+4. the test payload is never materialized -- only its deterministic row
+   count and split-index hash are computed (Gate E stays closed).
+"""
 
 from __future__ import annotations
 
@@ -7,7 +22,7 @@ import io
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 import numpy as np
 
@@ -15,10 +30,15 @@ from ..data_contracts import schema
 from ..data_contracts.hashing import dataset_hash
 from ..data_contracts.feature_views import FeatureView, IDENTITY_CARTESIAN_VIEW_ID
 from .config import canonical_hash
-from .empirical import EmpiricalDatasetSpec, build_empirical_dataset
+from .empirical import (
+    EmpiricalDatasetSpec,
+    EmpiricalTrainValidationDataset,
+    build_empirical_train_validation_dataset,
+)
 from .feature_pipeline import FittedFeaturePipeline
 from .utility_tilt import (
     AliasSampler,
+    ToyThresholds,
     compact_distribution_summary,
     compute_b_toy,
     empirical_draw_diagnostics,
@@ -27,8 +47,17 @@ from .utility_tilt import (
     theoretical_concentration_diagnostics,
 )
 
-CONDITIONAL_CHARGE_SCHEMA_VERSION = "0"
-CONDITION_BY_PDG = {13: 1.0, -13: -1.0}
+CONDITIONAL_CHARGE_SCHEMA_VERSION = "1"
+CONDITION_FIELD_NAME = "muon_electric_charge_sign"
+
+# Physical electric charge sign, keyed by PDG id. PDG codes are
+# particle/antiparticle codes, not charge codes: PDG 13 names the mu-
+# (physical charge -1) and PDG -13 names the mu+ (physical charge +1) -- the
+# PDG numeric sign is the *opposite* of the physical charge sign for this
+# pair. v0 mistakenly used the PDG numeric sign here; v1 uses the physical
+# charge.
+MUON_ELECTRIC_CHARGE_SIGN_BY_PDG: Dict[int, float] = {13: -1.0, -13: 1.0}
+
 _ALLOWED_CONFIG_KEYS = {
     "schema_version",
     "experiment_id",
@@ -38,7 +67,7 @@ _ALLOWED_CONFIG_KEYS = {
     "pdg_ids",
     "seed",
     "max_rows_per_charge",
-    "train_rows_per_charge",
+    "draws_per_epoch_per_charge",
     "validation_fraction",
     "test_fraction",
     "sample_count_per_charge",
@@ -58,8 +87,10 @@ def _validate_config(config: Mapping[str, Any], repo_root: Path) -> Dict[str, An
         raise ConditionalChargeError(
             "undocumented config fields are refused: {}".format(unknown)
         )
-    if config.get("schema_version", CONDITIONAL_CHARGE_SCHEMA_VERSION) != "0":
-        raise ConditionalChargeError("schema_version must be '0'")
+    if config.get("schema_version") != CONDITIONAL_CHARGE_SCHEMA_VERSION:
+        raise ConditionalChargeError(
+            "schema_version must be {!r}".format(CONDITIONAL_CHARGE_SCHEMA_VERSION)
+        )
     if config.get("fixture_only") is not True:
         raise ConditionalChargeError("fixture_only must be true")
     dataset_path = (repo_root / str(config["dataset_path"])).resolve()
@@ -84,22 +115,18 @@ def _validate_config(config: Mapping[str, Any], repo_root: Path) -> Dict[str, An
         raise ConditionalChargeError("model.family must be 'affine_coupling'")
     if model.get("conditional") is not True:
         raise ConditionalChargeError("model.conditional must be true")
-    if model.get("condition_name") != "charge_sign":
-        raise ConditionalChargeError("model.condition_name must be 'charge_sign'")
+    if model.get("condition_name") != CONDITION_FIELD_NAME:
+        raise ConditionalChargeError(
+            "model.condition_name must be {!r}".format(CONDITION_FIELD_NAME)
+        )
     if list(model.get("condition_values", ())) != [-1, 1]:
         raise ConditionalChargeError("model.condition_values must be [-1, 1]")
     params = dict(model.get("params", {}))
     if params.get("condition_dim", 1) != 1:
         raise ConditionalChargeError("conditional charge requires model condition_dim=1")
-    for name in (
-        "max_rows_per_charge",
-        "train_rows_per_charge",
-        "sample_count_per_charge",
-    ):
+    for name in ("max_rows_per_charge", "draws_per_epoch_per_charge", "sample_count_per_charge"):
         if not isinstance(config.get(name), int) or config[name] < 2:
             raise ConditionalChargeError("{} must be an integer >= 2".format(name))
-    if config["train_rows_per_charge"] % 1:
-        raise ConditionalChargeError("train_rows_per_charge must be integral")
     resolved = dict(config)
     resolved["dataset_path"] = str(dataset_path)
     resolved["model"] = dict(model)
@@ -116,14 +143,14 @@ def _validate_config(config: Mapping[str, Any], repo_root: Path) -> Dict[str, An
 
 def _condition(pdg_id: int, n: int) -> np.ndarray:
     try:
-        value = CONDITION_BY_PDG[int(pdg_id)]
+        value = MUON_ELECTRIC_CHARGE_SIGN_BY_PDG[int(pdg_id)]
     except (KeyError, TypeError, ValueError) as exc:
         raise ConditionalChargeError("pdg_id must be 13 or -13") from exc
     return np.full((int(n), 1), value, dtype=np.float64)
 
 
-def charge_condition(pdg_id: int) -> float:
-    """Return the declared external condition: PDG 13 -> +1, -13 -> -1."""
+def muon_electric_charge_sign(pdg_id: int) -> float:
+    """Return the physical muon electric charge sign: PDG 13 (mu-) -> -1, PDG -13 (mu+) -> +1."""
 
     return float(_condition(pdg_id, 1)[0, 0])
 
@@ -138,79 +165,168 @@ def _probabilities_from_weights(raw: np.ndarray) -> np.ndarray:
     return weights / total
 
 
-def _draw_pool(dataset, pdg_id: int, n_draws: int, seed: int):
-    """Draw one charge pool from pi_i|c with replacement via the shared alias utility."""
+def _derived_epoch_seed(global_seed: int, epoch: int, pdg_id: int, salt: int) -> int:
+    """Deterministic seed from (global_seed, epoch, pdg_id[, salt])."""
 
-    if int(n_draws) < 1:
-        raise ConditionalChargeError("per-charge draw count must be positive")
-    pi = _probabilities_from_weights(dataset.train.raw)
-    source_hash = dataset_hash(dataset.train.raw)
-    sampler = AliasSampler.from_probabilities(pi, source_hash=source_hash)
-    indices = sampler.draw(int(n_draws), seed=int(seed))
-    thresholds = fit_toy_thresholds(
-        dataset.train.physical,
-        dataset.train.raw[:, schema.COLUMN_INDEX["w"]],
-        pdg_id=int(pdg_id),
+    return int(
+        np.random.SeedSequence(
+            [int(global_seed), int(epoch), abs(int(pdg_id)), int(pdg_id < 0), int(salt)]
+        ).generate_state(1)[0]
     )
-    b_toy = compute_b_toy(dataset.train.physical, thresholds)
-    return {
-        "raw": np.ascontiguousarray(dataset.train.raw[indices], dtype=np.float64),
-        "indices": indices,
-        "pi": pi,
-        "sampler": sampler,
-        "thresholds": thresholds,
-        "b_toy": b_toy,
-        "sampling": {
-            "pdg_id": int(pdg_id),
-            "condition": charge_condition(pdg_id),
-            "draw_count": int(n_draws),
-            "source_table_hash": source_hash,
-            "alias_hash": sampler.table_hash(),
-            "pi_normalization": float(pi.sum()),
-            "sample_weight_applied_to_loss": False,
-            "sampling_regime": "conditional_macro_balanced_physical_nominal",
-            "odd_draw_budget_policy": "reject",
-            "theoretical": theoretical_concentration_diagnostics(
-                pi, draw_budget=int(n_draws)
-            ),
-            "empirical": empirical_draw_diagnostics(indices, b_toy=b_toy),
-            "nominal_b_toy_prevalence": nominal_prevalence(b_toy, dataset.train.raw[:, schema.COLUMN_INDEX["w"]]),
-            "thresholds": {
-                "t_pT": float(thresholds.t_pT),
-                "t_R": float(thresholds.t_R),
-            },
-        },
-    }
 
 
-def build_balanced_draw_pool(datasets: Mapping[int, Any], *, draw_budget: int, seed: int):
-    """Build the deterministic equal-charge draw pool required by the target."""
+class _EpochDirectSampler:
+    """Per-epoch macro-balanced physical-nominal direct sampling (arm D).
 
-    draw_budget = int(draw_budget)
-    if draw_budget < 2 or draw_budget % 2:
-        raise ConditionalChargeError("the total draw budget must be a positive even integer")
-    per_charge = draw_budget // 2
-    draws = {
-        pdg_id: _draw_pool(
-            datasets[pdg_id],
-            pdg_id,
-            per_charge,
-            int(np.random.SeedSequence([int(seed), abs(pdg_id), int(pdg_id < 0)]).generate_state(1)[0]),
+    Built once per training run from the two charges' TRAIN partitions only.
+    Each call to :meth:`draw` (one per training epoch) draws
+    ``I_{e,t}|c ~ pi_i|c`` independently per charge from a deterministic seed
+    derived from ``(global_seed, epoch, pdg_id)`` -- never one fixed pool
+    reused across epochs. No sample weights are ever attached to the drawn
+    rows (``sample_weight_applied_to_loss`` is always ``False``): the
+    per-charge physical-weight nominal measure enters only through the
+    sampling probabilities, and the loss on the drawn rows is the ordinary
+    unweighted NLL.
+
+    This makes each step's gradient an unbiased estimator of the
+    macro-balanced two-charge population gradient::
+
+        E_epoch_draws[gradient] = (1/2) grad L_13 + (1/2) grad L_-13
+
+    It does *not* imply the final trained parameters are themselves an
+    unbiased estimator of any macro target -- that is a claim about a single
+    stochastic-gradient step, never about the fixed point of nonconvex SGD.
+    """
+
+    def __init__(
+        self,
+        *,
+        datasets: Mapping[int, EmpiricalTrainValidationDataset],
+        pipeline: FittedFeaturePipeline,
+        draws_per_epoch_per_charge: int,
+        seed: int,
+    ) -> None:
+        if int(draws_per_epoch_per_charge) < 1:
+            raise ConditionalChargeError("draws_per_epoch_per_charge must be positive")
+        self._pipeline = pipeline
+        self.draws_per_epoch_per_charge = int(draws_per_epoch_per_charge)
+        self._seed = int(seed)
+        self._raw: Dict[int, np.ndarray] = {}
+        self._pi: Dict[int, np.ndarray] = {}
+        self._samplers: Dict[int, AliasSampler] = {}
+        self.source_probability_table_hash: Dict[int, str] = {}
+        self.thresholds: Dict[int, ToyThresholds] = {}
+        self._b_toy_train: Dict[int, np.ndarray] = {}
+        self.nominal_b_toy_prevalence: Dict[int, float] = {}
+        self._cumulative_unique: Dict[int, set] = {13: set(), -13: set()}
+        for pdg_id in (13, -13):
+            raw = datasets[pdg_id].train.raw
+            weights = raw[:, schema.COLUMN_INDEX["w"]]
+            pi = _probabilities_from_weights(raw)
+            source_hash = dataset_hash(raw)
+            self._raw[pdg_id] = raw
+            self._pi[pdg_id] = pi
+            self.source_probability_table_hash[pdg_id] = source_hash
+            self._samplers[pdg_id] = AliasSampler.from_probabilities(pi, source_hash=source_hash)
+            thresholds = fit_toy_thresholds(
+                datasets[pdg_id].train.physical, weights, pdg_id=int(pdg_id)
+            )
+            self.thresholds[pdg_id] = thresholds
+            b_toy_train = compute_b_toy(datasets[pdg_id].train.physical, thresholds)
+            self._b_toy_train[pdg_id] = b_toy_train
+            self.nominal_b_toy_prevalence[pdg_id] = nominal_prevalence(b_toy_train, weights)
+        self.epoch_records: List[Dict[str, Any]] = []
+
+    def draw(self, epoch: int) -> Dict[str, Any]:
+        epoch = int(epoch)
+        per_charge_raw: Dict[int, np.ndarray] = {}
+        per_charge_meta: Dict[str, Any] = {}
+        for pdg_id in (13, -13):
+            derived_seed = _derived_epoch_seed(self._seed, epoch, pdg_id, salt=0)
+            indices = self._samplers[pdg_id].draw(
+                self.draws_per_epoch_per_charge, seed=derived_seed
+            )
+            per_charge_raw[pdg_id] = self._raw[pdg_id][indices]
+            self._cumulative_unique[pdg_id].update(int(i) for i in np.unique(indices))
+            diagnostics = empirical_draw_diagnostics(indices, b_toy=self._b_toy_train[pdg_id])
+            per_charge_meta[str(pdg_id)] = {
+                "pdg_id": int(pdg_id),
+                "condition": muon_electric_charge_sign(pdg_id),
+                "derived_seed": derived_seed,
+                "draw_count": self.draws_per_epoch_per_charge,
+                "draw_hash": canonical_hash(indices.tolist()),
+                "source_probability_table_hash": self.source_probability_table_hash[pdg_id],
+                "alias_table_hash": self._samplers[pdg_id].table_hash(),
+                "unique_rows_drawn": diagnostics["unique_rows_drawn"],
+                "unique_rows_fraction": diagnostics["unique_rows_fraction"],
+                "max_reuse_count": diagnostics["max_reuse_count"],
+                "empirical_b_toy_fraction": diagnostics["empirical_b_toy_fraction"],
+                "cumulative_unique_source_rows": len(self._cumulative_unique[pdg_id]),
+            }
+        raw_combined = np.concatenate((per_charge_raw[13], per_charge_raw[-13]))
+        condition = np.concatenate(
+            (
+                _condition(13, self.draws_per_epoch_per_charge),
+                _condition(-13, self.draws_per_epoch_per_charge),
+            )
         )
-        for pdg_id in (13, -13)
-    }
-    raw = np.concatenate((draws[13]["raw"], draws[-13]["raw"]))
-    condition = np.concatenate(
-        (_condition(13, per_charge), _condition(-13, per_charge))
-    )
-    permutation = np.random.default_rng(int(seed)).permutation(draw_budget)
-    return {
-        "raw": np.ascontiguousarray(raw[permutation], dtype=np.float64),
-        "condition": np.ascontiguousarray(condition[permutation], dtype=np.float64),
-        "draws": draws,
-        "permutation": permutation,
-        "draw_budget_total": draw_budget,
-    }
+        shuffle_seed = _derived_epoch_seed(self._seed, epoch, 0, salt=1)
+        permutation = np.random.default_rng(shuffle_seed).permutation(raw_combined.shape[0])
+        raw_combined = raw_combined[permutation]
+        condition = condition[permutation]
+        x = self._pipeline.transform_raw(raw_combined)
+
+        record = {
+            "epoch": epoch,
+            "charge_counts": {
+                "13": self.draws_per_epoch_per_charge,
+                "-13": self.draws_per_epoch_per_charge,
+            },
+            "sample_weight_applied_to_loss": False,
+            "per_charge": per_charge_meta,
+        }
+        self.epoch_records.append(record)
+        return {"x": x, "condition": condition, "metadata": record}
+
+    def manifest(self) -> Dict[str, Any]:
+        return {
+            "schema_version": CONDITIONAL_CHARGE_SCHEMA_VERSION,
+            "sampling_regime": "conditional_macro_balanced_physical_nominal_direct_per_epoch",
+            "draws_per_epoch_per_charge": self.draws_per_epoch_per_charge,
+            "draws_per_epoch_total": 2 * self.draws_per_epoch_per_charge,
+            "global_seed": self._seed,
+            "sample_weight_applied_to_loss": False,
+            "gradient_estimator_target": (
+                "E_epoch_draws[gradient] = (1/2) * grad L_13 + (1/2) * grad L_-13"
+            ),
+            "unbiasedness_scope": (
+                "per_step_stochastic_gradient_only; the final trained parameters "
+                "are not claimed to be an unbiased estimator of any macro target"
+            ),
+            "charges": {
+                str(pdg_id): {
+                    "pdg_id": int(pdg_id),
+                    "condition": muon_electric_charge_sign(pdg_id),
+                    "source_probability_table_hash": self.source_probability_table_hash[pdg_id],
+                    "alias_table_hash": self._samplers[pdg_id].table_hash(),
+                    "theoretical": theoretical_concentration_diagnostics(
+                        self._pi[pdg_id], draw_budget=self.draws_per_epoch_per_charge
+                    ),
+                    "nominal_b_toy_prevalence": self.nominal_b_toy_prevalence[pdg_id],
+                    "thresholds": {
+                        "t_pT": float(self.thresholds[pdg_id].t_pT),
+                        "t_R": float(self.thresholds[pdg_id].t_R),
+                    },
+                    "cumulative_unique_source_rows": len(self._cumulative_unique[pdg_id]),
+                    "cumulative_unique_source_rows_fraction": (
+                        float(len(self._cumulative_unique[pdg_id])) / self._raw[pdg_id].shape[0]
+                    ),
+                }
+                for pdg_id in (13, -13)
+            },
+            "epochs": list(self.epoch_records),
+            "n_epochs_recorded": len(self.epoch_records),
+        }
 
 
 def _weighted_nll(values: np.ndarray, weights: np.ndarray) -> float:
@@ -219,11 +335,11 @@ def _weighted_nll(values: np.ndarray, weights: np.ndarray) -> float:
     return float(np.sum(weights * -values) / np.sum(weights))
 
 
-def _split_hash(dataset) -> str:
+def _split_hash(dataset: EmpiricalTrainValidationDataset) -> str:
     return canonical_hash({
         "train_source_row_indices": dataset.train.source_row_indices.tolist(),
         "validation_source_row_indices": dataset.validation.source_row_indices.tolist(),
-        "test_source_row_indices": dataset.test.source_row_indices.tolist(),
+        "test_split_hash": dataset.test_split_hash,
     })
 
 
@@ -261,7 +377,7 @@ def run_symmetry_audit(
 ) -> Dict[str, Any]:
     """Compare the two charge distributions without imposing a symmetry.
 
-    v0 intentionally accepts only the no-transform baseline. A future declared
+    v1 intentionally accepts only the no-transform baseline. A future declared
     ``g`` must enter here with repository-backed coordinate and geometry
     evidence before any transformed comparison is run.
     """
@@ -310,7 +426,11 @@ def run_fixture_pilot(
     output_dir: Path,
     repo_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Run the bounded macro-balanced, physical-nominal fixture pilot."""
+    """Run the bounded macro-balanced, physical-nominal, per-epoch-direct-sampling pilot.
+
+    Test rows are never loaded for either charge (``build_empirical_train_validation_dataset``);
+    only the deterministic test row count and split-index hash are recorded.
+    """
 
     repo_root = (
         Path(repo_root).resolve()
@@ -319,9 +439,9 @@ def run_fixture_pilot(
     )
     resolved = _validate_config(config, repo_root)
     seed = int(resolved["seed"])
-    datasets = {}
+    datasets: Dict[int, EmpiricalTrainValidationDataset] = {}
     for pdg_id in (13, -13):
-        datasets[pdg_id] = build_empirical_dataset(
+        datasets[pdg_id] = build_empirical_train_validation_dataset(
             EmpiricalDatasetSpec(
                 dataset_path=resolved["dataset_path"],
                 pdg_id=pdg_id,
@@ -331,18 +451,17 @@ def run_fixture_pilot(
                 max_rows=int(resolved["max_rows_per_charge"]),
             )
         )
-    pool = build_balanced_draw_pool(
-        datasets,
-        draw_budget=2 * int(resolved["train_rows_per_charge"]),
-        seed=seed,
-    )
-    draws = pool["draws"]
-    combined_train_raw = pool["raw"]
-    train_condition = pool["condition"]
 
     feature_view = FeatureView(IDENTITY_CARTESIAN_VIEW_ID)
-    pipeline = FittedFeaturePipeline.fit(combined_train_raw, feature_view)
-    x_train = pipeline.transform_raw(combined_train_raw)
+    pipeline = FittedFeaturePipeline.fit_macro_weighted(
+        raw_by_charge={pdg_id: datasets[pdg_id].train.raw for pdg_id in (13, -13)},
+        weights_by_charge={
+            pdg_id: datasets[pdg_id].train.raw[:, schema.COLUMN_INDEX["w"]]
+            for pdg_id in (13, -13)
+        },
+        feature_view=feature_view,
+    )
+
     validation_raw = np.concatenate(
         (datasets[13].validation.raw, datasets[-13].validation.raw)
     )
@@ -367,13 +486,21 @@ def run_fixture_pilot(
         device=resolved["model"].get("device", "cpu"),
         **resolved["model"]["params"],
     )
+
+    epoch_sampler = _EpochDirectSampler(
+        datasets=datasets,
+        pipeline=pipeline,
+        draws_per_epoch_per_charge=int(resolved["draws_per_epoch_per_charge"]),
+        seed=seed,
+    )
+
     fit = model.fit(
-        x_train,
+        None,
         x_validation=pipeline.transform_raw(validation_raw),
         seed=seed,
         validation_sample_weight=validation_weights,
-        condition=train_condition,
         validation_condition=validation_condition,
+        epoch_sampler=epoch_sampler.draw,
     )
     if fit.status != "ok":
         raise ConditionalChargeError("conditional flow fit failed: {}".format(fit.warnings))
@@ -398,15 +525,17 @@ def run_fixture_pilot(
         )
         generated[pdg_id] = samples_normalized
         samples_physical = pipeline.inverse_to_physical(samples_normalized)
-        thresholds = draws[pdg_id]["thresholds"]
+        thresholds = epoch_sampler.thresholds[pdg_id]
         empirical_summary = compact_distribution_summary(
             partition.physical, weights=weights,
         )
         generated_summary = compact_distribution_summary(samples_physical)
         generated_b_toy = compute_b_toy(samples_physical, thresholds)
+        nominal_b_toy_occupancy = epoch_sampler.nominal_b_toy_prevalence[pdg_id]
+        generated_b_toy_occupancy = float(generated_b_toy.mean())
         validation_entry = {
             "pdg_id": int(pdg_id),
-            "condition": charge_condition(pdg_id),
+            "condition": muon_electric_charge_sign(pdg_id),
             "validation_rows": partition.n_rows,
             "validation_weight_total": float(weights.sum()),
             "physical_validation_nll_weighted": _weighted_nll(physical_lp, weights),
@@ -415,13 +544,19 @@ def run_fixture_pilot(
         }
         generated_entry = {
             "pdg_id": int(pdg_id),
-            "condition": charge_condition(pdg_id),
+            "condition": muon_electric_charge_sign(pdg_id),
             "sample_count": int(samples_physical.shape[0]),
             "generated_sample_finite_fraction": float(np.isfinite(samples_physical).all(axis=1).mean()),
             "generated_log_prob_finite_fraction": float(np.isfinite(model.log_prob(
                 samples_normalized, condition=_condition(pdg_id, samples_normalized.shape[0])
             )).mean()),
-            "generated_b_toy_occupancy": float(generated_b_toy.mean()),
+            "nominal_b_toy_occupancy": nominal_b_toy_occupancy,
+            "generated_b_toy_occupancy": generated_b_toy_occupancy,
+            "generated_over_nominal_b_toy_ratio": (
+                (generated_b_toy_occupancy / nominal_b_toy_occupancy)
+                if nominal_b_toy_occupancy > 0.0
+                else None
+            ),
             "generated_summary": generated_summary,
         }
         per_charge.append(validation_entry)
@@ -455,15 +590,7 @@ def run_fixture_pilot(
             np.mean(np.abs(audit_minus - audit_plus))
         ),
     }
-    sampling_manifest = {
-        "schema_version": CONDITIONAL_CHARGE_SCHEMA_VERSION,
-        "sampling_regime": "conditional_macro_balanced_physical_nominal",
-        "draw_budget_total": int(sum(draws[pdg_id]["raw"].shape[0] for pdg_id in (13, -13))),
-        "draw_counts": {str(pdg_id): int(draws[pdg_id]["raw"].shape[0]) for pdg_id in (13, -13)},
-        "shuffle_seed": seed,
-        "sample_weight_applied_to_loss": False,
-        "charges": {str(pdg_id): draws[pdg_id]["sampling"] for pdg_id in (13, -13)},
-    }
+    sampling_manifest = epoch_sampler.manifest()
     training_metrics = {
         "fit": fit.to_dict(),
         "training_history": fit.train_history,
@@ -473,16 +600,33 @@ def run_fixture_pilot(
         },
     }
     per_charge_macro = [row["physical_validation_nll_weighted"] for row in per_charge]
+    test_provenance = {
+        str(pdg_id): {
+            "test_row_count": datasets[pdg_id].test_row_count,
+            "test_split_hash": datasets[pdg_id].test_split_hash,
+            "test_payload_loaded": False,
+            "test_used_for_training": False,
+            "test_used_for_preprocessing": False,
+            "test_used_for_model_selection": False,
+            "test_used_for_evaluation": False,
+        }
+        for pdg_id in (13, -13)
+    }
     summary = {
         "schema_version": CONDITIONAL_CHARGE_SCHEMA_VERSION,
         "experiment_id": resolved["experiment_id"],
         "config_hash": canonical_hash(config),
         "status": "completed_fixture_pilot",
         "scope": "fixture_only_not_physics_acceptance",
-        "training_distribution": "macro_balanced_physical_nominal_with_replacement",
-        "rows_per_charge": int(resolved["train_rows_per_charge"]),
-        "condition_definition": {"pdg_13": 1.0, "pdg_-13": -1.0},
+        "training_distribution": "macro_balanced_physical_nominal_direct_per_epoch",
+        "draws_per_epoch_per_charge": int(resolved["draws_per_epoch_per_charge"]),
+        "condition_field_name": CONDITION_FIELD_NAME,
+        "condition_definition": {
+            "pdg_13": MUON_ELECTRIC_CHARGE_SIGN_BY_PDG[13],
+            "pdg_-13": MUON_ELECTRIC_CHARGE_SIGN_BY_PDG[-13],
+        },
         "source_file_dataset_hash": datasets[13].source_file_dataset_hash,
+        "test_provenance": test_provenance,
         "lineage": {
             "code_commit": _current_git_commit(),
             "source_file_dataset_hash": datasets[13].source_file_dataset_hash,
@@ -492,12 +636,15 @@ def run_fixture_pilot(
                     "split_hash": _split_hash(datasets[pdg_id]),
                     "train_rows": datasets[pdg_id].train.n_rows,
                     "validation_rows": datasets[pdg_id].validation.n_rows,
-                    "test_rows": datasets[pdg_id].test.n_rows,
-                    "source_table_hash": draws[pdg_id]["sampling"]["source_table_hash"],
+                    "test_row_count": datasets[pdg_id].test_row_count,
+                    "test_split_hash": datasets[pdg_id].test_split_hash,
+                    "test_payload_loaded": False,
+                    "source_probability_table_hash": epoch_sampler.source_probability_table_hash[pdg_id],
                 }
                 for pdg_id in (13, -13)
             },
             "preprocessing_hash": pipeline.config_hash(),
+            "preprocessing_weighting": pipeline.weighting,
             "model_config_hash": canonical_hash(model.config()),
             "checkpoint_hash": model.checkpoint_hash(),
         },
@@ -551,7 +698,11 @@ def _write_artifacts(
     summary_stream = io.StringIO(newline="")
     summary_writer = csv.DictWriter(
         summary_stream,
-        fieldnames=["pdg_id", "condition", "validation_nll_weighted", "generated_b_toy_occupancy"],
+        fieldnames=[
+            "pdg_id", "condition", "validation_nll_weighted",
+            "nominal_b_toy_occupancy", "generated_b_toy_occupancy",
+            "generated_over_nominal_b_toy_ratio",
+        ],
         lineterminator="\n",
     )
     summary_writer.writeheader()
@@ -560,7 +711,9 @@ def _write_artifacts(
             "pdg_id": row["pdg_id"],
             "condition": row["condition"],
             "validation_nll_weighted": row["physical_validation_nll_weighted"],
+            "nominal_b_toy_occupancy": generated_row["nominal_b_toy_occupancy"],
             "generated_b_toy_occupancy": generated_row["generated_b_toy_occupancy"],
+            "generated_over_nominal_b_toy_ratio": generated_row["generated_over_nominal_b_toy_ratio"],
         })
     (output_dir / "conditional_fixture_summary.csv").write_text(
         summary_stream.getvalue(), encoding="utf-8"
@@ -578,23 +731,26 @@ def _write_artifacts(
             json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
     lines = [
-        "# Conditional-charge NF fixture pilot",
+        "# Conditional-charge NF fixture pilot (v1)",
         "",
         "- Status: `{}`".format(summary["status"]),
         "- Scope: `{}`".format(summary["scope"]),
         "- Training: `{}`".format(summary["training_distribution"]),
+        "- Condition: `{}` (PDG 13 -> -1, PDG -13 -> +1)".format(summary["condition_field_name"]),
         "- Validation: per-charge weighted NLL; macro mean and worst charge are reported",
         "- Symmetry transform: `none` (audit only; no hard symmetry)",
-        "- Test rows: loaded only for provenance, never used for training or model selection",
+        "- Test rows: never materialized (Gate E closed); only row count and split hash are recorded",
         "- Physical-rate estimate: not produced",
         "",
-        "| PDG id | condition | weighted validation NLL | generated B_toy occupancy |",
-        "| ---: | ---: | ---: | ---: |",
+        "| PDG id | condition | weighted validation NLL | nominal B_toy | generated B_toy | ratio |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row, generated_row in zip(rows, per_charge_generated_summary):
+        ratio = generated_row["generated_over_nominal_b_toy_ratio"]
         lines.append(
             "| {pdg_id} | {condition:.0f} | {physical_validation_nll_weighted:.12g} | "
-            "{generated_b_toy_occupancy:.12g} |".format(
+            "{nominal_b_toy_occupancy:.12g} | {generated_b_toy_occupancy:.12g} | {ratio} |".format(
+                ratio=("{:.6g}".format(ratio) if ratio is not None else "n/a"),
                 **dict(generated_row, **row)
             )
         )
