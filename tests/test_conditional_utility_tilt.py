@@ -475,6 +475,28 @@ def test_nominal_and_tilted_validation_nll_formulas():
         weighted_nll(log_prob, np.zeros(4))
 
 
+@pytest.mark.slow
+def test_cross_measure_validation_is_the_same_model_under_every_measure(tmp_path):
+    pytest.importorskip("torch")
+    config = json.loads(SMOKE_CONFIG.read_text())
+    summary = run_conditional_utility_run(
+        config, variant_id="UA_d0p9_a04", seed=11,
+        output_dir=tmp_path, repo_root=REPO_ROOT,
+    )
+    for tilted, nominal in zip(
+        summary["per_charge_tilted_validation"],
+        summary["per_charge_nominal_validation"],
+    ):
+        cross = tilted["cross_measure_validation_nll"]
+        assert set(cross) == set(CONDITIONAL_UTILITY_ARENA_VARIANT_IDS)
+        # The NOMINAL measure has r == 1, so it must reproduce the nominal NLL.
+        assert cross[NOMINAL_PHYSICAL_VARIANT_ID] == pytest.approx(
+            nominal["nominal_validation_nll"]
+        )
+        # The run's own measure must reproduce its reported tilted NLL.
+        assert cross["UA_d0p9_a04"] == pytest.approx(tilted["tilted_validation_nll"])
+
+
 def test_wilson_interval_brackets_the_point_estimate():
     low, high = wilson_interval(100, 1000)
     assert low < 0.1 < high

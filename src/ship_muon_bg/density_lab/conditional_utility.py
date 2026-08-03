@@ -954,6 +954,19 @@ def run_conditional_utility_run(
         validation_utility = compute_utility_a(validation_b_toy)
         validation_r = variant_multiplier(variant_id, validation_utility)
 
+        # Cross-measure validation: the same trained model scored under every
+        # arena variant's measure. Each variant's own tilted NLL is a
+        # *different functional*, so comparing "tilted validation NLL" across
+        # variant columns compares different quantities; this block is what
+        # makes the improve/degrade trade-off comparable at fixed measure.
+        cross_measure = {
+            measure_id: weighted_nll(
+                physical_lp,
+                weights * variant_multiplier(measure_id, validation_utility),
+            )
+            for measure_id in CONDITIONAL_UTILITY_ARENA_VARIANT_IDS
+        }
+
         nominal_validation.append(
             {
                 "variant_id": variant_id,
@@ -977,6 +990,11 @@ def run_conditional_utility_run(
                 "validation_rows": partition.n_rows,
                 "validation_weight_r_total": float(np.sum(weights * validation_r)),
                 "tilted_validation_nll": weighted_nll(physical_lp, weights * validation_r),
+                "cross_measure_validation_nll": cross_measure,
+                "cross_measure_note": (
+                    "the same trained model scored under every arena variant's "
+                    "r-measure; compare variants column-wise at fixed measure"
+                ),
                 "validation_b_toy_weighted_prevalence": nominal_prevalence(
                     validation_b_toy, weights
                 ),
@@ -1241,6 +1259,9 @@ ARENA_ROW_COLUMNS: Tuple[str, ...] = (
     "preprocessing_hash",
     "alias_table_hash",
     "tilted_probability_table_hash",
+) + tuple(
+    "val_nll_under_{}".format(measure_id)
+    for measure_id in CONDITIONAL_UTILITY_ARENA_VARIANT_IDS
 )
 
 
@@ -1300,6 +1321,12 @@ def _arena_rows_from_summary(summary: Mapping[str, Any]) -> List[Dict[str, Any]]
                 "tilted_probability_table_hash": charges[key][
                     "tilted_probability_table_hash"
                 ],
+                **{
+                    "val_nll_under_{}".format(measure_id): value
+                    for measure_id, value in tilted_by_pdg[pdg_id][
+                        "cross_measure_validation_nll"
+                    ].items()
+                },
             }
         )
     return rows
@@ -1348,6 +1375,9 @@ def build_arena_aggregate(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
         "n_eff",
         "cumulative_unique_source_rows",
         "max_row_reuse",
+    ) + tuple(
+        "val_nll_under_{}".format(measure_id)
+        for measure_id in CONDITIONAL_UTILITY_ARENA_VARIANT_IDS
     )
     for variant_id in CONDITIONAL_UTILITY_ARENA_VARIANT_IDS:
         variant_rows = [r for r in rows if r["variant_id"] == variant_id]
