@@ -13,6 +13,7 @@ Section order mirrors the implementation plan:
 
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 import sys
@@ -99,6 +100,77 @@ _GOLDEN_ARM_A_PROBE_LOG_PROB = np.asarray(
     [-4.720993995666504, -8.852683067321777, -5.9291276931762695],
     dtype=np.float64,
 )
+
+# --- portable float32 precision policy --------------------------------------
+#
+# The golden fixture trains a float32 module. Its *parameters* are reproduced
+# byte for byte on any conforming machine (that is what the separately gated
+# ``reference_golden`` state_dict-hash test asserts). The reported scalars are
+# not: ``feature_space_train_nll`` / ``feature_space_validation_nll`` are
+# float32 reductions over the reported rows, and a different but equally valid
+# summation order -- BLAS kernel, thread count, vector width -- changes the
+# last bits of the sum without changing a single parameter.
+#
+# Measured drift on a portable CPU environment versus the captured reference
+# (torch 2.13.0, 4 threads), with the state_dict hash, best_step, history
+# length, state structure, parameter count and probe log-probs all identical:
+#
+#     feature_space_train_nll        drift 0.0        (0 ULP)
+#     feature_space_validation_nll   drift 1.2207e-4  (exactly 2 float32 ULP)
+#
+# The pre-existing absolute tolerance of 1e-5 (effective tolerance
+# ``max(1e-7 * 978.6, 1e-5) ~= 9.8e-5``) is *below* one-and-a-half ULP at that
+# magnitude, so it could only ever have passed on a machine reproducing the
+# reference reduction order exactly -- it pinned the summation order, not the
+# model.
+#
+# Policy: portable assertions against a captured float32 reference are
+# compared with an absolute tolerance of a fixed small number of float32 ULPs
+# *at the expected magnitude*. ``_GOLDEN_FLOAT32_ULP_TOLERANCE = 8`` gives 4x
+# headroom over the largest measured drift while staying a relative tolerance
+# of ~5e-7 -- far tighter than any tolerance that could hide a real change in
+# the fit (a changed best_step, a changed optimizer, or a changed loss moves
+# these scalars by many orders of magnitude more). The exact byte-identity
+# check is unchanged and stays in the separately gated ``reference_golden``
+# test; no environment-specific hash list is introduced, nothing is xfailed or
+# skipped, and no unrelated assertion is loosened.
+_GOLDEN_FLOAT32_ULP_TOLERANCE = 8
+
+
+def _float32_ulp(value: float) -> float:
+    """Spacing between consecutive float32 values at ``|value|``."""
+
+    magnitude = abs(float(value))
+    if magnitude == 0.0 or not math.isfinite(magnitude):
+        return float(np.spacing(np.float32(1.0)))
+    exponent = math.frexp(magnitude)[1] - 1
+    return math.ldexp(1.0, exponent - 23)
+
+
+def _float32_ulp_tolerance(
+    value: float, n_ulp: int = _GOLDEN_FLOAT32_ULP_TOLERANCE
+) -> float:
+    """Absolute tolerance of ``n_ulp`` float32 ULPs at the expected magnitude."""
+
+    return float(n_ulp) * _float32_ulp(value)
+
+
+def _approx_float32(expected: float, n_ulp: int = _GOLDEN_FLOAT32_ULP_TOLERANCE):
+    return pytest.approx(expected, rel=0.0, abs=_float32_ulp_tolerance(expected, n_ulp))
+
+
+def test_float32_ulp_tolerance_is_a_tight_documented_rule():
+    # One ULP at the golden validation-NLL magnitude is 2**-14; the policy is a
+    # fixed multiple of it, i.e. a relative tolerance of about 5e-7.
+    one_ulp = _float32_ulp(_GOLDEN_ARM_A_FEATURE_SPACE_VALIDATION_NLL)
+    assert one_ulp == pytest.approx(2.0 ** -14)
+    tolerance = _float32_ulp_tolerance(_GOLDEN_ARM_A_FEATURE_SPACE_VALIDATION_NLL)
+    assert tolerance == _GOLDEN_FLOAT32_ULP_TOLERANCE * one_ulp
+    assert tolerance / _GOLDEN_ARM_A_FEATURE_SPACE_VALIDATION_NLL < 1e-6
+    # It must cover the measured 2-ULP reduction-order drift with headroom ...
+    assert tolerance > 2.0 * one_ulp
+    # ... and must stay far below any change that would matter scientifically.
+    assert tolerance < 1e-3
 
 
 @pytest.mark.parametrize(
@@ -203,11 +275,14 @@ def test_golden_arm_a_portable_functional_regression():
     assert len(result_a.train_history) == _GOLDEN_ARM_A_N_HISTORY
     final = result_a.train_history[-1]
     assert final["weight_normalization"] == _GOLDEN_ARM_A_WEIGHT_NORMALIZATION
-    assert final["feature_space_train_nll"] == pytest.approx(
-        _GOLDEN_ARM_A_FEATURE_SPACE_TRAIN_NLL, rel=1e-7, abs=1e-5
+    # Portable float32 comparison: a fixed small ULP budget at the expected
+    # magnitude (see the precision policy above), never a loose relative
+    # tolerance and never an environment-specific expected value.
+    assert final["feature_space_train_nll"] == _approx_float32(
+        _GOLDEN_ARM_A_FEATURE_SPACE_TRAIN_NLL
     )
-    assert final["feature_space_validation_nll"] == pytest.approx(
-        _GOLDEN_ARM_A_FEATURE_SPACE_VALIDATION_NLL, rel=1e-7, abs=1e-5
+    assert final["feature_space_validation_nll"] == _approx_float32(
+        _GOLDEN_ARM_A_FEATURE_SPACE_VALIDATION_NLL
     )
 
     state = flow_a._module.state_dict()
@@ -219,14 +294,19 @@ def test_golden_arm_a_portable_functional_regression():
     assert result_b.status == result_a.status
     assert result_b.best_step == result_a.best_step
     assert result_b.train_history[-1]["state_dict_hash"] == final["state_dict_hash"]
+    # Same portable float32 policy for the pinned probe log-probabilities: the
+    # per-element budget is ULPs at each element's own magnitude.
+    probe_log_prob = flow_a.log_prob(_GOLDEN_ARM_A_PROBE)
     np.testing.assert_allclose(
-        flow_a.log_prob(_GOLDEN_ARM_A_PROBE),
+        probe_log_prob,
         _GOLDEN_ARM_A_PROBE_LOG_PROB,
-        rtol=1e-6,
-        atol=1e-6,
+        rtol=0.0,
+        atol=max(_float32_ulp_tolerance(v) for v in _GOLDEN_ARM_A_PROBE_LOG_PROB),
     )
+    # Local determinism (same machine, same process) stays an exact-equality
+    # style assertion -- it is not a portability tolerance.
     np.testing.assert_allclose(
-        flow_a.log_prob(_GOLDEN_ARM_A_PROBE),
+        probe_log_prob,
         flow_b.log_prob(_GOLDEN_ARM_A_PROBE),
         rtol=1e-7,
         atol=1e-7,
