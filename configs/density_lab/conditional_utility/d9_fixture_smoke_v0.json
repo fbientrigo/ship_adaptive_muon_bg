@@ -1,0 +1,35 @@
+{
+  "schema_version": "1",
+  "experiment_id": "d9_conditional_utility_tilt_fixture_smoke_v0",
+  "description": "Two-epoch wiring smoke for the v0 conditional utility-tilt contract: NOMINAL_PHYSICAL and UA_d0p9_a04 at model seed 11 on the committed afterMS fixture. Verifies the per-epoch conditional utility sampler, the shared nominal preprocessing hash, the nominal/tilted validation pair, the generated diagnostics, and the closed test payload -- never a scientific result.",
+  "fixture_only": true,
+  "dataset_path": "data/samples/muonsFullMC_afterMS_sample.npz",
+  "pdg_ids": [13, -13],
+  "seed": 11,
+  "model_seeds": [11],
+  "variants": ["NOMINAL_PHYSICAL", "UA_d0p9_a04"],
+  "max_rows_per_charge": 2048,
+  "draws_per_epoch_per_charge": 256,
+  "validation_fraction": 0.2,
+  "test_fraction": 0.2,
+  "generated_sample_count_per_charge": 512,
+  "feature_view": {"view_id": "identity_cartesian_v0"},
+  "model": {
+    "family": "affine_coupling",
+    "device": "cpu",
+    "conditional": true,
+    "condition_name": "muon_electric_charge_sign",
+    "condition_values": [-1, 1],
+    "params": {
+      "condition_dim": 1,
+      "number_of_blocks": 6,
+      "hidden_width": 64,
+      "hidden_depth": 2,
+      "max_epochs": 2,
+      "batch_size": 256,
+      "patience": 2,
+      "early_stopping": false,
+      "dtype": "float32"
+    }
+  }
+}

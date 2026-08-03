@@ -1,0 +1,35 @@
+{
+  "schema_version": "1",
+  "experiment_id": "d9_conditional_utility_tilt_fixture_arena_v0",
+  "description": "Fixture-only v0 conditional utility-tilt arena: one shared charge-conditional affine-coupling flow per (variant, model seed), trained by deterministic per-epoch direct sampling from the within-charge nominal or utility-tilted empirical law. Four variants (NOMINAL_PHYSICAL, UA_d0p9_a04, UA_d0p9_a08, UA_d0p1_a01) x three model seeds (11, 12, 13). Architecture, draw budget, and training budget are identical for every variant; only the per-epoch sampling measure changes. Preprocessing is the fixed nominal macro-weighted train-only transform, fit once per model seed and shared by every variant. Not a physical-rate estimate.",
+  "fixture_only": true,
+  "dataset_path": "data/samples/muonsFullMC_afterMS_sample.npz",
+  "pdg_ids": [13, -13],
+  "seed": 11,
+  "model_seeds": [11, 12, 13],
+  "variants": ["NOMINAL_PHYSICAL", "UA_d0p9_a04", "UA_d0p9_a08", "UA_d0p1_a01"],
+  "max_rows_per_charge": 16000,
+  "draws_per_epoch_per_charge": 4096,
+  "validation_fraction": 0.2,
+  "test_fraction": 0.2,
+  "generated_sample_count_per_charge": 8192,
+  "feature_view": {"view_id": "identity_cartesian_v0"},
+  "model": {
+    "family": "affine_coupling",
+    "device": "cpu",
+    "conditional": true,
+    "condition_name": "muon_electric_charge_sign",
+    "condition_values": [-1, 1],
+    "params": {
+      "condition_dim": 1,
+      "number_of_blocks": 6,
+      "hidden_width": 64,
+      "hidden_depth": 2,
+      "max_epochs": 30,
+      "batch_size": 256,
+      "patience": 5,
+      "early_stopping": true,
+      "dtype": "float32"
+    }
+  }
+}
