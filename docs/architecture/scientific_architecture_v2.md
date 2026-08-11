@@ -1,8 +1,9 @@
 # Scientific Architecture v2 — evidence, tags, targets, proxy, proposal
 
-Status: **specification only** for everything except `src/ship_muon_bg/entities/`,
-which is implemented and tested as the first additive slice (see §11). This
-document is the implementable software architecture implied by
+Status: **specification only** for everything except
+`src/ship_muon_bg/entities/` and the generic `src/ship_muon_bg/tagging/` core,
+which are implemented and tested as additive slices (see §11). This document
+is the implementable software architecture implied by
 `docs/contracts/tagging_contract_v0.md` (the "contract"). Where this
 document and the contract disagree, the contract wins; file the disagreement
 as a new `OPEN-*` item rather than resolving it here.
@@ -79,13 +80,13 @@ guard (§2a).
 | `src/ship_muon_bg/data_contracts/` | existing [VERIFIED] | Raw `(N, 8)` PKL ingestion, hashing, splits, normalization. Unchanged by this document. | nothing project-specific |
 | `src/ship_muon_bg/simulation/` | existing, **narrowed** | `SimulationBackend` protocol; `FlowProposalRecord`/`SimulationResult`/`OutcomeCategory` retained as a **derived, single-stage/single-realization convenience view** over `entities/` (§9 migration), not the canonical lineage representation. | `entities/` |
 | `src/ship_muon_bg/adapters/fairship/` (subpackage of `src/ship_muon_bg/`; **not** a new top-level package) | **new**, not implemented | Translates FairShip-specific representations into `entities/` records. Internally split into `FairShipRunner` (invokes the backend), `FairShipReader` (reads raw outputs), `FairShipEvidenceExtractor` (produces `ObservationEnvelope`s), `FairShipAdapterCapabilities` (declares what this adapter version can extract). The *only* place ROOT/FairShip/CERN-EOS knowledge is allowed, and the *only* subtree of `src/ship_muon_bg/` exempt from the backend-independence guard (§2a). | `entities/`, `simulation/`, ROOT/FairShip |
-| `src/ship_muon_bg/tagging/` | **new**, not implemented | Stage-definition rule engines: consume `ObservationEnvelope`/execution records, emit `StageDecision`/`TrainingTarget` instances under explicit `stage_definition_id`/`target_definition_id`. | `entities/` only |
+| `src/ship_muon_bg/tagging/` | **implemented (this slice)** | Backend-independent declarative `StageDefinition` plus `StageEvaluator`, ending at `StageDecision`; includes one explicitly non-physical scalar fixture. No `TrainingTarget` or physical SHiP tag is defined. | `entities/` only |
 | `ProxyTagger/` (future migration target: `src/ship_muon_bg/proxy/`, not performed in this task) | existing [VERIFIED], **narrowed** | `U_{k,phi}(s)` models: `fit`/`score` over NumPy arrays whose labels came from `tagging/`'s `TrainingTarget` output. | `entities/`, `tagging/` (label construction only, not rule engines) |
 | `Nflow/` (future migration target: `src/ship_muon_bg/proposal/`, not performed in this task) | existing [VERIFIED] | Proposal models + `BiasStrategy`. Unchanged interfaces; documentation-only update to say a `BiasStrategy` consumes `U_{k,phi}(s)` for one explicit `k`. | `entities/`, `ProxyTagger/` |
 | campaign orchestration (`scripts/` today; future migration target `src/ship_muon_bg/evaluation/`) | existing (thin scripts) [VERIFIED] | Wires adapter → tagging → proxy → proposal for one campaign run; writes `RunManifest`. Only layer allowed to import everything below it, including `adapters/fairship/`. | everything |
 
-The target tree, once `tagging/`, `proxy/`, `proposal/`, and `evaluation/`
-exist (none do yet beyond `entities/`):
+The target tree, with the generic tagging core now present and the remaining
+layers still future work, is:
 
 ```text
 src/ship_muon_bg/
@@ -94,7 +95,7 @@ src/ship_muon_bg/
     simulation/          # existing, narrowed (legacy convenience view)
     adapters/
         fairship/        # not implemented — the only ROOT/FairShip-allowed subtree
-    tagging/             # not implemented
+    tagging/             # implemented generic core; no physical tags
     proxy/               # future migration from ProxyTagger/, not in this task
     proposal/            # future migration from Nflow/, not in this task
     evaluation/          # future migration from scripts/, not in this task
@@ -144,8 +145,8 @@ This is enforced by `tests/test_architecture_boundaries.py`
 which:
 
 - sweeps only a declared list of **backend-independent package roots**
-  (today: `entities/`, `data_contracts/`, `simulation/`; extended as
-  `tagging/`/`proxy/`/`proposal/` land) for any ROOT/FairShip import,
+  (today: `entities/`, `data_contracts/`, `simulation/`, `tagging/`; extended
+  as `proxy/`/`proposal/` land) for any ROOT/FairShip import,
   using AST-based dotted-import-name inspection rather than whole-line
   substring matching (more precise: a segment must equal `"root"` or start
   with `"fairship"`, not merely contain that text anywhere on the line);
@@ -336,9 +337,11 @@ Git" rule [VERIFIED] and `PROV-03`.
 ## 7. Stable interfaces
 
 `entities/` below is **implemented** (`src/ship_muon_bg/entities/`, this
-slice — signatures shown match the real code, not a sketch). Everything
-after `entities/target.py` remains illustrative only, to prove the contract
-is implementable; none of it is implemented in this commit (scope control).
+slice — signatures shown match the real code, not a sketch). The generic
+tagging core is also implemented in `src/ship_muon_bg/tagging/` (§7b).
+Everything after `entities/target.py` remains illustrative only, to prove the
+remaining contract is implementable; `TrainingTarget` and the FairShip
+adapter are not implemented in this commit (scope control).
 
 ```python
 # entities/subject.py — implemented
@@ -482,6 +485,24 @@ change, never a redesign of `ObservationEnvelope` itself. `ObservationEnvelope._
 enforces `OBS-03`/`CENSOR-02` structurally: a `COMPUTED` envelope must carry
 a payload; `NOT_APPLICABLE`/`TECHNICALLY_UNAVAILABLE` must carry `None` —
 never a sentinel value written into the payload slot.
+
+### 7b. Generic tagging core — implemented this slice
+
+`StageDefinition` stores recursively immutable declarative semantic content,
+the required `observation_definition_id` set, and a content-addressed
+`stage_definition_id` produced by `entities.definition_id`. `StageEvaluator`
+accepts one `StageDefinition`, an `ObservationEnvelope` collection, and one
+declared `subject_ref`; it returns one `StageDecision` and never aggregates
+across entity references. v0 supports only the controlled
+`fixture.scalar_above_threshold` rule (`value > threshold`), which is marked
+non-physical and is not a SHiP selection, veto, DIS, or proxy target.
+
+For mixed required-evidence availability, the deterministic precedence is
+`TECHNICALLY_UNAVAILABLE` > `NOT_APPLICABLE` > missing. The first produces a
+`TECHNICALLY_UNAVAILABLE` `StageDecision`; either of the latter two produces
+`NOT_EVALUATED`. All unevaluable paths carry `decision = None`, and produced
+decisions retain the consumed `ObservationEnvelope.observation_id` values in
+`evidence_references` without copying payloads.
 
 ## 8. Adapter versioning and capability discovery
 
@@ -701,6 +722,8 @@ level enforcing §2a's dependency invariant specifically.
    `definition_id` determinism/content-sensitivity. Extends the existing
    pattern in `tests/test_architecture.py` (e.g.
    `test_technical_failure_never_carries_a_dis_tag` [VERIFIED]).
+   `tests/test_tagging.py` additionally protects declarative stage identity,
+   scoped evaluation, evidence references, and missingness precedence.
 2. **Contract tests** — protect the *shape* of the boundary independent of
    backend: any object satisfying `SimulationBackend` (toy, fake, or a real
    `adapters/fairship/`) must produce `entities/`-valid records; artifact
@@ -708,7 +731,9 @@ level enforcing §2a's dependency invariant specifically.
    `fairship_adapter_contract_v0.md`'s existing "Testing expectations before
    implementation" list [VERIFIED] (dry-run contract test, schema
    validation, fake-backend roundtrip) to the new `entities/`/`tagging/`
-   types. Not implemented this slice (no adapter, no `tagging/` yet).
+   types. Not implemented this slice (no adapter or full
+   `TrainingTarget`/physical-tag path yet; the generic tagging core is
+   implemented).
 3. **Integration tests** — protect end-to-end plumbing through a toy/fake
    backend: proposal → adapter stub → `tagging` → `TrainingTarget`
    construction → `ProxyTagger.fit`/`score` → `BiasStrategy`, with no ROOT.
@@ -743,24 +768,20 @@ level enforcing §2a's dependency invariant specifically.
 
 ## 11. Migration path from v1
 
-Additive, incremental, in this order. **Step 1 is done** (this
-continuation); steps 2-5 are not executed in this commit.
+Additive, incremental, in this order. **Steps 1 and 2 are done** (this
+continuation); steps 3-5 are not executed in this commit.
 
 1. **[DONE]** Add `src/ship_muon_bg/entities/` with no consumers; unit-test
    its invariants in isolation (`tests/test_entities.py` plus
    `tests/test_architecture_boundaries.py`, 30 focused tests, all passing).
-   Zero risk to existing code: no existing file was modified except
-   `src/ship_muon_bg/__init__.py`'s `__all__` list and the test-file changes
-   in §10. `TrainingTarget` was deliberately deferred to a later slice (not
-   required to make any invariant in this slice testable).
-2. Add `src/ship_muon_bg/tagging/` with one named stage definition (working
-   name `"operational_selection_v0"`, matching today's implicit selection
-   stage, paired with a computed content hash of its rule per `CONF-01` so
-   the label is a compliant `stage_definition_id` and not just a display
-   name) that reads `entities/` records and reproduces today's
-   `physics_rejection`/`accepted_candidate` distinction under that explicit
-   `stage_definition_id`. Contract-test that this reproduces
-   `OutcomeCategory`'s existing behavior on the existing test fixtures.
+   At that point, zero risk to existing code was preserved: only the package
+   export and test files were changed. `TrainingTarget` was deliberately
+   deferred to a later slice.
+2. **[DONE]** Add the backend-independent `tagging/` core with declarative
+   `StageDefinition`, content-addressed semantic identity, scoped
+   `StageEvaluator`, explicit missingness precedence, evidence references,
+   and the non-physical `fixture.scalar_above_threshold` stage. This does not
+   define or reproduce any physical `OutcomeCategory` selection semantics.
 3. Implement the `toy_simulator` (existing roadmap step 2) emitting **both**
    the legacy `SimulationResult` projection and the new lineage objects,
    so `ProxyTagger`/`Nflow` consumers keep working unmodified while

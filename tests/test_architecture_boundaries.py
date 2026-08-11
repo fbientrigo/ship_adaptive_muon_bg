@@ -28,9 +28,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CORE_ROOT = os.path.join(REPO_ROOT, "src", "ship_muon_bg")
 
 # Backend-independent package roots that exist today. Extend this list as
-# tagging/, proxy/, proposal/ land (migration steps in
-# scientific_architecture_v2.md §11). Never add "adapters" here.
-BACKEND_INDEPENDENT_PACKAGES = ("entities", "data_contracts", "simulation")
+# proxy/ and proposal/ land (migration steps in scientific_architecture_v2.md
+# §11). Never add "adapters" here.
+BACKEND_INDEPENDENT_PACKAGES = ("entities", "data_contracts", "simulation", "tagging")
 
 # The one adapter boundary this contract currently sanctions
 # (scientific_architecture_v2.md §2).
@@ -122,6 +122,22 @@ def test_scanner_flags_root_and_fairship_imports_when_pointed_at_them(tmp_path):
     offending.write_text("import ROOT\nfrom fairship import Something\n")
     offenders = find_forbidden_imports(str(tmp_path))
     assert len(offenders) == 2
+
+
+def test_tagging_rejects_backend_specific_imports(tmp_path):
+    tagging_root = tmp_path / "tagging"
+    tagging_root.mkdir()
+    (tagging_root / "bad.py").write_text(
+        "import ROOT\n"
+        "from FairShip import Runner\n"
+        "from ship_muon_bg.adapters.fairship import FairShipRunner\n"
+    )
+    offenders = find_forbidden_imports(str(tagging_root))
+    assert {module_name for _, _, module_name in offenders} == {
+        "ROOT",
+        "FairShip",
+        "ship_muon_bg.adapters.fairship",
+    }
 
 
 def test_adapters_fairship_subtree_is_exempt_by_construction(tmp_path):

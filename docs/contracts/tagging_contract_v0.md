@@ -53,9 +53,11 @@ as a new `OPEN-*` item rather than silently resolving it.
   content (that is `Nflow`/`ProxyTagger`'s job).
 - **TAG-SCOPE-02** [PROJECT DECISION] This contract does **not** define: the
   final `SourceState`, the final endpoint B, a final event-weight/rate
-  formula, a multi-muon reduction policy, or any concrete `state_definition_id`
-  / `stage_definition_id` / `target_definition_id` payload. Those remain
-  `OPEN` (§14) or belong to future, separately reviewed definition records.
+  formula, a multi-muon reduction policy, or any final concrete
+  `state_definition_id` / `stage_definition_id` / `target_definition_id`
+  payload. Those remain `OPEN` (§14) or belong to future, separately reviewed
+  definition records. The controlled non-physical fixture stage is not a
+  final scientific definition.
 - **TAG-SCOPE-03** [PROJECT DECISION] This contract does not implement a
   FairShip runner, does not run FairShip, does not estimate SHiP background
   rates, and does not claim any current proxy equals a true physical
@@ -77,6 +79,12 @@ as a new `OPEN-*` item rather than silently resolving it.
   contract's `ReconstructedCandidate` (§3) is a distinct, FairShip-detector
   concept. Implementations must not conflate the two; a future glossary
   entry should disambiguate at the point of first collision.
+- **TAG-SCOPE-06** [VERIFIED] The generic tagging mechanism is implemented in
+  `src/ship_muon_bg/tagging/`: declarative `StageDefinition`, content-addressed
+  semantic identity, and a backend-independent `StageEvaluator` that ends at
+  `StageDecision`. The only supplied stage is the explicitly non-physical
+  `fixture.scalar_above_threshold`; no physical SHiP tag or utility endpoint
+  is defined by this implementation.
 
 ## 2. Canonical terminology
 
@@ -254,8 +262,18 @@ TagSubject
   reasonable v0 simplification for a not-yet-implemented adapter, but it is
   structurally a conflation of an execution-health axis with a single
   hardcoded stage-decision axis, exactly the risk the GOAL asks to
-  investigate. `DECISION-04` is the fix this contract prescribes; it is not
-  yet implemented (`MIGRATION` in the architecture doc).
+  investigate. `DECISION-04` is the separation this contract prescribes. The
+  new generic tagging core enforces it for new `StageDecision` records; the
+  migration of legacy `OutcomeCategory`/`SimulationResult` consumers remains
+  future work (`MIGRATION` in the architecture doc).
+- **DECISION-06** [VERIFIED] `StageEvaluator` evaluates one declared
+  `subject_ref` at a time and records the consumed `ObservationEnvelope`
+  identifiers in `StageDecision.evidence_references`. It does not aggregate
+  multiple executions, realizations, or candidates. Its v0 availability
+  precedence is `TECHNICALLY_UNAVAILABLE` > `NOT_APPLICABLE` > missing;
+  technically unavailable evidence yields `TECHNICALLY_UNAVAILABLE`, while
+  not-applicable or missing evidence yields `NOT_EVALUATED`. All unevaluable
+  decisions carry `decision = None`.
 
 ## 6. Training-target (`TrainingTarget`) semantics
 
