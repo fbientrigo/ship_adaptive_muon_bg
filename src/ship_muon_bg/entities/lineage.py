@@ -1,0 +1,106 @@
+"""Execution / interaction / candidate lineage.
+
+Implements ``docs/contracts/tagging_contract_v0.md`` ``EXEC-01``-``EXEC-04``
+and the corrected ``OPEN-09`` resolution in
+``docs/architecture/scientific_architecture_v2.md``: the lineage entity
+between an execution and a reconstructed candidate is interaction-neutral
+(``InteractionRealization``, not the DIS-specific ``DISRealization`` of the
+first draft). Current Muon DIS is one ``interaction_type`` value, not a
+hardcoded entity name.
+
+Cardinalities are ``0..N`` throughout by construction: nothing here forces
+exactly one execution per subject, exactly one realization per execution, or
+exactly one candidate per realization (``EXEC-02``). ``ExecutionStatus`` is
+health-only and must never contain a physics decision value such as
+``accepted_candidate``/``physics_rejection`` (``EXEC-03``, ``DECISION-04``);
+those live on ``StageDecision`` (see ``entities.decision``), a separate
+object entirely.
+"""
+
+from __future__ import annotations
+
+import enum
+from dataclasses import dataclass
+from typing import Optional
+
+
+class ExecutionStatus(str, enum.Enum):
+    """Run health only — never a physics outcome (``EXEC-03``)."""
+
+    SUCCEEDED = "succeeded"
+    TECHNICAL_FAILURE = "technical_failure"
+
+
+def _require_nonempty_str(value: object, field_name: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{field_name} must be a non-empty string")
+
+
+@dataclass(frozen=True)
+class FSSimExecution:
+    """One FairShip (or FairShip-like backend) execution attempt against a
+    ``TagSubject``. A subject may have ``0..N`` of these (``EXEC-01``);
+    repeated executions of the same subject are conditional repetitions of
+    that subject, never new draws from the nominal source measure
+    (``COMPAT-04`` — enforced by aggregation code downstream, not by this
+    dataclass, which only records one execution's own identity).
+    """
+
+    execution_id: str
+    subject_id: str
+    fs_sim_configuration_id: str
+    execution_status: ExecutionStatus
+
+    def __post_init__(self) -> None:
+        _require_nonempty_str(self.execution_id, "execution_id")
+        _require_nonempty_str(self.subject_id, "subject_id")
+        _require_nonempty_str(self.fs_sim_configuration_id, "fs_sim_configuration_id")
+        if not isinstance(self.execution_status, ExecutionStatus):
+            raise TypeError("execution_status must be an ExecutionStatus")
+
+
+@dataclass(frozen=True)
+class InteractionRealization:
+    """One interaction realization produced within an ``FSSimExecution``.
+
+    ``interaction_type`` names *what kind* of interaction this is (e.g.
+    ``"muon_dis"``); ``interaction_definition_id`` names the exact versioned
+    rule that classified it as such. An execution may produce ``0..N`` of
+    these (``EXEC-02``) — a scalar boolean DIS tag is exactly the 1:1
+    assumption this entity replaces. A DIS-specific typed view/specialization
+    may be layered on top later if useful; this base entity stays neutral.
+    """
+
+    realization_id: str
+    execution_id: str
+    interaction_type: str
+    interaction_definition_id: str
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "realization_id",
+            "execution_id",
+            "interaction_type",
+            "interaction_definition_id",
+        ):
+            _require_nonempty_str(getattr(self, field_name), field_name)
+
+
+@dataclass(frozen=True)
+class ReconstructedCandidate:
+    """One reconstructed detector-level candidate. Always tied to an
+    ``FSSimExecution``; ``realization_id`` is explicitly optional
+    (``None`` = an execution-level candidate not scoped to one
+    realization) rather than defaulting to an invented 1:1 association
+    (``EXEC-02``, ``EXEC-04``).
+    """
+
+    candidate_id: str
+    execution_id: str
+    realization_id: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        _require_nonempty_str(self.candidate_id, "candidate_id")
+        _require_nonempty_str(self.execution_id, "execution_id")
+        if self.realization_id is not None:
+            _require_nonempty_str(self.realization_id, "realization_id")

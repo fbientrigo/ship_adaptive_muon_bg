@@ -111,8 +111,8 @@ def test_flow_proposal_record_is_immutable():
 
 
 # 4. No ROOT / FairShip import in the module packages (non-legacy code).
-#    Mirrors test_data_contracts.test_no_root_or_fairship_import_in_core,
-#    which already covers src/ship_muon_bg (including simulation/).
+#    The dedicated directional guard in tests/test_architecture_boundaries.py
+#    covers the backend-independent src/ship_muon_bg package roots.
 def test_no_root_or_fairship_import_in_module_packages():
     scan_dirs = [
         os.path.join(REPO_ROOT, "Nflow"),
