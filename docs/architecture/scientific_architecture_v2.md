@@ -489,8 +489,11 @@ never a sentinel value written into the payload slot.
 ### 7b. Generic tagging core — implemented this slice
 
 `StageDefinition` stores recursively immutable declarative semantic content,
-the required `observation_definition_id` set, and a content-addressed
-`stage_definition_id` produced by `entities.definition_id`. `StageEvaluator`
+the required `observation_definition_id` set in deterministic exact-string
+sorted order, and a content-addressed `stage_definition_id` produced by
+`entities.definition_id`. The generic dependency set is unordered; duplicate
+IDs remain invalid. Explicitly role-coded fields in `semantic_content` retain
+their own order-sensitive semantics. `StageEvaluator`
 accepts one `StageDefinition`, an `ObservationEnvelope` collection, and one
 declared `subject_ref`; it returns one `StageDecision` and never aggregates
 across entity references. v0 supports only the controlled
@@ -503,6 +506,16 @@ For mixed required-evidence availability, the deterministic precedence is
 `NOT_EVALUATED`. All unevaluable paths carry `decision = None`, and produced
 decisions retain the consumed `ObservationEnvelope.observation_id` values in
 `evidence_references` without copying payloads.
+
+`decision_id` is content-addressed with the stage definition, subject
+reference, canonical consumed evidence identities, and evaluation status. The
+decision result itself is not redundantly hashed because the current
+declarative evaluator derives it from those semantic inputs; the censoring
+reason is likewise derived context. Thus repeated evaluation of equivalent
+inputs is stable, while distinct evidence realizations cannot silently share
+the same decision identity. This is deterministic evaluation identity, not a
+final raw-artifact provenance or run-manifest system; those remain future
+work.
 
 ## 8. Adapter versioning and capability discovery
 

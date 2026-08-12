@@ -274,6 +274,21 @@ TagSubject
   technically unavailable evidence yields `TECHNICALLY_UNAVAILABLE`, while
   not-applicable or missing evidence yields `NOT_EVALUATED`. All unevaluable
   decisions carry `decision = None`.
+- **STAGE-DEF-01** [PROJECT DECISION] Generic
+  `required_observation_definition_ids` is an unordered dependency set. It is
+  stored and hashed in deterministic exact-string sorted order; duplicate
+  identifiers remain invalid and are rejected rather than deduplicated.
+  Scientifically meaningful roles or order belong explicitly in
+  `semantic_content` (for example, `lhs` and `rhs`), so canonicalizing this
+  generic dependency set does not erase ordered semantics.
+- **DECISION-07** [PROJECT DECISION] `decision_id` is a deterministic
+  content-addressed identity of one evaluation realization. Its semantic
+  content is `stage_definition_id`, `subject_ref`, the canonical consumed
+  `evidence_references` (`ObservationEnvelope.observation_id` values), and
+  `evaluation_status`; it is not merely the `(stage, subject)` query. The
+  derived `decision` value and derived censoring `reason` are not duplicated
+  in this identity. The current generic evaluator makes them functions of
+  the stage definition, stable evidence identities, and evaluation state.
 
 ## 6. Training-target (`TrainingTarget`) semantics
 

@@ -55,10 +55,12 @@ class StageDefinition:
     """An immutable, declarative interpretation rule.
 
     ``required_observation_definition_ids`` declares the evidence definitions
-    the evaluator may consume for one entity reference.  ``semantic_content``
-    describes the rule itself; it must contain data, not executable callables.
-    The required definitions are included in the content-addressed identity,
-    so changing either the rule or its declared evidence changes the ID.
+    the evaluator may consume for one entity reference.  Membership is
+    unordered; the stored tuple is the deterministic sorted representation of
+    that set.  ``semantic_content`` describes the rule itself; it must contain
+    data, not executable callables.  The required definitions are included in
+    the content-addressed identity, so changing either the rule or its
+    declared evidence changes the ID.
     """
 
     stage_name: str
@@ -82,6 +84,11 @@ class StageDefinition:
                 )
         if len(set(required)) != len(required):
             raise ValueError("required observation definition IDs must be unique")
+
+        # Dependency membership is the semantic contract for this generic
+        # field.  Validate duplicates before sorting so malformed input is
+        # rejected rather than silently normalized away.
+        required = tuple(sorted(required))
 
         frozen_content = _freeze_semantic_value(self.semantic_content)
         identity_content = {

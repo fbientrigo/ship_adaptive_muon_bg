@@ -84,6 +84,63 @@ def test_required_observation_definition_changes_stage_definition_id():
     assert first.stage_definition_id != changed.stage_definition_id
 
 
+def test_required_observation_definition_membership_is_canonicalized_as_unordered():
+    content = {"operation": "not_evaluated"}
+    first = StageDefinition(
+        stage_name="fixture.availability",
+        semantic_content=content,
+        required_observation_definition_ids=("obs_A", "obs_B"),
+    )
+    reordered = StageDefinition(
+        stage_name="fixture.availability",
+        semantic_content=content,
+        required_observation_definition_ids=("obs_B", "obs_A"),
+    )
+
+    assert first.stage_definition_id == reordered.stage_definition_id
+    assert first.required_observation_definition_ids == ("obs_A", "obs_B")
+
+
+def test_required_observation_definition_membership_changes_stage_definition_id():
+    content = {"operation": "not_evaluated"}
+    first = StageDefinition(
+        stage_name="fixture.availability",
+        semantic_content=content,
+        required_observation_definition_ids=("obs_A", "obs_B"),
+    )
+    changed = StageDefinition(
+        stage_name="fixture.availability",
+        semantic_content=content,
+        required_observation_definition_ids=("obs_A", "obs_C"),
+    )
+
+    assert first.stage_definition_id != changed.stage_definition_id
+
+
+def test_duplicate_required_observation_definitions_are_rejected():
+    with pytest.raises(ValueError, match="must be unique"):
+        StageDefinition(
+            stage_name="fixture.duplicate_dependencies",
+            semantic_content={"operation": "not_evaluated"},
+            required_observation_definition_ids=("obs_A", "obs_A"),
+        )
+
+
+def test_explicit_role_order_remains_semantically_distinguishable():
+    first = StageDefinition(
+        stage_name="fixture.ordered_roles",
+        semantic_content={"lhs": "obs_A", "rhs": "obs_B"},
+        required_observation_definition_ids=("obs_A", "obs_B"),
+    )
+    reversed_roles = StageDefinition(
+        stage_name="fixture.ordered_roles",
+        semantic_content={"lhs": "obs_B", "rhs": "obs_A"},
+        required_observation_definition_ids=("obs_B", "obs_A"),
+    )
+
+    assert first.stage_definition_id != reversed_roles.stage_definition_id
+
+
 def test_stage_definition_rejects_opaque_executable_semantics():
     with pytest.raises(TypeError):
         StageDefinition(
@@ -112,6 +169,67 @@ def test_evaluated_path_returns_decision_and_exact_evidence_reference():
     assert result.decision is True
     assert result.stage_definition_id == definition.stage_definition_id
     assert result.evidence_references == ("obs-0",)
+
+
+def test_decision_identity_depends_on_consumed_evidence_identity():
+    definition = _stage()
+    first = StageEvaluator().evaluate(
+        definition,
+        [_scalar_observation(observation_id="obs-A", value=0.75)],
+        subject_ref="subject-0",
+    )
+    second = StageEvaluator().evaluate(
+        definition,
+        [_scalar_observation(observation_id="obs-B", value=0.75)],
+        subject_ref="subject-0",
+    )
+
+    assert first.stage_definition_id == second.stage_definition_id
+    assert first.evidence_references != second.evidence_references
+    assert first.decision_id != second.decision_id
+
+
+def test_decision_identity_is_deterministic_and_input_order_insensitive():
+    definition = StageDefinition(
+        stage_name="fixture.censored_pair",
+        semantic_content={"operation": "not_evaluated"},
+        required_observation_definition_ids=("obs_A", "obs_B"),
+    )
+    not_applicable = _scalar_observation(
+        observation_id="evidence-A",
+        observation_definition_id="obs_A",
+        status=ObservationEvaluationStatus.NOT_APPLICABLE,
+    )
+    unavailable = _scalar_observation(
+        observation_id="evidence-B",
+        observation_definition_id="obs_B",
+        status=ObservationEvaluationStatus.TECHNICALLY_UNAVAILABLE,
+    )
+
+    first = StageEvaluator().evaluate(
+        definition, [not_applicable, unavailable], subject_ref="subject-0"
+    )
+    repeated = StageEvaluator().evaluate(
+        definition, [not_applicable, unavailable], subject_ref="subject-0"
+    )
+    reordered = StageEvaluator().evaluate(
+        definition, [unavailable, not_applicable], subject_ref="subject-0"
+    )
+
+    assert first.evaluation_status is DecisionEvaluationStatus.TECHNICALLY_UNAVAILABLE
+    assert first.decision is None
+    assert first.decision_id == repeated.decision_id == reordered.decision_id
+    assert first.evidence_references == ("evidence-A", "evidence-B")
+
+
+def test_not_evaluated_decision_identity_is_deterministic_and_not_false():
+    definition = _stage()
+    missing = StageEvaluator().evaluate(definition, [], subject_ref="subject-0")
+    repeated_missing = StageEvaluator().evaluate(definition, [], subject_ref="subject-0")
+
+    assert missing.evaluation_status is DecisionEvaluationStatus.NOT_EVALUATED
+    assert missing.decision is None
+    assert missing.decision_id == repeated_missing.decision_id
 
 
 def test_computed_physical_zero_or_false_remains_an_evaluated_false():
