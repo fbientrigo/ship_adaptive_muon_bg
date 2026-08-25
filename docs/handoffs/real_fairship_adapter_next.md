@@ -40,6 +40,7 @@ invented:
 | a raw artifact a value was read from | `ObservationEnvelope.evidence_reference` |
 | any observable, scalar or not | `ObservationEnvelope` + a typed payload |
 | site paths, geometry files, environment profiles | `EvaluationRequest.options` |
+| the options digest a run was launched under (**required** on every execution, key `OPTIONS_DIGEST_PROVENANCE_KEY`) | `FSSimExecution.provenance` |
 
 ## 2. Investigation targets
 
@@ -84,9 +85,25 @@ omission rather than by decision: a run that exited 0 but whose reconstruction
 or stage evidence could not be obtained. It is not a crash and it is not a
 physics zero. Report it as a `SUCCEEDED` execution carrying an execution-level
 `StageDecision` with `TECHNICALLY_UNAVAILABLE`. Report a genuine clean zero as
-`SUCCEEDED` with an execution-level `EVALUATED False`. Emitting neither is not
-neutral: aggregation reads an unattested empty run as `NOT_EVALUATED` and it
-drops out of every rate, which is safe but loses a real measurement.
+`SUCCEEDED` with an execution-level `EVALUATED False`. Emitting neither is not neutral, and the cost is larger than it
+sounds. Aggregation reads an unattested empty run as `NOT_EVALUATED` and drops
+it from the denominator — which does not lose a measurement, it **redefines the
+estimand** from `P(pass)` to `P(pass | at least one candidate)`, while the row
+still prints a confident `eta_hat` beside it. In a rare-process regime where
+most runs reconstruct nothing, that is an order-of-magnitude inflation, not a
+rounding error. `evaluable_fraction` on every row is the signal: far below 1
+means the `eta_hat` next to it answers a narrower question than its name
+suggests. Check it on the first real table you produce.
+
+The attestation must also be *falsifiable*. Every `EVALUATED` decision has to
+cite at least one `COMPUTED` observation, so report the fact you actually
+checked — the reconstructed candidate count — as an observation and let the
+decision cite it. When that fact could not be read, the observation is
+`TECHNICALLY_UNAVAILABLE` and the boundary then refuses any `EVALUATED`
+decision resting on it. That is what stops a silent reconstruction failure
+being laundered into a clean zero. The reference backends show the shape; a
+fake is entitled to assert the count because it manufactured it, and you are
+not.
 
 The boundary already forbids the dangerous middle case: a `TECHNICAL_FAILURE`
 execution may not carry realizations, candidates, or an evaluated decision, and

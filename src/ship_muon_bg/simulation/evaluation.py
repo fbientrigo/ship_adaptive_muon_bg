@@ -384,6 +384,14 @@ class EvaluationBundle:
         for decision in decisions:
             if decision.evaluation_status is not DecisionEvaluationStatus.EVALUATED:
                 continue
+            if not decision.evidence_references:
+                raise ValueError(
+                    f"decision {decision.decision_id!r} is EVALUATED but cites no "
+                    "evidence; a conclusion that rests on nothing cannot be "
+                    "checked, and an unfalsifiable attestation is the cheapest "
+                    "way to turn a silent reconstruction failure into a physics "
+                    "zero"
+                )
             for reference in decision.evidence_references:
                 status = observation_status.get(reference)
                 if (
@@ -570,11 +578,15 @@ def assert_requests_compatible(requests: Sequence[EvaluationRequest]) -> None:
     """Refuse a set of requests whose configuration labels hide a real difference.
 
     Two requests carrying the same ``fs_sim_configuration_id`` must agree on
-    the options that configuration id does not cover. Only ``options_digest``
-    is compared here — seed and state definition are compatibility axes too
-    (``COMPAT-01``) and are checked elsewhere. Same label plus different
+    the options that configuration id does not cover. Same label plus different
     options means the label is not, in fact, a complete configuration identity
     (``CONF-01``).
+
+    Only ``options_digest`` is compared. The seed is deliberately *not*: two
+    requests differing only in seed are conditional repetitions of the same
+    states and should pool (``COMPAT-04``). The state definition is a real
+    compatibility axis and is checked at the other end, by
+    ``TaggingDataset.require_single_state_definition``.
     """
     digests: dict = {}
     for request in requests:
@@ -654,6 +666,20 @@ class EvaluationBackend(Protocol):
       unavailable — a truncated tree, a missing branch — emit one with
       ``TECHNICALLY_UNAVAILABLE``. Silence is neither: aggregation reads an
       unattested empty run as ``NOT_EVALUATED``, never as a physics zero.
+      Note what that costs: an adapter that never attests loses every
+      zero-candidate run from the denominator, which changes the estimand from
+      ``P(pass)`` to ``P(pass | at least one candidate)``.
+    - Every ``EVALUATED`` decision cites at least one ``ObservationEnvelope``,
+      and every observation it cites is ``COMPUTED``. That is what makes an
+      attestation falsifiable rather than a free assertion: report the fact you
+      checked — the reconstructed candidate count, say — as an observation, and
+      let the decision cite it. When that fact could not be obtained, the
+      observation is ``TECHNICALLY_UNAVAILABLE`` and the decision must be too.
+    - Every ``FSSimExecution`` records the request's ``options_digest`` under
+      ``OPTIONS_DIGEST_PROVENANCE_KEY`` in its provenance. A configuration
+      *label* cannot cover a free-form options mapping, and once a bundle is
+      persisted the request is gone, so without it a run carries no trace of
+      what actually varied (``CONF-01``, ``COMPAT-01``).
     - Candidate multiplicity is reported by emitting that many
       ``ReconstructedCandidate`` records — zero, one, or many. It is never
       collapsed to a boolean (mission invariant 3.3).

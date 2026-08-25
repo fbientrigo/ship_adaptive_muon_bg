@@ -182,7 +182,9 @@ def test_scripted_plan_produces_exactly_the_stated_records():
     assert len(bundle.executions) == 3
     assert len(bundle.realizations) == 2
     assert len(bundle.candidates) == 4
-    assert len(bundle.observations) == 4
+    # 4 candidate scores, plus the reconstructed-count observation the empty
+    # replication's attestation cites.
+    assert len(bundle.observations) == 5
     assert len(bundle.decisions) == 5  # 4 candidate-level + 1 attestation
 
     per_execution = _candidates_per_execution(bundle)
@@ -224,7 +226,7 @@ def test_candidate_multiplicity_survives_as_records_not_a_flag():
 
 
 def test_unattached_candidates_are_supported():
-    """EXEC-04: a candidate need not be scoped to one interaction realization."""
+    """EXEC-02: a candidate need not be scoped to one interaction realization."""
     definition, spec = fx.stage_spec()
     backend = FakeFairShipBackend(
         stages=(spec,),
@@ -436,8 +438,13 @@ def test_backend_decisions_match_the_independent_stage_evaluator_exactly():
         if decision.subject_ref not in candidate_ids
     ]
     assert attestations
+    observed = {o.observation_id: o for o in bundle.observations}
     for attestation in attestations:
-        assert attestation.evidence_references == ()
+        # Falsifiable: the attestation names the fact it checked, and that fact
+        # is a real, computed observation in the same bundle.
+        assert attestation.evidence_references
+        for reference in attestation.evidence_references:
+            assert observed[reference].subject_ref == attestation.subject_ref
 
 
 def test_multiple_stages_are_independent_and_carry_their_own_evidence():
@@ -464,7 +471,9 @@ def test_multiple_stages_are_independent_and_carry_their_own_evidence():
     }
     # All four combinations occur, so neither stage implies the other.
     assert {(True, False), (False, True)} <= pairs
-    assert len(bundle.observations) == 2 * len(bundle.candidates)
+    candidate_ids = {c.candidate_id for c in bundle.candidates}
+    scored = [o for o in bundle.observations if o.subject_ref in candidate_ids]
+    assert len(scored) == 2 * len(bundle.candidates)
 
 
 def test_stages_must_not_share_one_observable():
@@ -604,11 +613,16 @@ def test_fixture_definition_ids_are_not_shaped_like_content_addressed_ids():
     is indistinguishable from a compliant id in a downstream equality check."""
     from ship_muon_bg.simulation import fake_fairship, stub_backend
 
-    for value in (
-        fake_fairship.FIXTURE_INTERACTION_DEFINITION_ID,
-        stub_backend.STUB_INTERACTION_DEFINITION_ID,
-    ):
-        assert "@sha256:" not in value
+    from tests.evaluation import fixtures
+
+    module_constants = [
+        getattr(module, name)
+        for module in (fake_fairship, stub_backend, fixtures)
+        for name in dir(module)
+        if name.isupper() and isinstance(getattr(module, name), str)
+    ]
+    offenders = [value for value in module_constants if "@sha256:" in value]
+    assert offenders == []
 
 
 def test_the_fakes_are_not_exported_from_the_production_namespace():
@@ -617,3 +631,12 @@ def test_the_fakes_are_not_exported_from_the_production_namespace():
 
     assert "FakeFairShipBackend" not in simulation.__all__
     assert "MinimalStubBackend" not in simulation.__all__
+
+
+def test_an_unreconstructable_plan_may_not_script_output_that_would_be_dropped():
+    with pytest.raises(ValueError, match="silently discarded"):
+        FakeRunPlan(
+            unreconstructable=True,
+            realization_candidate_counts=(),
+            unattached_candidate_count=3,
+        )

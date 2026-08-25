@@ -194,6 +194,20 @@ physics zero out of a silent reconstruction failure, with
 look says so, with an execution-level `StageDecision` — `EVALUATED False` for a
 genuine zero, `TECHNICALLY_UNAVAILABLE` when the evidence could not be obtained.
 
+That attestation has to be falsifiable, or it costs a careless adapter one free
+assertion. Every `EVALUATED` decision must cite at least one `COMPUTED`
+observation: report the fact you checked — the reconstructed candidate count —
+as evidence, and let the decision cite it. When the count could not be read the
+observation is `TECHNICALLY_UNAVAILABLE`, and the boundary then refuses any
+`EVALUATED` decision resting on it. The loop closes: a silent reconstruction
+failure cannot become a clean zero.
+
+The cost of *not* attesting is on the record too. `evaluable_fraction` is
+`valid_count / execution_count` on every row, because an adapter that never
+attests loses every zero-candidate run from the denominator — which does not
+lose precision, it changes the estimand from `P(pass)` to
+`P(pass | at least one candidate)` while still printing a confident `eta_hat`.
+
 `NOT_EVALUATED` currently merges `CENSOR-02`'s `NOT_APPLICABLE` with
 plain missing evidence. Excluding both from the denominator is this layer's
 conservative default; `CENSOR-04` makes that target-specific and leaves it
@@ -217,6 +231,14 @@ Its precedence:
    happened to its siblings; censoring only matters when it could still have
    changed the answer. So a positive plus a censored sibling is `POSITIVE`, but
    a negative plus a censored sibling is `TECHNICALLY_CENSORED`, not a negative.
+
+The governing principle in one line: **identification beats non-identification,
+and non-identification beats a claim of absence.** That is why the two
+exceptions to rule 2 run in the same direction — an identified positive
+candidate outranks an execution-level censoring marker, and an explicit
+candidate-level censoring record blocks an execution-level negative. Only
+*complete* candidate evidence can contradict an execution-level record, since a
+censored sibling could have been the one that agreed with it.
 
 `ROLLUP_RULE` is content-addressed over that precedence written out as data, so
 changing the precedence necessarily changes the id stored on every row — a bare

@@ -660,3 +660,50 @@ def test_request_options_cannot_be_rewritten_after_the_digest_is_taken():
     before = req.options_digest
     mutable["geometry_file"] = "muShield_v9.root"
     assert req.options_digest == before
+
+
+def test_an_evaluated_decision_must_cite_something():
+    """An unfalsifiable attestation is the cheapest way to launder a silent
+    reconstruction failure into a physics zero: one extra record with an empty
+    evidence tuple, and the run counts as a clean negative."""
+    with pytest.raises(ValueError, match="cites no evidence"):
+        fx.bundle(
+            executions=(fx.execution("e1", "s1"),),
+            decisions=(fx.decision("e1", DecisionEvaluationStatus.EVALUATED, False),),
+        )
+
+
+def test_the_attestation_loop_closes_on_unreadable_output():
+    """A run that could not read its own candidate count cannot then assert
+    what that count was. The observation is TECHNICALLY_UNAVAILABLE, and an
+    EVALUATED decision resting on it is refused — so the only honest report
+    left is a censoring one."""
+    unreadable = fx.unavailable_observation(
+        "o1", "e1", observation_definition_id="reconstructed_count@notahash:x"
+    )
+    with pytest.raises(ValueError, match="never computed"):
+        fx.bundle(
+            executions=(fx.execution("e1", "s1"),),
+            observations=(unreadable,),
+            decisions=(
+                fx.decision(
+                    "e1",
+                    DecisionEvaluationStatus.EVALUATED,
+                    False,
+                    evidence_references=("o1",),
+                ),
+            ),
+        )
+    # The censoring report is accepted.
+    fx.bundle(
+        executions=(fx.execution("e1", "s1"),),
+        observations=(unreadable,),
+        decisions=(
+            fx.decision(
+                "e1",
+                DecisionEvaluationStatus.TECHNICALLY_UNAVAILABLE,
+                None,
+                evidence_references=("o1",),
+            ),
+        ),
+    )

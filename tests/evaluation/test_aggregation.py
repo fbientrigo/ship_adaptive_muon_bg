@@ -668,3 +668,175 @@ def test_a_generator_of_decisions_is_not_half_consumed():
     executions = (fx.execution("e1", "s1"),)
     with pytest.raises(ValueError, match="cannot interpret"):
         _aggregate(executions, (), (d for d in (_positive("r1"),)))
+
+
+# --------------------------------------------------------------------------
+# Guards added after the second review round
+# --------------------------------------------------------------------------
+
+
+def test_candidate_censoring_blocks_an_execution_level_negative():
+    """The route the first repair round promoted rather than closed.
+
+    A run-level negative is a claim about everything that was looked at. An
+    explicit candidate-level censoring record says something was *not* looked
+    at, and that candidate could have been the positive one. Without this, an
+    adapter emitting a per-run summary turns every partially-unreadable run
+    into a physics zero with the censoring counters reading clean.
+    """
+    executions = (fx.execution("e1", "s1"),)
+    candidates = tuple(
+        fx.candidate(f"c{i}", "e1", candidate_index=i) for i in range(3)
+    )
+    decisions = tuple(_unavailable(f"c{i}") for i in range(3)) + (_negative("e1"),)
+    row = _aggregate(executions, candidates, decisions).rows[0]
+    assert row.negative_count == 0
+    assert row.technically_censored_count == 1
+    assert row.valid_count == 0
+    assert row.eta_hat is None
+
+
+def test_candidates_with_no_record_do_not_block_an_execution_level_negative():
+    """Reporting only at run level is a legitimate backend shape: the
+    execution-level decision is precisely what covers candidates that carry no
+    record of their own."""
+    executions = (fx.execution("e1", "s1"),)
+    candidates = (fx.candidate("c1", "e1", candidate_index=0),)
+    row = _aggregate(executions, candidates, (_negative("e1"),)).rows[0]
+    assert row.negative_count == 1
+    assert row.valid_count == 1
+
+
+def test_an_execution_level_positive_tolerates_a_censored_sibling():
+    """Complete candidate evidence can contradict; incomplete evidence cannot.
+
+    The censored candidate could be the one that agrees with the execution, so
+    refusing here would reject a consistent record set — and would make the
+    guard asymmetric under a rule that advertises symmetry.
+    """
+    executions = (fx.execution("e1", "s1"),)
+    candidates = tuple(
+        fx.candidate(f"c{i}", "e1", candidate_index=i) for i in range(3)
+    )
+    decisions = (
+        _negative("c0"),
+        _negative("c1"),
+        _unavailable("c2"),
+        _positive("e1"),
+    )
+    row = _aggregate(executions, candidates, decisions).rows[0]
+    assert row.positive_count == 1
+
+
+def test_a_configuration_filtered_aggregation_works_when_decisions_exist():
+    """The refusal added for realization-scoped decisions must not break the
+    module's own documented single-configuration filter: a decision belonging
+    to a record this call deliberately excluded is dropped with it, while a
+    reference to something that never existed still raises."""
+    executions = (
+        fx.execution("eA", "s1", fs_sim_configuration_id=fx.CONFIG_A),
+        fx.execution("eB", "s1", fs_sim_configuration_id=fx.CONFIG_B),
+    )
+    candidates = (
+        fx.candidate("cA", "eA", candidate_index=0),
+        fx.candidate("cB", "eB", candidate_index=0),
+    )
+    decisions = (_positive("cA"), _positive("cB"))
+    dataset = _aggregate(
+        executions, candidates, decisions, allowed_configuration_ids=(fx.CONFIG_A,)
+    )
+    assert len(dataset.rows) == 1
+    assert dataset.rows[0].positive_count == 1
+
+    with pytest.raises(ValueError, match="cannot interpret"):
+        _aggregate(
+            executions,
+            candidates,
+            decisions + (_positive("never_existed"),),
+            allowed_configuration_ids=(fx.CONFIG_A,),
+        )
+
+
+def test_hand_subsetting_records_must_subset_the_decisions_too():
+    """The aggregation cannot tell "excluded by the caller" from "never
+    existed", so it refuses rather than guessing — dropping a decision is how
+    an identified positive becomes a counted negative. The supported way to
+    select a subset is ``allowed_configuration_ids``, which filters executions,
+    candidates and decisions together."""
+    executions = (fx.execution("e1", "s1"), fx.execution("e2", "s1"))
+    candidates = (
+        fx.candidate("c1", "e1", candidate_index=0),
+        fx.candidate("c2", "e2", candidate_index=0),
+    )
+    decisions = (_positive("c1"), _positive("c2"))
+
+    with pytest.raises(ValueError, match="not filtered alongside"):
+        _aggregate(executions[:1], candidates[:1], decisions)
+
+    row = _aggregate(executions[:1], candidates[:1], decisions[:1]).rows[0]
+    assert row.execution_count == 1
+    assert row.positive_count == 1
+
+
+def test_a_partially_recorded_options_digest_is_refused():
+    """Silently the worst of the pooling hazards: one state split across two
+    rows on a key that means 'unknown' in one of them, with every guard green
+    and the duplicate-row check not firing because the keys genuinely differ."""
+    from ship_muon_bg.entities import ExecutionStatus, FSSimExecution
+
+    executions = (
+        fx.execution("e1", "s1"),
+        FSSimExecution(
+            execution_id="e2",
+            subject_id="s1",
+            fs_sim_configuration_id=fx.CONFIG_A,
+            execution_status=ExecutionStatus.SUCCEEDED,
+        ),
+    )
+    with pytest.raises(ValueError, match="record an options digest and some do not"):
+        _aggregate(executions, (), ())
+
+
+def test_the_pooling_gate_refuses_rows_whose_options_were_never_recorded():
+    from ship_muon_bg.entities import ExecutionStatus, FSSimExecution
+
+    executions = (
+        FSSimExecution(
+            execution_id="e1",
+            subject_id="s1",
+            fs_sim_configuration_id=fx.CONFIG_A,
+            execution_status=ExecutionStatus.SUCCEEDED,
+        ),
+    )
+    dataset = _aggregate(executions, (), ())
+    with pytest.raises(ValueError, match="do not record the options"):
+        dataset.require_single_configuration()
+
+
+def test_evaluable_fraction_exposes_an_adapter_that_never_attests():
+    """An adapter that does not attest its empty runs does not merely lose
+    precision: it changes the estimand from P(pass) to P(pass | >=1 candidate),
+    while the row still prints a confident eta_hat."""
+    attesting = tuple(fx.execution(f"a{i}", "s1") for i in range(10))
+    candidates = (fx.candidate("c1", "a0", candidate_index=0),)
+    decisions = (_positive("c1"),) + tuple(_negative(f"a{i}") for i in range(1, 10))
+    good = _aggregate(attesting, candidates, decisions).rows[0]
+    assert good.eta_hat == pytest.approx(0.1)
+    assert good.evaluable_fraction == 1.0
+
+    silent = _aggregate(attesting, candidates, (_positive("c1"),)).rows[0]
+    assert silent.eta_hat == 1.0  # P(pass | at least one candidate)
+    assert silent.evaluable_fraction == pytest.approx(0.1)
+    assert "evaluable_fraction" in silent.as_record()
+
+
+def test_execution_decided_count_covers_valid_results_only():
+    """Its use is to bound how far positive_count may diverge from the
+    multiplicity distribution, and a censored execution contributes to
+    neither."""
+    executions = (fx.execution("e1", "s1"), fx.execution("e2", "s1"))
+    decisions = (_positive("e1"), _unavailable("e2"))
+    row = _aggregate(executions, (), decisions).rows[0]
+    assert row.execution_decided_count == 1
+    assert row.valid_count == 1
+    assert row.technically_censored_count == 1

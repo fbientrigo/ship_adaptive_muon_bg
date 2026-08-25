@@ -39,6 +39,9 @@ from ship_muon_bg.simulation.evaluation import EvaluationBundle, EvaluationReque
 
 STUB_INTERACTION_TYPE = "stub_interaction"
 STUB_INTERACTION_DEFINITION_ID = "stub.interaction_v0@notahash:stub"
+STUB_RECONSTRUCTION_OBSERVATION = (
+    "stub.reconstructed_candidate_count_v0@notahash:stub"
+)
 
 
 class MinimalStubBackend:
@@ -206,7 +209,20 @@ class MinimalStubBackend:
                         )
                 if candidate_count == 0:
                     # Nothing else can attest that the stage was applied to a
-                    # run that reconstructed nothing.
+                    # run that reconstructed nothing, and the attestation cites
+                    # the count it read so that it can be checked.
+                    observation_id = f"stub-obs:{execution_id}:reconstruction"
+                    observations.append(
+                        ObservationEnvelope(
+                            observation_id=observation_id,
+                            subject_ref=execution_id,
+                            observation_definition_id=STUB_RECONSTRUCTION_OBSERVATION,
+                            units="count",
+                            evaluation_status=ObservationEvaluationStatus.COMPUTED,
+                            evidence_reference=f"{self.name}:{execution_id}",
+                            payload=ScalarObservationPayload(value=0.0),
+                        )
+                    )
                     for stage_id in self._stage_ids:
                         status = DecisionEvaluationStatus.EVALUATED
                         decisions.append(
@@ -214,13 +230,14 @@ class MinimalStubBackend:
                                 decision_id=stage_decision_id(
                                     stage_definition_id=stage_id,
                                     subject_ref=execution_id,
-                                    evidence_references=(),
+                                    evidence_references=(observation_id,),
                                     evaluation_status=status,
                                 ),
                                 subject_ref=execution_id,
                                 stage_definition_id=stage_id,
                                 evaluation_status=status,
                                 decision=False,
+                                evidence_references=(observation_id,),
                             )
                         )
                 run_ordinal += 1

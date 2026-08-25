@@ -77,6 +77,16 @@ FIXTURE_INTERACTION_TYPE = "fixture_interaction"
 #: content-addressed id in a downstream equality check (``CLAIM-NO-10``).
 FIXTURE_INTERACTION_DEFINITION_ID = "fixture.interaction_v0@notahash:fixture"
 
+#: The fact an empty run attests. A backend that reconstructed nothing reports
+#: *that it counted* — as evidence, so the attestation citing it can be checked.
+#: When the count could not be obtained the observation is
+#: ``TECHNICALLY_UNAVAILABLE``, and the boundary then refuses any ``EVALUATED``
+#: decision resting on it, which is what closes the loop: a silent
+#: reconstruction failure cannot be laundered into a clean zero.
+FIXTURE_RECONSTRUCTION_OBSERVATION = (
+    "fixture.reconstructed_candidate_count_v0@notahash:fixture"
+)
+
 
 def _require_nonempty_str(value: object, field_name: str) -> None:
     if not isinstance(value, str) or not value:
@@ -229,6 +239,14 @@ class FakeRunPlan:
             raise ValueError(
                 "a technically failed run has no trustworthy output: it must not "
                 "also script realizations, candidates, or evidence"
+            )
+        if self.unreconstructable and (
+            counts or self.unattached_candidate_count or plans
+        ):
+            raise ValueError(
+                "an unreconstructable run produced no readable output: it must not "
+                "also script realizations, candidates, or evidence, which would be "
+                "silently discarded"
             )
         object.__setattr__(self, "realization_candidate_counts", counts)
         object.__setattr__(self, "candidate_plans", plans)
@@ -460,6 +478,12 @@ class FakeFairShipBackend:
                         candidate_ordinal += 1
 
                 if plan.unreconstructable:
+                    observation_id = f"obs:{execution_id}:reconstruction"
+                    observations.append(
+                        self._reconstruction_observation(
+                            request, observation_id, execution_id, None
+                        )
+                    )
                     for stage in self._stages:
                         decisions.append(
                             self._decision(
@@ -467,7 +491,7 @@ class FakeFairShipBackend:
                                 execution_id,
                                 DecisionEvaluationStatus.TECHNICALLY_UNAVAILABLE,
                                 None,
-                                (),
+                                (observation_id,),
                                 "fake_backend: reconstruction output unavailable",
                             )
                         )
@@ -493,8 +517,23 @@ class FakeFairShipBackend:
                     # No candidate record can attest that the stage ran, so the
                     # execution says so itself. Emitted only in this case: when
                     # candidates exist, their own decisions already attest it,
-                    # and an execution-level record would bypass the
-                    # candidate rollup entirely.
+                    # and an execution-level record would bypass the candidate
+                    # rollup entirely.
+                    #
+                    # The attestation cites a real observation — the candidate
+                    # count this run reconstructed. A *fake* backend is entitled
+                    # to assert that count because it manufactured it; a real
+                    # adapter must actually read it, and must emit the
+                    # observation as TECHNICALLY_UNAVAILABLE (and the decision
+                    # with it) whenever the output could not be read. Copying
+                    # this shape without that check is how the original bug
+                    # comes back.
+                    observation_id = f"obs:{execution_id}:reconstruction"
+                    observations.append(
+                        self._reconstruction_observation(
+                            request, observation_id, execution_id, 0.0
+                        )
+                    )
                     for stage in self._stages:
                         decisions.append(
                             self._decision(
@@ -502,7 +541,7 @@ class FakeFairShipBackend:
                                 execution_id,
                                 DecisionEvaluationStatus.EVALUATED,
                                 False,
-                                (),
+                                (observation_id,),
                                 "",
                             )
                         )
@@ -624,6 +663,29 @@ class FakeFairShipBackend:
                     "",
                 )
             )
+
+    def _reconstruction_observation(
+        self,
+        request: EvaluationRequest,
+        observation_id: str,
+        execution_id: str,
+        value: Optional[float],
+    ) -> ObservationEnvelope:
+        computed = value is not None
+        return ObservationEnvelope(
+            observation_id=observation_id,
+            subject_ref=execution_id,
+            observation_definition_id=FIXTURE_RECONSTRUCTION_OBSERVATION,
+            units="count",
+            evaluation_status=(
+                ObservationEvaluationStatus.COMPUTED
+                if computed
+                else ObservationEvaluationStatus.TECHNICALLY_UNAVAILABLE
+            ),
+            evidence_reference=f"{self.name}:{execution_id}",
+            payload=ScalarObservationPayload(value=value) if computed else None,
+            config_provenance=self._config_provenance(request),
+        )
 
     def _config_provenance(self, request: EvaluationRequest) -> Mapping[str, str]:
         return {

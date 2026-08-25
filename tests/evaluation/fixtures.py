@@ -27,10 +27,10 @@ from ship_muon_bg.simulation.evaluation import EvaluationBundle, EvaluationReque
 #: The digest every fixture request carries, since they all use empty options.
 EMPTY_OPTIONS_DIGEST = content_hash({})
 
-CONFIG_A = "fs_sim_config_a@sha256:aaaa"
-CONFIG_B = "fs_sim_config_b@sha256:bbbb"
-STATE_DEFINITION = "post_shield_state_v0@sha256:cccc"
-MOMENTUM_OBSERVATION = "fixture.scalar_momentum_v0@sha256:dddd"
+CONFIG_A = "fs_sim_config_a@notahash:aaaa"
+CONFIG_B = "fs_sim_config_b@notahash:bbbb"
+STATE_DEFINITION = "post_shield_state_v0@notahash:cccc"
+MOMENTUM_OBSERVATION = "fixture.scalar_momentum_v0@notahash:dddd"
 
 
 def subject(subject_id: str, subject_type: str = "muon_state") -> TagSubject:
@@ -128,7 +128,7 @@ def realization(
         realization_id=realization_id,
         execution_id=execution_id,
         interaction_type=interaction_type,
-        interaction_definition_id="fixture.interaction_v0@sha256:eeee",
+        interaction_definition_id="fixture.interaction_v0@notahash:eeee",
     )
 
 
@@ -163,8 +163,8 @@ def bundle(
 
 # --- backend fixtures ------------------------------------------------------
 
-SCORE_A = "fixture.score_a_v0@sha256:1111"
-SCORE_B = "fixture.score_b_v0@sha256:2222"
+SCORE_A = "fixture.score_a_v0@notahash:1111"
+SCORE_B = "fixture.score_b_v0@notahash:2222"
 THRESHOLD = 0.5
 
 
@@ -193,7 +193,7 @@ def stage_spec(observation_definition_id=SCORE_A, threshold=THRESHOLD):
     )
 
 
-FIXTURE_STAGE = "fixture.stage_v0@sha256:ffff"
+FIXTURE_STAGE = "fixture.stage_v0@notahash:ffff"
 
 
 def decision(

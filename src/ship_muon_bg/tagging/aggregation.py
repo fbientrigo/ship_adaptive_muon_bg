@@ -93,10 +93,20 @@ ROLLUP_RULE_CONTENT = {
     "precedence": [
         "a technically failed execution is TECHNICAL_FAILURE, whatever else is present",
         "an execution-level decision for the stage, when present, is authoritative, "
-        "except that an identified positive candidate still wins over an "
-        "execution-level censoring marker",
+        "with two exceptions in the same direction: an identified positive "
+        "candidate wins over an execution-level censoring marker, and an explicit "
+        "candidate-level censoring record blocks an execution-level negative",
+        "identification beats non-identification, and non-identification beats a "
+        "claim of absence; the asymmetry between the two exceptions is that a "
+        "positive is identified by whichever record identifies it, while a "
+        "negative is a claim about everything that was looked at",
         "an execution-level decision contradicting an EVALUATED candidate decision "
-        "under the same stage definition is refused, in both directions",
+        "under the same stage definition is refused, in both directions - but only "
+        "when the candidate evidence is complete, since a censored sibling could "
+        "have been the one that agreed with the execution",
+        "candidate-level decisions under a stage id establish that the stage is "
+        "candidate-scoped; without them the stage may be non-existential, which is "
+        "why an execution-level positive with no candidates at all is allowed",
         "otherwise a single EVALUATED-true candidate makes the execution positive, "
         "regardless of what happened to its siblings",
         "otherwise technically unavailable candidate evidence censors the execution",
@@ -188,6 +198,11 @@ class StateStageAggregate:
     state_definition_id: Optional[str]
     rollup_rule: str
     execution_count: int
+    #: How many *valid* executions were decided by an execution-level record
+    #: rather than by their candidates. Restricted to valid results on purpose:
+    #: its use is to bound how far ``positive_count`` may legitimately diverge
+    #: from the multiplicity distribution, and a censored execution contributes
+    #: to neither, so counting it would over-report that bound.
     execution_decided_count: int
     valid_count: int
     positive_count: int
@@ -228,6 +243,23 @@ class StateStageAggregate:
         return self.positive_count / self.valid_count
 
     @property
+    def evaluable_fraction(self) -> Optional[float]:
+        """``valid_count / execution_count``, or ``None`` for an empty group.
+
+        Surfaced in the table rather than left computable from it, because it is
+        the one number that reveals an adapter which does not attest its empty
+        runs. Such an adapter loses every zero-candidate execution to
+        ``NOT_EVALUATED``, which does not merely lose precision — it silently
+        changes the estimand from ``P(pass)`` to ``P(pass | at least one
+        candidate)``, while the row still prints a confident ``eta_hat``. A
+        fraction far below 1 means the ``eta_hat`` beside it answers a narrower
+        question than its name suggests.
+        """
+        if self.execution_count == 0:
+            return None
+        return self.valid_count / self.execution_count
+
+    @property
     def censored_count(self) -> int:
         """All executions with no trustworthy answer, of any kind."""
         return (
@@ -266,6 +298,7 @@ class StateStageAggregate:
             "technically_censored_count": self.technically_censored_count,
             "not_evaluated_count": self.not_evaluated_count,
             "eta_hat": self.eta_hat,
+            "evaluable_fraction": self.evaluable_fraction,
             "candidate_count_distribution": dict(self.candidate_count_distribution),
             "positive_candidate_count_distribution": dict(
                 self.positive_candidate_count_distribution
@@ -382,12 +415,28 @@ class TaggingDataset:
         Any downstream step that would average, concatenate, or fit across
         rows must call this first: pooling incompatible configurations is not
         a rounding error, it silently changes the estimand (``COMPAT-01``).
+
+        Covers the options axis too. A configuration *label* does not cover the
+        free-form options a run was launched with, so rows whose options digest
+        is unknown are refused rather than pooled on trust — an unrecorded
+        digest is not evidence that the options matched.
         """
         configurations = self.configuration_ids
         if len(configurations) != 1:
             raise ValueError(
                 "these aggregates span multiple fs_sim_configuration_ids and must "
                 f"not be pooled: {list(configurations)}"
+            )
+        digests = {row.options_digest for row in self.rows}
+        if None in digests:
+            raise ValueError(
+                "these aggregates do not record the options they ran under, so the "
+                "configuration id alone cannot establish that they are poolable"
+            )
+        if len(digests) > 1:
+            raise ValueError(
+                "these aggregates share a configuration id but ran under different "
+                f"options and must not be pooled: {sorted(digests)}"
             )
         return configurations[0]
 
@@ -498,9 +547,15 @@ def classify_executions(
         raise ValueError(
             "these stage decisions attach to entities this aggregation cannot "
             f"interpret: {unhandled}. Only execution-level and candidate-level "
-            "decisions are rolled up; a realization- or subject-scoped decision "
-            "needs rollup semantics that have not been defined, and a reference "
-            "that matches nothing is broken lineage. Neither may be dropped"
+            "decisions are rolled up. A realization- or subject-scoped decision "
+            "needs rollup semantics that have not been defined; a reference to "
+            "nothing at all is broken lineage; and a reference to a record you "
+            "excluded from this call means the decisions were not filtered "
+            "alongside the executions and candidates they belong to. None of "
+            "the three may be dropped silently, because dropping a decision "
+            "turns an identified positive into a counted negative. Use "
+            "aggregate_state_stage_evaluations' allowed_configuration_ids to "
+            "select a configuration, which filters all three together"
         )
 
     results = []
@@ -530,13 +585,16 @@ def _classify_one(
     positive_candidates = 0
     evaluated_candidates = 0
     saw_technically_unavailable = False
-    saw_not_evaluated = False
+    saw_explicit_not_evaluated = False
+    saw_missing_decision = False
     for candidate in execution_candidates:
         decision = decision_index.get((candidate.candidate_id, stage_definition_id))
         if decision is None:
-            # A candidate exists but this stage was never applied to it. That
-            # is missing information, never evidence of a negative.
-            saw_not_evaluated = True
+            # A candidate exists but carries no record for this stage. That is
+            # missing information, never evidence of a negative — though an
+            # execution-level decision, if the backend emitted one, does cover
+            # it: reporting only at run level is a legitimate shape.
+            saw_missing_decision = True
             continue
         if decision.evaluation_status is DecisionEvaluationStatus.EVALUATED:
             evaluated_candidates += 1
@@ -553,7 +611,7 @@ def _classify_one(
         ):
             saw_technically_unavailable = True
         else:
-            saw_not_evaluated = True
+            saw_explicit_not_evaluated = True
 
     def _result(
         outcome: ExecutionStageOutcome,
@@ -586,6 +644,7 @@ def _classify_one(
                 execution_decision=execution_decision,
                 positive_candidates=positive_candidates,
                 evaluated_candidates=evaluated_candidates,
+                evidence_incomplete=saw_technically_unavailable,
             )
             if execution_decision.decision is True:
                 # Y and 1{N >= 1} may legitimately diverge here: a stage whose
@@ -593,6 +652,23 @@ def _classify_one(
                 # with zero candidates. decision_level records which path this
                 # took so a consumer never has to guess.
                 return _result(ExecutionStageOutcome.POSITIVE, DecisionLevel.EXECUTION)
+            # A run-level negative is a claim about everything that was looked
+            # at. An explicit candidate-level censoring record says something
+            # was *not* looked at, and that candidate could have been the
+            # positive one — so the negative is not identified and the run is
+            # censored. Without this, an adapter emitting a per-run summary
+            # silently turns every partially-unreadable run into a physics zero
+            # with the censoring counters reading clean (``CENSOR-01``).
+            # Candidates carrying no record at all are a different matter: the
+            # execution-level decision is precisely what covers them.
+            if saw_technically_unavailable:
+                return _result(
+                    ExecutionStageOutcome.TECHNICALLY_CENSORED, DecisionLevel.CANDIDATES
+                )
+            if saw_explicit_not_evaluated:
+                return _result(
+                    ExecutionStageOutcome.NOT_EVALUATED, DecisionLevel.CANDIDATES
+                )
             return _result(ExecutionStageOutcome.NEGATIVE, DecisionLevel.EXECUTION)
         # The execution-level record says the stage could not be evaluated —
         # but an identified positive candidate is still an identified positive,
@@ -615,7 +691,7 @@ def _classify_one(
         return _result(
             ExecutionStageOutcome.TECHNICALLY_CENSORED, DecisionLevel.CANDIDATES
         )
-    if saw_not_evaluated:
+    if saw_explicit_not_evaluated or saw_missing_decision:
         return _result(ExecutionStageOutcome.NOT_EVALUATED, DecisionLevel.CANDIDATES)
     if candidate_count == 0:
         # Nothing attests that this stage was ever applied. "Ran and found
@@ -637,6 +713,7 @@ def _reject_contradiction(
     execution_decision: StageDecision,
     positive_candidates: int,
     evaluated_candidates: int,
+    evidence_incomplete: bool,
 ) -> None:
     """Refuse two opposite conclusions under one versioned rule, either way round.
 
@@ -644,6 +721,13 @@ def _reject_contradiction(
     candidate-level stage semantics; preferring the candidates would overwrite
     the backend's own report. A rule that can conclude both things about one run
     is not one rule, and a veto needs its own ``stage_definition_id``.
+
+    Only *complete* candidate evidence can contradict an execution-level
+    positive: a censored sibling could have been the candidate that agreed with
+    it, so refusing there would reject a consistent record set. That is the same
+    partial-identification reasoning applied to siblings elsewhere in this
+    module, and its absence would make the guard asymmetric under a rule that
+    advertises symmetry.
     """
     value = execution_decision.decision
     if value is not True and value is not False:
@@ -658,7 +742,12 @@ def _reject_contradiction(
             "candidates report positive; a veto must be a distinct stage "
             "definition, not a contradiction under the same one"
         )
-    if value is True and evaluated_candidates and not positive_candidates:
+    if (
+        value is True
+        and evaluated_candidates
+        and not positive_candidates
+        and not evidence_incomplete
+    ):
         raise ValueError(
             f"execution {execution.execution_id!r} reports stage "
             f"{stage_definition_id!r} positive while all {evaluated_candidates} of "
@@ -689,6 +778,8 @@ def aggregate_state_stage_evaluations(
     ``state_definition_id`` and to reject executions attributed to a source
     state the caller never declared.
     """
+    decisions = tuple(decisions)
+    candidates = tuple(candidates)
     subject_index = None
     if subjects is not None:
         subject_index = {}
@@ -736,6 +827,20 @@ def aggregate_state_stage_evaluations(
         if candidate.execution_id in kept_execution_ids
     )
 
+    # Decisions belonging to records this call deliberately excluded must be
+    # dropped alongside them, or every configuration-filtered or subset
+    # aggregation would trip the "uninterpretable reference" refusal. Only
+    # references that were present and are now filtered out are removed, so a
+    # reference to something that never existed still raises.
+    dropped_references = (all_execution_ids | {c.candidate_id for c in candidates}) - (
+        kept_execution_ids | {c.candidate_id for c in kept_candidates}
+    )
+    kept_decisions = tuple(
+        decision
+        for decision in decisions
+        if decision.subject_ref not in dropped_references
+    )
+
     if subject_index is not None:
         for execution in selected:
             if execution.subject_id not in subject_index:
@@ -747,7 +852,7 @@ def aggregate_state_stage_evaluations(
     results = classify_executions(
         executions=selected,
         candidates=kept_candidates,
-        decisions=decisions,
+        decisions=kept_decisions,
         stage_definition_ids=stage_definition_ids,
     )
 
@@ -757,6 +862,19 @@ def aggregate_state_stage_evaluations(
         )
         for execution in selected
     }
+    recorded = {digest is not None for digest in options_digest_by_execution.values()}
+    if len(recorded) > 1:
+        missing = sorted(
+            execution_id
+            for execution_id, digest in options_digest_by_execution.items()
+            if digest is None
+        )
+        raise ValueError(
+            "some executions record an options digest and some do not "
+            f"({missing} do not). Mixing them splits one source state across "
+            "two rows on a key that means 'unknown' in one of them, and every "
+            "pooling guard passes because the keys genuinely differ"
+        )
 
     grouped: Dict[Tuple[str, str, str, str], list] = {}
     for result in results:
@@ -803,6 +921,7 @@ def aggregate_state_stage_evaluations(
                     1
                     for result in group
                     if result.decision_level is DecisionLevel.EXECUTION
+                    and result.is_valid
                 ),
                 valid_count=tally[ExecutionStageOutcome.POSITIVE]
                 + tally[ExecutionStageOutcome.NEGATIVE],
