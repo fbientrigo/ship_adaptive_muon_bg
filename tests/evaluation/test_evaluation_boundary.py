@@ -766,3 +766,26 @@ def test_a_decision_may_rest_on_evidence_from_anywhere_up_its_own_lineage():
         ),
     )
     verify_evaluation_bundle(bundle, req)
+
+
+def test_the_computed_evidence_rule_reaches_request_declared_observations():
+    """The bundle alone cannot see the request's observations, so citing an id
+    from the request instead of the bundle was a one-word way around the whole
+    falsifiability rule — with every censoring counter reading zero."""
+    req = fx.request(
+        subject_ids=("s1",),
+        subject_observations=(fx.unavailable_observation("o1", "s1"),),
+    )
+    bundle = fx.bundle(
+        executions=(fx.execution("e1", "s1"),),
+        decisions=(
+            fx.decision(
+                "e1",
+                DecisionEvaluationStatus.EVALUATED,
+                False,
+                evidence_references=("o1",),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="never computed"):
+        verify_evaluation_bundle(bundle, req)

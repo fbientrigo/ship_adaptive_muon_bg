@@ -142,6 +142,31 @@ already supports both, but each stage has to be classified.
 Do not hardcode historical SHiP cuts. Do not assume any implication between
 stages.
 
+### T5a — Costs of the evidence requirement, to size rather than discover [OPEN]
+
+Every `EVALUATED` decision must cite at least one `COMPUTED` observation. Two
+consequences to plan for:
+
+- **An opaque FairShip-internal boolean has no typed payload home.** `OBS-01a`
+  implements only `ScalarObservationPayload` and `SequenceObservationPayload`,
+  so such an outcome travels as `0.0`/`1.0`. That is an additive
+  `ObservationPayload` subclass when someone needs it, not a redesign. Note the
+  requirement is not busywork even here: it converts *"FairShip said no"* into
+  *"we read branch B of file F under adapter version V and it said no"*, which
+  is what makes re-tagging under a new `stage_definition_id` possible without
+  re-running the simulator (`DECISION-02`, `OPEN-10`).
+- **Record volume.** One observation per candidate per stage is a lot of rows
+  for a real campaign. They are exactly the quantities worth persisting, and
+  `PROV-03`/`OPEN-10` own that question — but size it before the first large
+  run rather than after.
+
+The check is deliberately a *liveness and lineage* check, not a **relevance**
+check: nothing verifies that the cited observation measures anything to do with
+the stage. Closing that would mean passing `StageDefinition` objects into the
+aggregation instead of bare id strings, which crosses the `tagging` →
+`simulation` dependency direction and is a design change, not a fix. Recorded
+as a known limit.
+
 ### T6 — Configuration identity [OPEN]
 
 What must `fs_sim_configuration_id` content-address so that two runs sharing it
@@ -188,6 +213,36 @@ statistics decision, not an implementation one.
   the `EvaluationBackend` determinism requirement needs restating as
   "deterministic up to the simulator's own reproducibility guarantee", and that
   weakening must be written down rather than assumed.
+
+## 3a. Known costs and sharp edges
+
+Not defects — deliberate trades, recorded so they are not rediscovered as
+surprises.
+
+- **A legitimately inapplicable candidate discards its run's negative.**
+  `DecisionEvaluationStatus` has no separate `NOT_APPLICABLE` value, so
+  `CENSOR-02`'s "not applicable" travels as `NOT_EVALUATED`, and one such
+  candidate now censors an otherwise attested negative. It fails safe — data
+  lost, nothing fabricated — and `CENSOR-04` is open, but the first stage that
+  is genuinely inapplicable to some candidates will hit this.
+- **The contradiction guard is suppressible by one censored record.** It fires
+  only on complete candidate evidence, because a censored sibling could have
+  been the one that agreed with the execution. A backend that censors liberally
+  never trips it. The reasoning is sound; the property is worth knowing.
+- **A record set where no execution carries an options digest can never pass
+  `require_single_configuration`.** Deliberate — an unrecorded digest is not
+  evidence that the options matched — but it means any bundle persisted before
+  that key existed is permanently un-poolable until re-emitted. Know this
+  before writing data.
+- **The single highest-value test to write next is not another invariant.** It
+  is a fixture set of deliberately corrupted FairShip output — zero entries, a
+  missing branch, a truncated file, a job killed mid-write — asserting which
+  branch the adapter takes for each. Everything in this boundary funnels into
+  one judgement per run: *did this exit-0 run genuinely reconstruct nothing, or
+  could its output not be read?* The checks can verify that an adapter cited
+  **an** observation while asserting an answer; they can never verify the
+  answer. Both reference backends assert it from a count they manufactured, so
+  the shape is modelled and the hard part is exercised nowhere.
 
 ## 4. What the next mission must not do
 

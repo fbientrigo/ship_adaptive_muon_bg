@@ -540,9 +540,14 @@ def verify_evaluation_bundle(
             )
     resolvable_evidence = request_observation_ids | bundle_observation_ids
     ancestors = _ancestor_index(bundle)
+    all_observations = tuple(request.subject_observations) + bundle.observations
     observation_subject = {
         observation.observation_id: observation.subject_ref
-        for observation in tuple(request.subject_observations) + bundle.observations
+        for observation in all_observations
+    }
+    observation_status_by_id = {
+        observation.observation_id: observation.evaluation_status
+        for observation in all_observations
     }
     for decision in bundle.decisions:
         if decision.subject_ref not in attachable:
@@ -561,6 +566,20 @@ def verify_evaluation_bundle(
                     "request; a conclusion whose evidence cannot be resolved is "
                     "not auditable"
                 )
+            if decision.evaluation_status is DecisionEvaluationStatus.EVALUATED:
+                # The bundle already applied this to its own observations. A
+                # request-declared one reaches the same conclusion by a
+                # different route, so it is checked here too — otherwise
+                # citing an id from the request instead of the bundle is a
+                # one-word way around the whole falsifiability rule.
+                status = observation_status_by_id.get(reference)
+                if status is not None and status is not ObservationEvaluationStatus.COMPUTED:
+                    raise ValueError(
+                        f"decision {decision.decision_id!r} is EVALUATED but cites "
+                        f"observation {reference!r}, whose status is "
+                        f"{status.value}; a conclusion cannot rest on evidence that "
+                        "was never computed"
+                    )
             source = observation_subject[reference]
             if source not in allowed_sources:
                 # Evidence must be about the thing decided, or about something

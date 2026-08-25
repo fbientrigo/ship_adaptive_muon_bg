@@ -104,9 +104,10 @@ ROLLUP_RULE_CONTENT = {
         "under the same stage definition is refused, in both directions - but only "
         "when the candidate evidence is complete, since a censored sibling could "
         "have been the one that agreed with the execution",
-        "candidate-level decisions under a stage id establish that the stage is "
-        "candidate-scoped; without them the stage may be non-existential, which is "
-        "why an execution-level positive with no candidates at all is allowed",
+        "EVALUATED candidate-level decisions under a stage id establish that the "
+        "stage is candidate-scoped; without them the stage may be non-existential, "
+        "which is why an execution-level positive with no candidates at all is "
+        "allowed",
         "otherwise a single EVALUATED-true candidate makes the execution positive, "
         "regardless of what happened to its siblings",
         "otherwise technically unavailable candidate evidence censors the execution",
@@ -198,6 +199,9 @@ class StateStageAggregate:
     state_definition_id: Optional[str]
     rollup_rule: str
     execution_count: int
+    #: How many executions the caller asked for, when known. ``None`` means the
+    #: aggregation was not told, and the absence of a run is then invisible.
+    authorized_execution_count: Optional[int]
     #: How many *valid* executions were decided by an execution-level record
     #: rather than by their candidates. Restricted to valid results on purpose:
     #: its use is to bound how far ``positive_count`` may legitimately diverge
@@ -214,6 +218,14 @@ class StateStageAggregate:
     positive_candidate_count_distribution: Mapping[int, int]
 
     def __post_init__(self) -> None:
+        if self.authorized_execution_count is not None:
+            if self.authorized_execution_count < 1:
+                raise ValueError("authorized_execution_count must be at least 1")
+            if self.execution_count > self.authorized_execution_count:
+                raise ValueError(
+                    "more executions were reported than were authorized; the "
+                    "backend invented repetitions of a source state"
+                )
         if self.execution_decided_count > self.execution_count:
             raise ValueError("execution_decided_count cannot exceed execution_count")
         if self.valid_count != self.positive_count + self.negative_count:
@@ -243,17 +255,35 @@ class StateStageAggregate:
         return self.positive_count / self.valid_count
 
     @property
+    def reported_fraction(self) -> Optional[float]:
+        """``execution_count / authorized_execution_count``, when known.
+
+        The companion to ``evaluable_fraction``, and it exists because that one
+        alone can be gamed. An adapter that *omits* the runs it could not
+        reconstruct — rather than reporting them unattested — shifts the
+        estimand exactly as badly, while ``evaluable_fraction`` stays at 1.0
+        because it can only divide by what was reported. Without this, an
+        adapter is rewarded for dropping runs over reporting them.
+        """
+        if not self.authorized_execution_count:
+            return None
+        return self.execution_count / self.authorized_execution_count
+
+    @property
     def evaluable_fraction(self) -> Optional[float]:
         """``valid_count / execution_count``, or ``None`` for an empty group.
 
         Surfaced in the table rather than left computable from it, because it is
-        the one number that reveals an adapter which does not attest its empty
-        runs. Such an adapter loses every zero-candidate execution to
+        the one number that shows at a glance an adapter which does not attest
+        its empty runs — ``not_evaluated_count`` says the same thing, but only
+        once you compare it against ``execution_count`` by eye. Such an adapter loses every zero-candidate execution to
         ``NOT_EVALUATED``, which does not merely lose precision — it silently
         changes the estimand from ``P(pass)`` to ``P(pass | at least one
         candidate)``, while the row still prints a confident ``eta_hat``. A
         fraction far below 1 means the ``eta_hat`` beside it answers a narrower
-        question than its name suggests.
+        question than its name suggests. Read it together with
+        ``reported_fraction``: this one divides by what was reported, so it
+        cannot see runs that were never reported at all.
         """
         if self.execution_count == 0:
             return None
@@ -298,6 +328,8 @@ class StateStageAggregate:
             "technically_censored_count": self.technically_censored_count,
             "not_evaluated_count": self.not_evaluated_count,
             "eta_hat": self.eta_hat,
+            "authorized_execution_count": self.authorized_execution_count,
+            "reported_fraction": self.reported_fraction,
             "evaluable_fraction": self.evaluable_fraction,
             "candidate_count_distribution": dict(self.candidate_count_distribution),
             "positive_candidate_count_distribution": dict(
@@ -765,6 +797,7 @@ def aggregate_state_stage_evaluations(
     stage_definition_ids: Sequence[str],
     subjects: Optional[Iterable[TagSubject]] = None,
     allowed_configuration_ids: Optional[Iterable[str]] = None,
+    authorized_executions_per_subject: Optional[int] = None,
 ) -> TaggingDataset:
     """Group canonical records into one aggregate per state/configuration/stage.
 
@@ -777,6 +810,13 @@ def aggregate_state_stage_evaluations(
     ``subjects``, when supplied, is used both to attach each row's
     ``state_definition_id`` and to reject executions attributed to a source
     state the caller never declared.
+
+    ``authorized_executions_per_subject`` is how many executions of each state
+    were asked for — ``EvaluationRequest.replications_per_subject`` at the other
+    end of the boundary. Pass it whenever it is known. Without it a run that was
+    never reported is invisible here, and an adapter that quietly drops the runs
+    it could not reconstruct looks healthier than one that honestly reports them
+    unattested.
     """
     decisions = tuple(decisions)
     candidates = tuple(candidates)
@@ -889,6 +929,16 @@ def aggregate_state_stage_evaluations(
         )
         grouped.setdefault(key, []).append(result)
 
+    authorized_execution_count = None
+    if authorized_executions_per_subject is not None:
+        if isinstance(authorized_executions_per_subject, bool) or not isinstance(
+            authorized_executions_per_subject, int
+        ):
+            raise TypeError("authorized_executions_per_subject must be an int")
+        if authorized_executions_per_subject < 1:
+            raise ValueError("authorized_executions_per_subject must be at least 1")
+        authorized_execution_count = authorized_executions_per_subject
+
     rows = []
     for key in sorted(grouped):
         subject_id, configuration_id, options_digest, stage_definition_id = key
@@ -917,6 +967,7 @@ def aggregate_state_stage_evaluations(
                 state_definition_id=state_definition_id,
                 rollup_rule=ROLLUP_RULE,
                 execution_count=len(group),
+                authorized_execution_count=authorized_execution_count,
                 execution_decided_count=sum(
                     1
                     for result in group

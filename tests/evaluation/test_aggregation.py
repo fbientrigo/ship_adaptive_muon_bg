@@ -840,3 +840,35 @@ def test_execution_decided_count_covers_valid_results_only():
     assert row.execution_decided_count == 1
     assert row.valid_count == 1
     assert row.technically_censored_count == 1
+
+
+def test_reported_fraction_exposes_an_adapter_that_drops_runs_instead():
+    """evaluable_fraction alone can be gamed: an adapter that *omits* the runs
+    it could not reconstruct shifts the estimand exactly as badly as one that
+    fails to attest them, while dividing only by what it reported. Without this
+    an adapter is rewarded for dropping runs over reporting them."""
+    reported = (fx.execution("e1", "s1"), fx.execution("e2", "s1"))
+    candidates = (fx.candidate("c1", "e1", candidate_index=0),)
+    decisions = (_positive("c1"), _negative("e2"))
+    row = _aggregate(
+        reported, candidates, decisions, authorized_executions_per_subject=5
+    ).rows[0]
+    assert row.eta_hat == 0.5
+    assert row.evaluable_fraction == 1.0  # everything reported was evaluable...
+    assert row.reported_fraction == pytest.approx(0.4)  # ...but 3 of 5 vanished
+    record = row.as_record()
+    assert record["reported_fraction"] == pytest.approx(0.4)
+    assert record["authorized_execution_count"] == 5
+
+
+def test_the_authorized_count_is_unknown_when_not_supplied():
+    row = _aggregate((fx.execution("e1", "s1"),), (), (_negative("e1"),)).rows[0]
+    assert row.authorized_execution_count is None
+    assert row.reported_fraction is None
+
+
+def test_more_executions_than_authorized_is_refused():
+    executions = tuple(fx.execution(f"e{i}", "s1") for i in range(3))
+    decisions = tuple(_negative(f"e{i}") for i in range(3))
+    with pytest.raises(ValueError, match="invented repetitions"):
+        _aggregate(executions, (), decisions, authorized_executions_per_subject=2)
