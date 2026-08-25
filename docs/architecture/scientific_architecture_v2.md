@@ -781,8 +781,8 @@ level enforcing §2a's dependency invariant specifically.
 
 ## 11. Migration path from v1
 
-Additive, incremental, in this order. **Steps 1 and 2 are done** (this
-continuation); steps 3-5 are not executed in this commit.
+Additive, incremental, in this order. **Steps 1, 2 and 3 are done**; steps 4-5
+are not executed yet.
 
 1. **[DONE]** Add `src/ship_muon_bg/entities/` with no consumers; unit-test
    its invariants in isolation (`tests/test_entities.py` plus
@@ -795,10 +795,22 @@ continuation); steps 3-5 are not executed in this commit.
    `StageEvaluator`, explicit missingness precedence, evidence references,
    and the non-physical `fixture.scalar_above_threshold` stage. This does not
    define or reproduce any physical `OutcomeCategory` selection semantics.
-3. Implement the `toy_simulator` (existing roadmap step 2) emitting **both**
-   the legacy `SimulationResult` projection and the new lineage objects,
-   so `ProxyTagger`/`Nflow` consumers keep working unmodified while
-   `tagging/`'s consumers get real data.
+3. **[DONE, adapted]** Add the canonical evaluation boundary
+   (`simulation/evaluation.py`: `EvaluationRequest`, `EvaluationBundle`,
+   `EvaluationBackend`) plus two backends emitting the new lineage objects
+   (`simulation/fake_fairship.py`, `simulation/stub_backend.py`) and the
+   state-level aggregation that consumes them (`tagging/aggregation.py`).
+   See `docs/architecture/fairship_evaluation_adapter_v1.md`.
+
+   Adapted in one respect: the backends emit lineage objects **only**, not a
+   parallel legacy `SimulationResult` projection. That projection turned out
+   to be unnecessary rather than deferred — no production code consumes
+   `SimulationResult`; the legacy types are referenced only by
+   `tests/test_architecture.py` and a `ProxyTagger/interfaces.py` docstring —
+   so emitting a second, lossier view of the same run would have created a
+   second source of truth for no consumer. The legacy types remain untouched
+   and working; if a projection is ever needed it is a pure function over the
+   lineage records, derivable after the fact.
 4. Migrate `ProxyTagger`'s (still-hypothetical) first real training code to
    read `TrainingTarget` output instead of filtering `OutcomeCategory`
    directly.
