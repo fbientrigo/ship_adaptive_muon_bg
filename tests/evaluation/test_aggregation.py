@@ -660,3 +660,11 @@ def test_the_rollup_rule_is_content_addressed():
     assert ROLLUP_RULE == definition_id("execution_stage_rollup_v0", ROLLUP_RULE_CONTENT)
     altered = dict(ROLLUP_RULE_CONTENT, negative_requires_attestation=False)
     assert definition_id("execution_stage_rollup_v0", altered) != ROLLUP_RULE
+
+
+def test_a_generator_of_decisions_is_not_half_consumed():
+    """The record set is walked twice internally; a generator would otherwise
+    make the second pass see nothing, silently disabling the refusal above."""
+    executions = (fx.execution("e1", "s1"),)
+    with pytest.raises(ValueError, match="cannot interpret"):
+        _aggregate(executions, (), (d for d in (_positive("r1"),)))

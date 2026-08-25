@@ -466,7 +466,10 @@ def classify_executions(
             "consumed twice in two different roles"
         )
 
-    decision_index = _index_decisions(tuple(decisions))
+    # Materialize once: the record set is walked twice below, and a caller
+    # passing a generator would otherwise have the second pass see nothing.
+    decision_list = tuple(decisions)
+    decision_index = _index_decisions(decision_list)
     stages = tuple(stage_definition_ids)
     if len(set(stages)) != len(stages):
         raise ValueError("stage_definition_ids must be distinct")
@@ -486,7 +489,7 @@ def classify_executions(
     unhandled = sorted(
         {
             decision.subject_ref
-            for decision in decisions
+            for decision in decision_list
             if decision.stage_definition_id in requested_stages
             and decision.subject_ref not in interpretable
         }
