@@ -15,6 +15,22 @@ for the full boundary contract.
 from __future__ import annotations
 
 from ship_muon_bg.simulation.backend import SimulationBackend
+from ship_muon_bg.simulation.evaluation import (
+    EvaluationBackend,
+    EvaluationBundle,
+    EvaluationRequest,
+    assert_requests_compatible,
+    evaluate_verified,
+    execution_shortfall,
+    verify_evaluation_bundle,
+)
+from ship_muon_bg.simulation.fake_fairship import (
+    FakeCandidatePlan,
+    FakeFairShipBackend,
+    FakeRunPlan,
+    FakeStageSpec,
+)
+from ship_muon_bg.simulation.stub_backend import MinimalStubBackend
 from ship_muon_bg.simulation.types import (
     FlowProposalRecord,
     OutcomeCategory,
@@ -26,4 +42,16 @@ __all__ = [
     "FlowProposalRecord",
     "SimulationResult",
     "OutcomeCategory",
+    "EvaluationRequest",
+    "EvaluationBundle",
+    "EvaluationBackend",
+    "verify_evaluation_bundle",
+    "evaluate_verified",
+    "execution_shortfall",
+    "assert_requests_compatible",
+    "FakeFairShipBackend",
+    "FakeStageSpec",
+    "FakeRunPlan",
+    "FakeCandidatePlan",
+    "MinimalStubBackend",
 ]
