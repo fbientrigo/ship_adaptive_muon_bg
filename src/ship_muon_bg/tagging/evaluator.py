@@ -5,8 +5,11 @@ from __future__ import annotations
 import math
 from typing import Iterable, Tuple
 
-from ship_muon_bg.entities.decision import DecisionEvaluationStatus, StageDecision
-from ship_muon_bg.entities.identifiers import content_hash
+from ship_muon_bg.entities.decision import (
+    DecisionEvaluationStatus,
+    StageDecision,
+    stage_decision_id,
+)
 from ship_muon_bg.entities.observation import (
     ObservationEnvelope,
     ObservationEvaluationStatus,
@@ -145,14 +148,13 @@ class StageEvaluator:
         # stage definition, referenced evidence, and evaluation state.  The
         # human-readable reason is likewise derived censoring context, not an
         # independent semantic input.
-        decision_identity = {
-            "stage_definition_id": definition.stage_definition_id,
-            "subject_ref": subject_ref,
-            "evidence_references": list(evidence_references),
-            "evaluation_status": evaluation_status.value,
-        }
         return StageDecision(
-            decision_id=f"decision@sha256:{content_hash(decision_identity)}",
+            decision_id=stage_decision_id(
+                stage_definition_id=definition.stage_definition_id,
+                subject_ref=subject_ref,
+                evidence_references=evidence_references,
+                evaluation_status=evaluation_status,
+            ),
             subject_ref=subject_ref,
             stage_definition_id=definition.stage_definition_id,
             evaluation_status=evaluation_status,

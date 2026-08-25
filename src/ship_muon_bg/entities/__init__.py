@@ -15,7 +15,11 @@ semantic layer and stays a separate slice (see
 
 from __future__ import annotations
 
-from ship_muon_bg.entities.decision import DecisionEvaluationStatus, StageDecision
+from ship_muon_bg.entities.decision import (
+    DecisionEvaluationStatus,
+    StageDecision,
+    stage_decision_id,
+)
 from ship_muon_bg.entities.identifiers import canonical_json, content_hash, definition_id
 from ship_muon_bg.entities.lineage import (
     ExecutionStatus,
@@ -45,6 +49,7 @@ __all__ = [
     "ObservationEnvelope",
     "DecisionEvaluationStatus",
     "StageDecision",
+    "stage_decision_id",
     "canonical_json",
     "content_hash",
     "definition_id",

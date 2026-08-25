@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any, Iterable, Mapping, Optional, Tuple
+
+from ship_muon_bg.entities.identifiers import content_hash
 
 
 class DecisionEvaluationStatus(str, enum.Enum):
@@ -30,6 +32,44 @@ class DecisionEvaluationStatus(str, enum.Enum):
 def _require_nonempty_str(value: object, field_name: str) -> None:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field_name} must be a non-empty string")
+
+
+def stage_decision_id(
+    *,
+    stage_definition_id: str,
+    subject_ref: str,
+    evidence_references: Iterable[str],
+    evaluation_status: "DecisionEvaluationStatus",
+) -> str:
+    """The canonical content-addressed identity of one stage decision.
+
+    Identity is *what was decided about*, not *what was concluded*: the
+    versioned rule, the entity it was applied to, the exact evidence
+    consumed, and whether it could be evaluated at all. The concluded value
+    is deliberately absent — for a well-formed rule it is a function of those
+    inputs, so including it would let two contradictory records about the
+    same evidence coexist under different ids instead of colliding and being
+    rejected as the contradiction they are.
+
+    Lives here, in ``entities``, rather than in either producer, because both
+    the tagging evaluator and any simulation backend that reports its own
+    opaque stage outcomes must agree on it exactly. Two independent copies of
+    this formula would drift silently.
+    """
+    _require_nonempty_str(stage_definition_id, "stage_definition_id")
+    _require_nonempty_str(subject_ref, "subject_ref")
+    if not isinstance(evaluation_status, DecisionEvaluationStatus):
+        raise TypeError("evaluation_status must be a DecisionEvaluationStatus")
+    references = tuple(evidence_references)
+    for reference in references:
+        _require_nonempty_str(reference, "evidence_reference")
+    identity = {
+        "stage_definition_id": stage_definition_id,
+        "subject_ref": subject_ref,
+        "evidence_references": list(references),
+        "evaluation_status": evaluation_status.value,
+    }
+    return f"decision@sha256:{content_hash(identity)}"
 
 
 @dataclass(frozen=True)
