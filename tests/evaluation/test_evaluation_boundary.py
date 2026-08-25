@@ -707,3 +707,62 @@ def test_the_attestation_loop_closes_on_unreadable_output():
             ),
         ),
     )
+
+
+def test_a_decision_may_not_be_justified_by_a_sibling_candidates_evidence():
+    """Resolving is not enough: the evidence has to be about the right thing.
+
+    A decision about one track justified by another track's measurement is
+    unauditable in exactly the way evidence_references exists to prevent.
+    """
+    req = fx.request(subject_ids=("s1",))
+    b_kwargs = dict(
+        executions=(fx.execution("e1", "s1"),),
+        realizations=(fx.realization("r1", "e1"),),
+        candidates=(
+            fx.candidate("c1", "e1", realization_id="r1", candidate_index=0),
+            fx.candidate("c2", "e1", realization_id="r1", candidate_index=1),
+        ),
+        observations=(fx.scalar_observation("o2", "c2", 9.0),),
+    )
+    bundle = fx.bundle(
+        decisions=(
+            fx.decision(
+                "c1",
+                DecisionEvaluationStatus.EVALUATED,
+                True,
+                evidence_references=("o2",),
+            ),
+        ),
+        **b_kwargs,
+    )
+    with pytest.raises(ValueError, match="not it or one of its ancestors"):
+        verify_evaluation_bundle(bundle, req)
+
+
+def test_a_decision_may_rest_on_evidence_from_anywhere_up_its_own_lineage():
+    """A candidate legitimately rests on its own observables, its realization's,
+    its execution's, or its source state's."""
+    req = fx.request(
+        subject_ids=("s1",),
+        subject_observations=(fx.scalar_observation("o_state", "s1", 400.0),),
+    )
+    bundle = fx.bundle(
+        executions=(fx.execution("e1", "s1"),),
+        realizations=(fx.realization("r1", "e1"),),
+        candidates=(fx.candidate("c1", "e1", realization_id="r1", candidate_index=0),),
+        observations=(
+            fx.scalar_observation("o_cand", "c1", 1.0),
+            fx.scalar_observation("o_real", "r1", 2.0),
+            fx.scalar_observation("o_exec", "e1", 3.0),
+        ),
+        decisions=(
+            fx.decision(
+                "c1",
+                DecisionEvaluationStatus.EVALUATED,
+                True,
+                evidence_references=("o_cand", "o_real", "o_exec", "o_state"),
+            ),
+        ),
+    )
+    verify_evaluation_bundle(bundle, req)

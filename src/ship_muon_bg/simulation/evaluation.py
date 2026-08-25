@@ -450,8 +450,10 @@ def verify_evaluation_bundle(
       state, which would make its statistical unit undefined;
     - every observation and stage decision attaches to something that exists —
       a declared subject or a record in this bundle — and every piece of
-      evidence a decision cites resolves to a real observation, so the audit
-      trail from a conclusion back to its evidence is never broken;
+      evidence a decision cites resolves to a real observation *about the thing
+      decided or about one of its ancestors*, so the audit trail from a
+      conclusion back to its evidence is never broken and a decision about one
+      track can never be justified by a sibling track's measurement;
     - no subject receives more executions than were asked for, which would mean
       the backend invented repetitions the request never authorized.
 
@@ -537,12 +539,20 @@ def verify_evaluation_bundle(
                 f"reference {observation.subject_ref!r}"
             )
     resolvable_evidence = request_observation_ids | bundle_observation_ids
+    ancestors = _ancestor_index(bundle)
+    observation_subject = {
+        observation.observation_id: observation.subject_ref
+        for observation in tuple(request.subject_observations) + bundle.observations
+    }
     for decision in bundle.decisions:
         if decision.subject_ref not in attachable:
             raise ValueError(
                 f"decision {decision.decision_id!r} attaches to unknown reference "
                 f"{decision.subject_ref!r}"
             )
+        allowed_sources = ancestors.get(
+            decision.subject_ref, frozenset({decision.subject_ref})
+        )
         for reference in decision.evidence_references:
             if reference not in resolvable_evidence:
                 raise ValueError(
@@ -551,6 +561,55 @@ def verify_evaluation_bundle(
                     "request; a conclusion whose evidence cannot be resolved is "
                     "not auditable"
                 )
+            source = observation_subject[reference]
+            if source not in allowed_sources:
+                # Evidence must be about the thing decided, or about something
+                # it descends from — a candidate may rest on its own
+                # observables, on its realization's, on its execution's, or on
+                # its source state's. Citing a *sibling* candidate's observable
+                # would let a decision about one track be justified by another
+                # track's measurement, which is unauditable in exactly the way
+                # evidence_references exists to prevent.
+                raise ValueError(
+                    f"decision {decision.decision_id!r} is about "
+                    f"{decision.subject_ref!r} but cites evidence about "
+                    f"{source!r}, which is not it or one of its ancestors"
+                )
+
+
+def _ancestor_index(bundle: EvaluationBundle) -> Mapping[str, frozenset]:
+    """For each record id, the set containing it and everything it descends from.
+
+    A candidate's chain is candidate -> realization (if any) -> execution ->
+    subject; a realization's is realization -> execution -> subject; an
+    execution's is execution -> subject.
+    """
+    execution_subject = {
+        item.execution_id: item.subject_id for item in bundle.executions
+    }
+    index = {
+        execution_id: frozenset({execution_id, subject_id})
+        for execution_id, subject_id in execution_subject.items()
+    }
+    realization_chain = {}
+    for realization in bundle.realizations:
+        chain = frozenset({realization.realization_id}) | index.get(
+            realization.execution_id, frozenset({realization.execution_id})
+        )
+        realization_chain[realization.realization_id] = chain
+        index[realization.realization_id] = chain
+    for candidate in bundle.candidates:
+        parent = (
+            realization_chain.get(candidate.realization_id)
+            if candidate.realization_id is not None
+            else None
+        )
+        if parent is None:
+            parent = index.get(
+                candidate.execution_id, frozenset({candidate.execution_id})
+            )
+        index[candidate.candidate_id] = frozenset({candidate.candidate_id}) | parent
+    return index
 
 
 def execution_shortfall(
