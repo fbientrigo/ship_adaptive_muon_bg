@@ -543,3 +543,120 @@ def test_execution_provenance_must_be_a_mapping():
             execution_status=_Status.SUCCEEDED,
             provenance="not a mapping",
         )
+
+
+def test_an_evaluated_decision_may_not_rest_on_uncomputed_evidence():
+    """The corruption the whole layer exists to prevent, reachable through the
+    sanctioned API by a backend reporting its own opaque outcomes.
+
+    ``StageEvaluator`` already refuses this input, so without the check the two
+    producers of ``StageDecision`` disagreed — and the unchecked one is the path
+    a real adapter takes.
+    """
+    unavailable = fx.unavailable_observation("o1", "c1")
+    with pytest.raises(ValueError, match="never computed"):
+        fx.bundle(
+            executions=(fx.execution("e1", "s1"),),
+            candidates=(fx.candidate("c1", "e1", candidate_index=0),),
+            observations=(unavailable,),
+            decisions=(
+                fx.decision(
+                    "c1",
+                    DecisionEvaluationStatus.EVALUATED,
+                    False,
+                    evidence_references=("o1",),
+                ),
+            ),
+        )
+
+
+def test_a_censored_decision_may_cite_uncomputed_evidence():
+    """That is exactly what a censoring record is for."""
+    fx.bundle(
+        executions=(fx.execution("e1", "s1"),),
+        candidates=(fx.candidate("c1", "e1", candidate_index=0),),
+        observations=(fx.unavailable_observation("o1", "c1"),),
+        decisions=(
+            fx.decision(
+                "c1",
+                DecisionEvaluationStatus.TECHNICALLY_UNAVAILABLE,
+                None,
+                evidence_references=("o1",),
+            ),
+        ),
+    )
+
+
+def test_an_execution_must_record_the_options_digest_it_ran_under():
+    """Once a bundle is persisted the request is gone. Without this the
+    difference between two runs under one configuration label but different
+    geometry files is unrecoverable from the records."""
+    req = fx.request(subject_ids=("s1",))
+    b = fx.bundle(executions=(fx.execution("e1", "s1", options_digest="wrong"),))
+    with pytest.raises(ValueError, match="records options digest"):
+        verify_evaluation_bundle(b, req)
+
+
+def test_a_bundle_may_not_misdeclare_the_backend_that_produced_it():
+    """A wrapper that forgets to propagate is_physical is the honest mistake
+    the flag exists to catch, and nothing else would notice fake records
+    stamped as physics."""
+
+    class LaunderingBackend:
+        name = "definitely_not_fairship"
+        is_physical = False
+
+        def evaluate(self, request):
+            return EvaluationBundle(
+                request_id=request.request_id,
+                backend_name="FairShip-v2024.1",
+                is_physical=True,
+            )
+
+    with pytest.raises(ValueError, match="claims backend"):
+        evaluate_verified(LaunderingBackend(), fx.request())
+
+    class HalfHonestBackend(LaunderingBackend):
+        def evaluate(self, request):
+            return EvaluationBundle(
+                request_id=request.request_id,
+                backend_name=self.name,
+                is_physical=True,
+            )
+
+    with pytest.raises(ValueError, match="declares is_physical"):
+        evaluate_verified(HalfHonestBackend(), fx.request())
+
+
+def test_recorded_provenance_cannot_be_rewritten_after_verification():
+    """A frozen record that holds the caller's live dict is not immutable, and
+    the configuration id it records is exactly what must not move."""
+    from ship_muon_bg.entities import ExecutionStatus as _Status
+    from ship_muon_bg.entities import FSSimExecution
+
+    mutable = {"geometry": "v9"}
+    record = FSSimExecution(
+        execution_id="e1",
+        subject_id="s1",
+        fs_sim_configuration_id="cfg",
+        execution_status=_Status.SUCCEEDED,
+        provenance=mutable,
+    )
+    mutable["geometry"] = "SOMETHING_ELSE"
+    assert record.provenance["geometry"] == "v9"
+    with pytest.raises(TypeError):
+        record.provenance["geometry"] = "tampered"
+
+
+def test_request_options_cannot_be_rewritten_after_the_digest_is_taken():
+    mutable = {"geometry_file": "muShield_v8.root"}
+    req = EvaluationRequest(
+        request_id="r1",
+        subjects=(fx.subject("s1"),),
+        fs_sim_configuration_id=fx.CONFIG_A,
+        seed=1,
+        options=mutable,
+    )
+    before = req.options_digest
+    mutable["geometry_file"] = "muShield_v9.root"
+    assert req.options_digest == before

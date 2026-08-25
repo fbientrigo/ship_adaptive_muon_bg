@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Mapping, Optional, Tuple
 
 
@@ -103,3 +104,8 @@ class ObservationEnvelope:
             raise ValueError(
                 f"a {self.evaluation_status.value} observation must not carry a payload"
             )
+        if not isinstance(self.config_provenance, Mapping):
+            raise TypeError("config_provenance must be a mapping")
+        object.__setattr__(
+            self, "config_provenance", MappingProxyType(dict(self.config_provenance))
+        )

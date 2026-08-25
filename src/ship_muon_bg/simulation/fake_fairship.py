@@ -16,7 +16,7 @@ represent —
   outcome of any kind);
 - an execution with **zero, one, or many** interaction realizations;
 - a realization with **zero, one, or many** reconstructed candidates;
-- candidates **not scoped to any realization** (``EXEC-04``);
+- candidates **not scoped to any realization** (``EXEC-02``);
 - stage evidence that is **computed**, **technically unavailable**, or
   **absent entirely** — three distinct forms of missingness, none of which
   may become a negative decision (``CENSOR-01``/``CENSOR-02``).
@@ -51,6 +51,7 @@ from ship_muon_bg.entities.decision import (
 )
 from ship_muon_bg.entities.identifiers import content_hash
 from ship_muon_bg.entities.lineage import (
+    OPTIONS_DIGEST_PROVENANCE_KEY,
     ExecutionStatus,
     FSSimExecution,
     InteractionRealization,
@@ -71,7 +72,10 @@ BACKEND_VERSION = "v0"
 #: nothing here models deep inelastic scattering, and a fixture must not be
 #: mistakable for one.
 FIXTURE_INTERACTION_TYPE = "fixture_interaction"
-FIXTURE_INTERACTION_DEFINITION_ID = "fixture.interaction_v0@sha256:fake"
+#: Deliberately *not* shaped like ``definition_id()`` output. A fixture id
+#: that mimics ``{label}@sha256:{digest}`` is indistinguishable from a real
+#: content-addressed id in a downstream equality check (``CLAIM-NO-10``).
+FIXTURE_INTERACTION_DEFINITION_ID = "fixture.interaction_v0@notahash:fixture"
 
 
 def _require_nonempty_str(value: object, field_name: str) -> None:
@@ -174,14 +178,24 @@ class FakeRunPlan:
     ``ExecutionStatus.TECHNICAL_FAILURE`` plus a free-text reason on the health
     axis (mission invariant 3.2).
 
+    ``unreconstructable=True`` models the awkward middle case a real Geant4/ROOT
+    chain produces constantly: the job exited 0, but the stage evidence could
+    not be obtained — a truncated tree, a missing branch. The run is
+    ``SUCCEEDED`` and yields no candidates, and the backend says so with an
+    execution-level ``TECHNICALLY_UNAVAILABLE`` decision. Without that record it
+    would be indistinguishable from a clean zero.
+
     ``realization_candidate_counts`` has one entry per interaction realization;
     the value is how many candidates that realization yields. ``()`` means an
     execution that ran cleanly and produced nothing — a genuine physics zero,
-    not a failure.
+    not a failure — and the backend attests it with an execution-level
+    ``EVALUATED False`` decision, because an empty record set alone cannot
+    distinguish "found nothing" from "never looked".
     """
 
     emit_execution: bool = True
     technical_failure: bool = False
+    unreconstructable: bool = False
     failure_reason: str = "fake_backend: injected technical failure"
     realization_candidate_counts: Tuple[int, ...] = (1,)
     unattached_candidate_count: int = 0
@@ -192,6 +206,13 @@ class FakeRunPlan:
             raise TypeError("emit_execution must be a bool")
         if not isinstance(self.technical_failure, bool):
             raise TypeError("technical_failure must be a bool")
+        if not isinstance(self.unreconstructable, bool):
+            raise TypeError("unreconstructable must be a bool")
+        if self.unreconstructable and self.technical_failure:
+            raise ValueError(
+                "unreconstructable models a run that succeeded but could not be "
+                "reconstructed; it is not a second way of spelling a crash"
+            )
         counts = tuple(self.realization_candidate_counts)
         for count in counts:
             _require_non_negative_int(count, "realization_candidate_counts entry")
@@ -327,8 +348,13 @@ class FakeFairShipBackend:
                 realization_candidate_counts=(),
             )
         realization_count = (draw >> 16) % (self._max_realizations + 1)
+        # One independent draw per realization rather than successive shifts of
+        # a single 64-bit value: shifting runs out of bits at index 5 and every
+        # later realization would be silently empty, which is exactly the shape
+        # a bug could hide behind.
         counts = tuple(
-            (draw >> (24 + 8 * index)) % (self._max_candidates_per_realization + 1)
+            self._draw(request, subject, replication_index, f"candidates:{index}")
+            % (self._max_candidates_per_realization + 1)
             for index in range(realization_count)
         )
         return FakeRunPlan(realization_candidate_counts=counts)
@@ -387,6 +413,7 @@ class FakeFairShipBackend:
                         % (2**31),
                         failure_reason=plan.failure_reason if failed else "",
                         provenance={
+                            OPTIONS_DIGEST_PROVENANCE_KEY: request.options_digest,
                             "backend_name": self.name,
                             "backend_version": self.version,
                             "is_physical": "false",
@@ -432,6 +459,20 @@ class FakeFairShipBackend:
                         )
                         candidate_ordinal += 1
 
+                if plan.unreconstructable:
+                    for stage in self._stages:
+                        decisions.append(
+                            self._decision(
+                                stage,
+                                execution_id,
+                                DecisionEvaluationStatus.TECHNICALLY_UNAVAILABLE,
+                                None,
+                                (),
+                                "fake_backend: reconstruction output unavailable",
+                            )
+                        )
+                    continue
+
                 for within_execution in range(plan.unattached_candidate_count):
                     self._emit_candidate(
                         request=request,
@@ -447,6 +488,24 @@ class FakeFairShipBackend:
                         decisions=decisions,
                     )
                     candidate_ordinal += 1
+
+                if candidate_ordinal == 0:
+                    # No candidate record can attest that the stage ran, so the
+                    # execution says so itself. Emitted only in this case: when
+                    # candidates exist, their own decisions already attest it,
+                    # and an execution-level record would bypass the
+                    # candidate rollup entirely.
+                    for stage in self._stages:
+                        decisions.append(
+                            self._decision(
+                                stage,
+                                execution_id,
+                                DecisionEvaluationStatus.EVALUATED,
+                                False,
+                                (),
+                                "",
+                            )
+                        )
 
         return EvaluationBundle(
             request_id=request.request_id,

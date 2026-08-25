@@ -44,6 +44,7 @@ Backend-independent: imports neither ROOT, FairShip, nor
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Mapping, Protocol, Sequence, Tuple, runtime_checkable
 
 from ship_muon_bg.entities.decision import DecisionEvaluationStatus, StageDecision
@@ -54,7 +55,11 @@ from ship_muon_bg.entities.lineage import (
     ReconstructedCandidate,
 )
 from ship_muon_bg.entities.identifiers import content_hash
-from ship_muon_bg.entities.observation import ObservationEnvelope
+from ship_muon_bg.entities.lineage import OPTIONS_DIGEST_PROVENANCE_KEY
+from ship_muon_bg.entities.observation import (
+    ObservationEnvelope,
+    ObservationEvaluationStatus,
+)
 from ship_muon_bg.entities.subject import TagSubject
 
 
@@ -178,6 +183,9 @@ class EvaluationRequest:
 
         object.__setattr__(self, "subjects", subjects)
         object.__setattr__(self, "subject_observations", observations)
+        # Copy, then freeze: storing the caller's mapping by reference would
+        # let ``options_digest`` change after the request was verified.
+        object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
 
     @property
     def subject_ids(self) -> Tuple[str, ...]:
@@ -363,6 +371,32 @@ class EvaluationBundle:
                     "crashed run is censored, never evaluated"
                 )
 
+        # The same rule one level down. A decision whose evidence was never
+        # computed is censored, not concluded: allowing an EVALUATED decision
+        # to rest on a TECHNICALLY_UNAVAILABLE observation is how a detector
+        # readout failure becomes a counted physics negative (``CENSOR-01``).
+        # ``StageEvaluator`` already refuses exactly this input, so without the
+        # check the two producers of ``StageDecision`` disagree — and the
+        # unchecked one is the path a real adapter takes.
+        observation_status = {
+            item.observation_id: item.evaluation_status for item in observations
+        }
+        for decision in decisions:
+            if decision.evaluation_status is not DecisionEvaluationStatus.EVALUATED:
+                continue
+            for reference in decision.evidence_references:
+                status = observation_status.get(reference)
+                if (
+                    status is not None
+                    and status is not ObservationEvaluationStatus.COMPUTED
+                ):
+                    raise ValueError(
+                        f"decision {decision.decision_id!r} is EVALUATED but cites "
+                        f"observation {reference!r}, whose status is "
+                        f"{status.value}; a conclusion cannot rest on evidence that "
+                        "was never computed"
+                    )
+
         object.__setattr__(self, "executions", executions)
         object.__setattr__(self, "realizations", realizations)
         object.__setattr__(self, "candidates", candidates)
@@ -396,9 +430,11 @@ def verify_evaluation_bundle(
     - the bundle answers *this* request;
     - every execution belongs to a subject the request declared (no invented
       subjects, and therefore no invented source states);
-    - every execution carries the request's ``fs_sim_configuration_id``, so a
-      backend cannot quietly relabel the configuration and have results pooled
-      across incompatible settings downstream (``COMPAT-01``);
+    - every execution carries the request's ``fs_sim_configuration_id`` *and*
+      records the request's options digest in its provenance, so a backend can
+      neither quietly relabel the configuration nor leave a run's options
+      untraceable once the bundle is persisted and the request is gone
+      (``COMPAT-01``, ``CONF-01``);
     - no subject id collides with a record id, and no observation id is reused
       between the request and the bundle, so an untyped reference can never
       resolve to two different kinds of thing — in particular an observation
@@ -476,6 +512,14 @@ def verify_evaluation_bundle(
                 f"{execution.fs_sim_configuration_id!r} but the request specified "
                 f"{request.fs_sim_configuration_id!r}"
             )
+        recorded = execution.provenance.get(OPTIONS_DIGEST_PROVENANCE_KEY)
+        if recorded != request.options_digest:
+            raise ValueError(
+                f"execution {execution.execution_id!r} records options digest "
+                f"{recorded!r} but the request's options hash to "
+                f"{request.options_digest!r}; without it a persisted execution "
+                "carries no trace of what varied under one configuration label"
+            )
 
     attachable = bundle.referenceable_ids | subject_ids
     for observation in bundle.observations:
@@ -526,10 +570,11 @@ def assert_requests_compatible(requests: Sequence[EvaluationRequest]) -> None:
     """Refuse a set of requests whose configuration labels hide a real difference.
 
     Two requests carrying the same ``fs_sim_configuration_id`` must agree on
-    everything that could change the estimand. ``options`` is the channel the
-    configuration id does not cover by construction, so its digest is compared
-    here: same label plus different options means the label is not, in fact, a
-    complete configuration identity (``CONF-01``, ``COMPAT-01``).
+    the options that configuration id does not cover. Only ``options_digest``
+    is compared here — seed and state definition are compatibility axes too
+    (``COMPAT-01``) and are checked elsewhere. Same label plus different
+    options means the label is not, in fact, a complete configuration identity
+    (``CONF-01``).
     """
     digests: dict = {}
     for request in requests:
@@ -555,8 +600,29 @@ def evaluate_verified(
     The checked path should be the easy path. Calling ``backend.evaluate``
     directly is still legitimate — a bundle read back from disk has no request
     to verify against — but new code has no reason to skip the check.
+
+    None of this makes a backend trustworthy. Every check here is structural:
+    a backend that reports a crashed run as ``SUCCEEDED``, emits one candidate
+    record for what were physically many, or attributes a run to the wrong
+    subject passes all of it by construction. Backend honesty is the trust
+    boundary, and a real adapter needs its own tests against known simulator
+    output.
     """
     bundle = backend.evaluate(request)
+    # The bundle's self-declaration must match the backend that produced it.
+    # A wrapper or retry decorator that forgets to propagate ``is_physical`` is
+    # exactly the honest mistake this flag exists to catch, and nothing else in
+    # the pipeline would notice fake records stamped as physics.
+    if bundle.backend_name != backend.name:
+        raise ValueError(
+            f"bundle claims backend {bundle.backend_name!r} but was produced by "
+            f"{backend.name!r}"
+        )
+    if bundle.is_physical != backend.is_physical:
+        raise ValueError(
+            f"bundle declares is_physical={bundle.is_physical} but backend "
+            f"{backend.name!r} declares {backend.is_physical}"
+        )
     verify_evaluation_bundle(bundle, request)
     return bundle
 
@@ -581,6 +647,13 @@ class EvaluationBackend(Protocol):
       ``FSSimExecution`` with ``ExecutionStatus.TECHNICAL_FAILURE``. It is
       never reported as a negative physics outcome, and never as a
       ``StageDecision`` carrying ``False`` (mission invariant 3.2).
+    - A run that *succeeded* but produced no candidates must say which case it
+      is, because the record set cannot tell them apart. If the stage genuinely
+      ran and found nothing, emit an execution-level ``StageDecision`` with
+      ``EVALUATED`` and ``False``. If reconstruction or the stage evidence was
+      unavailable — a truncated tree, a missing branch — emit one with
+      ``TECHNICALLY_UNAVAILABLE``. Silence is neither: aggregation reads an
+      unattested empty run as ``NOT_EVALUATED``, never as a physics zero.
     - Candidate multiplicity is reported by emitting that many
       ``ReconstructedCandidate`` records — zero, one, or many. It is never
       collapsed to a boolean (mission invariant 3.3).

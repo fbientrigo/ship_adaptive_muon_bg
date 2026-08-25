@@ -22,6 +22,7 @@ from ship_muon_bg.entities.decision import (
 )
 from ship_muon_bg.entities.identifiers import canonical_json, content_hash, definition_id
 from ship_muon_bg.entities.lineage import (
+    OPTIONS_DIGEST_PROVENANCE_KEY,
     ExecutionStatus,
     FSSimExecution,
     InteractionRealization,
@@ -39,6 +40,7 @@ from ship_muon_bg.entities.subject import TagSubject
 __all__ = [
     "TagSubject",
     "ExecutionStatus",
+    "OPTIONS_DIGEST_PROVENANCE_KEY",
     "FSSimExecution",
     "InteractionRealization",
     "ReconstructedCandidate",

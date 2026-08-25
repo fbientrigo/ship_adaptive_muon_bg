@@ -20,7 +20,12 @@ from ship_muon_bg.entities import (
     ScalarObservationPayload,
     TagSubject,
 )
+from ship_muon_bg.entities.identifiers import content_hash
+from ship_muon_bg.entities.lineage import OPTIONS_DIGEST_PROVENANCE_KEY
 from ship_muon_bg.simulation.evaluation import EvaluationBundle, EvaluationRequest
+
+#: The digest every fixture request carries, since they all use empty options.
+EMPTY_OPTIONS_DIGEST = content_hash({})
 
 CONFIG_A = "fs_sim_config_a@sha256:aaaa"
 CONFIG_B = "fs_sim_config_b@sha256:bbbb"
@@ -100,6 +105,7 @@ def execution(
     status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
     failure_reason: str = "",
     seed: int = 11,
+    options_digest: str = EMPTY_OPTIONS_DIGEST,
 ) -> FSSimExecution:
     return FSSimExecution(
         execution_id=execution_id,
@@ -108,6 +114,7 @@ def execution(
         execution_status=status,
         seed=seed,
         failure_reason=failure_reason,
+        provenance={OPTIONS_DIGEST_PROVENANCE_KEY: options_digest},
     )
 
 

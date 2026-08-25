@@ -7,6 +7,8 @@ defined here.
 
 from ship_muon_bg.tagging.aggregation import (
     ROLLUP_RULE,
+    ROLLUP_RULE_CONTENT,
+    DecisionLevel,
     ExecutionStageOutcome,
     ExecutionStageResult,
     StateStageAggregate,
@@ -28,4 +30,6 @@ __all__ = [
     "aggregate_state_stage_evaluations",
     "classify_executions",
     "ROLLUP_RULE",
+    "ROLLUP_RULE_CONTENT",
+    "DecisionLevel",
 ]

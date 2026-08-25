@@ -21,7 +21,16 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Mapping, Optional
+
+#: Reserved key in ``FSSimExecution.provenance``. Backends must record the
+#: content hash of the ``options`` their run was launched with, because a
+#: configuration *label* cannot cover a free-form options mapping and a
+#: persisted execution would otherwise carry no trace of what actually varied
+#: (``CONF-01``, ``COMPAT-01``). Aggregation groups on it, so two runs whose
+#: options differ can never pool even under one configuration id.
+OPTIONS_DIGEST_PROVENANCE_KEY = "options_digest"
 
 
 class ExecutionStatus(str, enum.Enum):
@@ -75,6 +84,10 @@ class FSSimExecution:
             raise TypeError("failure_reason must be a string")
         if not isinstance(self.provenance, Mapping):
             raise TypeError("provenance must be a mapping")
+        # Copy, then freeze. Storing the caller's mapping by reference would
+        # let a verified record's recorded configuration be rewritten
+        # afterwards by anyone still holding the dict (``PROV-01``).
+        object.__setattr__(self, "provenance", MappingProxyType(dict(self.provenance)))
         if self.failure_reason and self.execution_status is not ExecutionStatus.TECHNICAL_FAILURE:
             raise ValueError(
                 "failure_reason describes run health and is only meaningful on a "

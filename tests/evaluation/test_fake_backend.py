@@ -155,7 +155,9 @@ def test_scripted_plan_produces_exactly_the_stated_records():
     """Hand-computable: 1 subject, 3 replications, scripted structure.
 
     replication 0: 2 realizations yielding 1 and 3 candidates -> 4 candidates
-    replication 1: no realizations, 0 candidates      -> clean physics zero
+    replication 1: no realizations, 0 candidates      -> clean physics zero,
+                   attested by one execution-level decision because no
+                   candidate record exists to attest it
     replication 2: technical failure                  -> no output at all
     """
     definition, _spec = fx.stage_spec()
@@ -181,7 +183,7 @@ def test_scripted_plan_produces_exactly_the_stated_records():
     assert len(bundle.realizations) == 2
     assert len(bundle.candidates) == 4
     assert len(bundle.observations) == 4
-    assert len(bundle.decisions) == 4
+    assert len(bundle.decisions) == 5  # 4 candidate-level + 1 attestation
 
     per_execution = _candidates_per_execution(bundle)
     assert sorted(per_execution.values()) == [0, 0, 4]
@@ -257,7 +259,9 @@ def test_every_record_traces_to_exactly_one_declared_subject():
         assert candidate.execution_id in owner
     candidate_owner = {c.candidate_id: owner[c.execution_id] for c in bundle.candidates}
     for decision in bundle.decisions:
-        assert decision.subject_ref in candidate_owner
+        # Candidate-level outcomes and execution-level attestations both trace
+        # back to exactly one declared subject.
+        assert decision.subject_ref in candidate_owner or decision.subject_ref in owner
 
 
 def test_the_generated_bundle_always_verifies_against_its_request():
@@ -410,12 +414,30 @@ def test_backend_decisions_match_the_independent_stage_evaluator_exactly():
     bundle = backend.evaluate(request)
     evaluator = StageEvaluator()
 
-    assert bundle.decisions, "fixture must generate decisions to be meaningful"
-    for decision in bundle.decisions:
+    candidate_ids = {candidate.candidate_id for candidate in bundle.candidates}
+    candidate_decisions = [
+        decision
+        for decision in bundle.decisions
+        if decision.subject_ref in candidate_ids
+    ]
+    assert candidate_decisions, "fixture must generate decisions to be meaningful"
+    for decision in candidate_decisions:
         re_derived = evaluator.evaluate(
             definition, bundle.observations, subject_ref=decision.subject_ref
         )
         assert re_derived == decision
+
+    # Execution-level attestations are deliberately outside the evaluator's
+    # reach: they report that a run applied the stage and reconstructed
+    # nothing, which no observation can express and no rule can re-derive.
+    attestations = [
+        decision
+        for decision in bundle.decisions
+        if decision.subject_ref not in candidate_ids
+    ]
+    assert attestations
+    for attestation in attestations:
+        assert attestation.evidence_references == ()
 
 
 def test_multiple_stages_are_independent_and_carry_their_own_evidence():
@@ -455,3 +477,143 @@ def test_stages_must_not_share_one_observable():
     )
     with pytest.raises(ValueError, match="distinct observation_definition_ids"):
         FakeFairShipBackend(stages=(spec, shadow))
+
+
+# --------------------------------------------------------------------------
+# Guards added after red-team and senior review
+# --------------------------------------------------------------------------
+
+
+def test_an_empty_run_attests_whether_it_looked():
+    """The awkward middle case a real Geant4/ROOT chain produces constantly.
+
+    Both runs succeeded and reconstructed nothing. One found nothing; the other
+    could not read its output. From the candidate records alone they are
+    identical, so the backend has to say which — and the two answers must not
+    end up in the same bucket.
+    """
+    definition, spec = fx.stage_spec()
+    backend = FakeFairShipBackend(
+        stages=(spec,),
+        plans={
+            ("s1", 0): FakeRunPlan(realization_candidate_counts=()),
+            ("s2", 0): FakeRunPlan(
+                unreconstructable=True, realization_candidate_counts=()
+            ),
+        },
+    )
+    request = fx.request(subject_ids=("s1", "s2"))
+    bundle = backend.evaluate(request)
+    verify_evaluation_bundle(bundle, request)
+
+    assert bundle.candidates == ()
+    assert all(
+        e.execution_status is ExecutionStatus.SUCCEEDED for e in bundle.executions
+    )
+    by_execution = {d.subject_ref: d for d in bundle.decisions}
+    clean = by_execution["exec:req-1:s1:0"]
+    unreadable = by_execution["exec:req-1:s2:0"]
+    assert clean.evaluation_status is DecisionEvaluationStatus.EVALUATED
+    assert clean.decision is False
+    assert unreadable.evaluation_status is DecisionEvaluationStatus.TECHNICALLY_UNAVAILABLE
+    assert unreadable.decision is None
+
+
+def test_the_two_empty_runs_aggregate_into_different_buckets():
+    """End to end: the distinction the backend drew must survive aggregation."""
+    from ship_muon_bg.tagging.aggregation import aggregate_state_stage_evaluations
+
+    definition, spec = fx.stage_spec()
+    backend = FakeFairShipBackend(
+        stages=(spec,),
+        plans={
+            ("s1", 0): FakeRunPlan(realization_candidate_counts=()),
+            ("s2", 0): FakeRunPlan(
+                unreconstructable=True, realization_candidate_counts=()
+            ),
+        },
+    )
+    request = fx.request(subject_ids=("s1", "s2"))
+    bundle = backend.evaluate(request)
+    dataset = aggregate_state_stage_evaluations(
+        executions=bundle.executions,
+        candidates=bundle.candidates,
+        decisions=bundle.decisions,
+        stage_definition_ids=(definition.stage_definition_id,),
+        subjects=request.subjects,
+    )
+    rows = {row.subject_id: row for row in dataset.rows}
+    assert rows["s1"].negative_count == 1
+    assert rows["s1"].eta_hat == 0.0
+    assert rows["s2"].technically_censored_count == 1
+    assert rows["s2"].eta_hat is None
+
+
+def test_an_unreconstructable_plan_is_not_a_second_spelling_of_a_crash():
+    with pytest.raises(ValueError, match="not a second way of spelling a crash"):
+        FakeRunPlan(technical_failure=True, unreconstructable=True,
+                    realization_candidate_counts=())
+
+
+def test_high_realization_counts_do_not_run_out_of_entropy():
+    """Derived candidate counts came from successive shifts of one 64-bit draw,
+    so every realization from index 5 on was silently empty — and an empty
+    realization is precisely the shape a bug could hide behind."""
+    definition, spec = fx.stage_spec()
+    backend = FakeFairShipBackend(
+        stages=(spec,), max_realizations=8, max_candidates_per_realization=3
+    )
+    request = fx.request(
+        subject_ids=tuple(f"s{i}" for i in range(30)), replications_per_subject=3
+    )
+    bundle = backend.evaluate(request)
+
+    per_realization = Counter()
+    seen_ordinals = Counter()
+    for realization in bundle.realizations:
+        ordinal = int(realization.realization_id.rsplit(":", 1)[1])
+        seen_ordinals[ordinal] += 1
+    for candidate in bundle.candidates:
+        if candidate.realization_id is None:
+            continue
+        ordinal = int(candidate.realization_id.rsplit(":", 1)[1])
+        per_realization[ordinal] += 1
+
+    high_ordinals = [o for o in seen_ordinals if o >= 5]
+    assert high_ordinals, "the fixture must actually reach high ordinals"
+    assert any(per_realization[o] > 0 for o in high_ordinals)
+
+
+def test_the_options_digest_is_recorded_on_every_execution():
+    from ship_muon_bg.entities import OPTIONS_DIGEST_PROVENANCE_KEY
+
+    definition, spec = fx.stage_spec()
+    backend = FakeFairShipBackend(stages=(spec,), technical_failure_modulus=4)
+    request = fx.request(subject_ids=("s1", "s2"), replications_per_subject=3)
+    bundle = backend.evaluate(request)
+    assert bundle.executions
+    for execution in bundle.executions:
+        assert (
+            execution.provenance[OPTIONS_DIGEST_PROVENANCE_KEY]
+            == request.options_digest
+        )
+
+
+def test_fixture_definition_ids_are_not_shaped_like_content_addressed_ids():
+    """CLAIM-NO-10: a version-suffixed label that mimics {label}@sha256:{digest}
+    is indistinguishable from a compliant id in a downstream equality check."""
+    from ship_muon_bg.simulation import fake_fairship, stub_backend
+
+    for value in (
+        fake_fairship.FIXTURE_INTERACTION_DEFINITION_ID,
+        stub_backend.STUB_INTERACTION_DEFINITION_ID,
+    ):
+        assert "@sha256:" not in value
+
+
+def test_the_fakes_are_not_exported_from_the_production_namespace():
+    """Importable from their own modules, absent from the star-import surface."""
+    import ship_muon_bg.simulation as simulation
+
+    assert "FakeFairShipBackend" not in simulation.__all__
+    assert "MinimalStubBackend" not in simulation.__all__

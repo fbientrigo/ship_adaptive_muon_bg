@@ -12,7 +12,9 @@ import pytest
 from ship_muon_bg.entities import DecisionEvaluationStatus, ExecutionStatus
 from ship_muon_bg.tagging.aggregation import (
     ROLLUP_RULE,
+    DecisionLevel,
     ExecutionStageOutcome,
+    TaggingDataset,
     aggregate_state_stage_evaluations,
     classify_executions,
 )
@@ -57,17 +59,19 @@ def _not_evaluated(subject_ref):
 def test_hand_computed_aggregate_for_one_state():
     """One state, six executions of it, one stage.
 
-    e1 succeeded, 1 candidate, decision True         -> POSITIVE
-    e2 succeeded, 2 candidates, both False           -> NEGATIVE
-    e3 succeeded, 0 candidates                       -> NEGATIVE  (clean zero)
-    e4 crashed                                       -> TECHNICAL_FAILURE
-    e5 succeeded, 1 candidate, evidence unavailable  -> TECHNICALLY_CENSORED
-    e6 succeeded, 1 candidate, stage never applied   -> NOT_EVALUATED
+    e1 succeeded, 1 candidate, decision True          -> POSITIVE
+    e2 succeeded, 2 candidates, both False            -> NEGATIVE
+    e3 succeeded, 0 candidates, execution attests it
+       applied the stage and found nothing            -> NEGATIVE  (clean zero)
+    e4 crashed                                        -> TECHNICAL_FAILURE
+    e5 succeeded, 1 candidate, evidence unavailable   -> TECHNICALLY_CENSORED
+    e6 succeeded, 1 candidate, stage never applied    -> NOT_EVALUATED
 
     valid = 2 negatives + 1 positive = 3
     eta_hat = 1 / 3
     candidate counts over valid executions: {1: 1, 2: 1, 0: 1}
     positive-candidate counts over valid executions: {1: 1, 0: 2}
+    exactly one execution was decided at execution level: e3
     """
     executions = (
         fx.execution("e1", "s1"),
@@ -89,6 +93,7 @@ def test_hand_computed_aggregate_for_one_state():
         _positive("c1"),
         _negative("c2"),
         _negative("c3"),
+        _negative("e3"),
         _unavailable("c5"),
     )
     dataset = _aggregate(executions, candidates, decisions)
@@ -106,6 +111,7 @@ def test_hand_computed_aggregate_for_one_state():
     assert row.eta_hat == pytest.approx(1 / 3)
     assert row.candidate_count_distribution == {0: 1, 1: 1, 2: 1}
     assert row.positive_candidate_count_distribution == {0: 2, 1: 1}
+    assert row.execution_decided_count == 1
     assert row.rollup_rule == ROLLUP_RULE
 
 
@@ -141,10 +147,25 @@ def test_a_state_with_nothing_evaluable_has_an_unknown_rate_not_zero():
 
 
 def test_every_execution_lands_in_exactly_one_outcome_class():
-    """Enforced by the aggregate itself, so no execution can be double- or
-    un-counted whatever the classification logic does."""
-    executions = tuple(fx.execution(f"e{i}", "s1") for i in range(5))
-    row = _aggregate(executions, (), ()).rows[0]
+    """Exercised with all five outcomes present, so the partition arithmetic is
+    actually under load rather than summing one bucket."""
+    executions = (
+        fx.execution("e1", "s1"),
+        fx.execution("e2", "s1"),
+        fx.execution("e3", "s1"),
+        fx.execution("e4", "s1", status=ExecutionStatus.TECHNICAL_FAILURE,
+                     failure_reason="fixture: crash"),
+        fx.execution("e5", "s1"),
+    )
+    candidates = (
+        fx.candidate("c1", "e1", candidate_index=0),
+        fx.candidate("c2", "e2", candidate_index=0),
+        fx.candidate("c3", "e3", candidate_index=0),
+    )
+    decisions = (_positive("c1"), _negative("c2"), _unavailable("c3"))
+    dataset = _aggregate(executions, candidates, decisions)
+    row = dataset.rows[0]
+    assert {r.outcome for r in dataset.results} == set(ExecutionStageOutcome)
     assert (
         row.valid_count
         + row.technical_failure_count
@@ -197,14 +218,40 @@ def test_a_candidate_with_no_decision_for_the_stage_is_not_a_negative():
     assert row.negative_count == 0
 
 
-def test_zero_candidates_is_a_genuine_negative():
-    """A run that finished cleanly and reconstructed nothing really did fail to
-    produce a candidate. This is the only path to a negative."""
-    row = _aggregate((fx.execution("e1", "s1"),), (), ()).rows[0]
-    assert row.negative_count == 1
-    assert row.valid_count == 1
-    assert row.eta_hat == 0.0
-    assert row.candidate_count_distribution == {0: 1}
+def test_zero_candidates_is_a_negative_only_when_something_attests_it():
+    """The most dangerous ambiguity in the layer.
+
+    "Ran and found nothing" and "never looked" are indistinguishable from an
+    empty record set. Resolving that in favour of a countable negative would
+    turn the commonest real partial failure -- a job that exits 0 but whose
+    reconstruction output is empty or truncated -- into a confident physics
+    zero. So a negative has to be asserted by someone who knows.
+    """
+    attested = _aggregate(
+        (fx.execution("e1", "s1"),), (), (_negative("e1"),)
+    ).rows[0]
+    assert attested.negative_count == 1
+    assert attested.valid_count == 1
+    assert attested.eta_hat == 0.0
+    assert attested.candidate_count_distribution == {0: 1}
+    assert attested.execution_decided_count == 1
+
+
+def test_silence_about_a_stage_is_never_a_physics_zero():
+    silent = _aggregate((fx.execution("e1", "s1"),), (), ()).rows[0]
+    assert silent.negative_count == 0
+    assert silent.not_evaluated_count == 1
+    assert silent.valid_count == 0
+    assert silent.eta_hat is None
+
+
+def test_a_stage_nobody_ever_implemented_yields_no_rate_at_all():
+    """Aggregating for a stage no record mentions must not return 0.0."""
+    executions = tuple(fx.execution(f"e{i}", "s1") for i in range(3))
+    row = _aggregate(executions, (), (), stages=("stage.never_built@sha256:z",)).rows[0]
+    assert row.eta_hat is None
+    assert row.not_evaluated_count == 3
+    assert row.valid_count == 0
 
 
 def test_not_evaluated_and_technically_censored_stay_distinct():
@@ -307,7 +354,9 @@ def test_multiplicity_survives_into_the_aggregate():
         fx.candidate("c3", "e2", candidate_index=1),
         fx.candidate("c4", "e2", candidate_index=2),
     )
-    decisions = tuple(_positive(f"c{i}") for i in range(1, 5))
+    # e0 reconstructed nothing and says so, so it is a real zero rather than a
+    # silence.
+    decisions = tuple(_positive(f"c{i}") for i in range(1, 5)) + (_negative("e0"),)
     row = _aggregate(executions, candidates, decisions).rows[0]
     assert row.candidate_count_distribution == {0: 1, 1: 1, 3: 1}
     assert row.positive_candidate_count_distribution == {0: 1, 1: 1, 3: 1}
@@ -420,18 +469,194 @@ def test_the_tagging_table_retains_raw_counts_not_only_eta_hat():
 
 def test_per_execution_results_are_retained_for_audit():
     executions = (fx.execution("e1", "s1"), fx.execution("e2", "s1"))
-    dataset = _aggregate(executions, (), ())
+    dataset = _aggregate(executions, (), (_negative("e1"),))
     assert len(dataset.results) == 2
-    assert {r.outcome for r in dataset.results} == {ExecutionStageOutcome.NEGATIVE}
+    by_id = {r.execution_id: r for r in dataset.results}
+    assert by_id["e1"].outcome is ExecutionStageOutcome.NEGATIVE
+    assert by_id["e2"].outcome is ExecutionStageOutcome.NOT_EVALUATED
 
 
 def test_classify_executions_is_usable_on_its_own():
     results = classify_executions(
         executions=(fx.execution("e1", "s1"),),
         candidates=(),
-        decisions=(),
+        decisions=(_negative("e1"),),
         stage_definition_ids=(STAGE,),
     )
     assert len(results) == 1
     assert results[0].outcome is ExecutionStageOutcome.NEGATIVE
     assert results[0].is_valid is True
+    assert results[0].decision_level is DecisionLevel.EXECUTION
+
+
+# --------------------------------------------------------------------------
+# Guards added after red-team and senior review
+# --------------------------------------------------------------------------
+
+
+def test_a_realization_scoped_decision_is_refused_not_dropped():
+    """The defect both reviewers found independently.
+
+    ``EXEC-02a`` names ``InteractionRealization`` as the canonical lineage node
+    between an execution and its candidates — exactly where a DIS selection
+    would attach. This layer only knows how to roll up execution- and
+    candidate-level records. Ignoring a realization-scoped decision turned an
+    ``EVALUATED`` positive into a counted physics negative, silently, with
+    ``not_evaluated_count == 0`` so the censoring audit showed nothing.
+    """
+    executions = (fx.execution("e1", "s1"),)
+    decisions = (_positive("r1"),)
+    with pytest.raises(ValueError, match="cannot interpret"):
+        _aggregate(executions, (), decisions)
+
+
+def test_a_subject_scoped_decision_is_refused():
+    with pytest.raises(ValueError, match="cannot interpret"):
+        _aggregate((fx.execution("e1", "s1"),), (), (_positive("s1"),))
+
+
+def test_a_decision_referencing_nothing_is_refused():
+    """A typo in a subject_ref is broken lineage, not a missing evaluation."""
+    executions = (fx.execution("e1", "s1"),)
+    candidates = (fx.candidate("c1", "e1", candidate_index=0),)
+    with pytest.raises(ValueError, match="cannot interpret"):
+        _aggregate(executions, candidates, (_positive("c1_TYPO"),))
+
+
+def test_decisions_for_other_stages_are_left_alone():
+    """The refusal is scoped to the stages actually being aggregated, so a
+    record set carrying decisions for stages this call ignores still works."""
+    executions = (fx.execution("e1", "s1"),)
+    candidates = (fx.candidate("c1", "e1", candidate_index=0),)
+    decisions = (
+        _positive("c1"),
+        fx.decision("r1", DecisionEvaluationStatus.EVALUATED, True,
+                    stage_definition_id=OTHER_STAGE),
+    )
+    row = _aggregate(executions, candidates, decisions, stages=(STAGE,)).rows[0]
+    assert row.positive_count == 1
+
+
+def test_an_id_naming_both_an_execution_and_a_candidate_is_refused():
+    """Per-bundle integrity does not compose. Records concatenated from several
+    bundles can reuse one id in two roles, and a single decision would then be
+    consumed once as a candidate outcome and once as an execution outcome."""
+    executions = (fx.execution("SHARED", "s1"), fx.execution("e2", "s1"))
+    candidates = (fx.candidate("SHARED", "e2", candidate_index=0),)
+    with pytest.raises(ValueError, match="both an execution and a candidate"):
+        _aggregate(executions, candidates, ())
+
+
+def test_an_execution_level_positive_contradicting_its_candidates_is_refused():
+    """The contradiction guard is symmetric. Preferring the execution-level
+    record would overwrite candidate-level stage semantics just as surely as
+    the reverse, which the guard already refused."""
+    executions = (fx.execution("e1", "s1"),)
+    candidates = (
+        fx.candidate("c1", "e1", candidate_index=0),
+        fx.candidate("c2", "e1", candidate_index=1),
+    )
+    decisions = (_negative("c1"), _negative("c2"), _positive("e1"))
+    with pytest.raises(ValueError, match="absence of a candidate must be a distinct"):
+        _aggregate(executions, candidates, decisions)
+
+
+def test_an_identified_positive_survives_an_execution_level_censoring_marker():
+    """Partial identification applies at both levels. Discarding an identified
+    positive because the run-level record says "could not evaluate" abandons the
+    same logic applied to sibling candidates."""
+    executions = (fx.execution("e1", "s1"),)
+    candidates = (fx.candidate("c1", "e1", candidate_index=0),)
+    decisions = (_positive("c1"), _unavailable("e1"))
+    dataset = _aggregate(executions, candidates, decisions)
+    row = dataset.rows[0]
+    assert row.positive_count == 1
+    assert row.eta_hat == 1.0
+    assert dataset.results[0].decision_level is DecisionLevel.CANDIDATES
+
+
+def test_an_execution_level_positive_with_no_candidates_is_recorded_as_such():
+    """A stage whose positive condition is the *absence* of a candidate — a veto
+    — is legitimately positive with N = 0. So Y and 1{N>=1} genuinely diverge
+    here, and ``decision_level`` records which executions took that path rather
+    than leaving a consumer to discover the disagreement."""
+    executions = (fx.execution("e1", "s1"),)
+    dataset = _aggregate(executions, (), (_positive("e1"),))
+    row = dataset.rows[0]
+    assert row.positive_count == 1
+    assert row.candidate_count_distribution == {0: 1}
+    assert row.execution_decided_count == 1
+    assert dataset.results[0].decision_level is DecisionLevel.EXECUTION
+
+
+def test_runs_differing_only_in_options_do_not_share_a_row():
+    """A configuration label cannot cover a free-form options mapping, so the
+    digest each execution records is part of the grouping key. Without it eight
+    executions under two shield geometries pooled into one eta_hat and every
+    guard returned green."""
+    executions = (
+        fx.execution("e1", "s1", options_digest="digest_geometry_a"),
+        fx.execution("e2", "s1", options_digest="digest_geometry_b"),
+    )
+    candidates = (fx.candidate("c1", "e1", candidate_index=0),)
+    dataset = _aggregate(executions, candidates, (_positive("c1"), _negative("e2")))
+    assert len(dataset.rows) == 2
+    assert {row.eta_hat for row in dataset.rows} == {1.0, 0.0}
+    assert {row.options_digest for row in dataset.rows} == {
+        "digest_geometry_a",
+        "digest_geometry_b",
+    }
+
+
+def test_duplicate_rows_for_one_state_are_refused():
+    """Aggregating batches separately and concatenating the datasets makes one
+    source state two population members: a naive mean over rows returns 0.5
+    where the truth is 0.25, and summed exposure double-counts."""
+    executions = tuple(fx.execution(f"e{i}", "s1") for i in range(4))
+    candidates = (fx.candidate("c1", "e0", candidate_index=0),)
+    decisions = (_positive("c1"),) + tuple(_negative(f"e{i}") for i in range(1, 4))
+    whole = _aggregate(executions, candidates, decisions)
+    assert whole.rows[0].eta_hat == pytest.approx(0.25)
+
+    first = _aggregate(executions[:1], candidates, decisions[:1])
+    rest = _aggregate(executions[1:], (), decisions[1:])
+    with pytest.raises(ValueError, match="duplicate .subject, configuration"):
+        TaggingDataset(rows=first.rows + rest.rows)
+
+
+def test_a_declared_state_that_never_ran_is_reported_not_dropped():
+    """If dropped work correlates with anything physical — long jobs,
+    high-energy muons, timeouts — the proxy trains on a selection-biased
+    population, and a table built only from execution results shows nothing."""
+    subjects = (fx.subject("s1"), fx.subject("s2"), fx.subject("s3"))
+    executions = (fx.execution("e1", "s1"), fx.execution("e3", "s3"))
+    dataset = _aggregate(executions, (), (), subjects=subjects)
+    assert dataset.subject_ids == ("s1", "s3")
+    assert dataset.unevaluated_subject_ids == ("s2",)
+
+
+def test_the_state_definition_gate_refuses_to_pass_on_unverified_data():
+    """A require_* guard that silently no-ops is worse than no guard, because it
+    reads as verification."""
+    dataset = _aggregate((fx.execution("e1", "s1"),), (), ())
+    with pytest.raises(ValueError, match="state definition unknown"):
+        dataset.require_single_state_definition()
+
+
+def test_a_bare_string_configuration_filter_is_refused():
+    """set("cfg_a") is a set of characters, which silently selected nothing."""
+    with pytest.raises(TypeError, match="not a single string"):
+        _aggregate(
+            (fx.execution("e1", "s1"),), (), (), allowed_configuration_ids=fx.CONFIG_A
+        )
+
+
+def test_the_rollup_rule_is_content_addressed():
+    """A bare version string would let two vintages of rows pool under one
+    label after the precedence changed."""
+    from ship_muon_bg.entities.identifiers import definition_id
+    from ship_muon_bg.tagging.aggregation import ROLLUP_RULE_CONTENT
+
+    assert ROLLUP_RULE == definition_id("execution_stage_rollup_v0", ROLLUP_RULE_CONTENT)
+    altered = dict(ROLLUP_RULE_CONTENT, negative_requires_attestation=False)
+    assert definition_id("execution_stage_rollup_v0", altered) != ROLLUP_RULE

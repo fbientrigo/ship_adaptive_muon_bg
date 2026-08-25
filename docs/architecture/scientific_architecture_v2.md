@@ -806,7 +806,8 @@ are not executed yet.
    parallel legacy `SimulationResult` projection. That projection turned out
    to be unnecessary rather than deferred — no production code consumes
    `SimulationResult`; the legacy types are referenced only by
-   `tests/test_architecture.py` and a `ProxyTagger/interfaces.py` docstring —
+   `tests/test_architecture.py`, a `ProxyTagger/interfaces.py` docstring,
+   `ProxyTagger/README.md`, and the Colab quickstart notebook —
    so emitting a second, lossier view of the same run would have created a
    second source of truth for no consumer. The legacy types remain untouched
    and working; if a projection is ever needed it is a pure function over the

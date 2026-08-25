@@ -24,6 +24,7 @@ from ship_muon_bg.entities.decision import (
     stage_decision_id,
 )
 from ship_muon_bg.entities.lineage import (
+    OPTIONS_DIGEST_PROVENANCE_KEY,
     ExecutionStatus,
     FSSimExecution,
     InteractionRealization,
@@ -37,7 +38,7 @@ from ship_muon_bg.entities.observation import (
 from ship_muon_bg.simulation.evaluation import EvaluationBundle, EvaluationRequest
 
 STUB_INTERACTION_TYPE = "stub_interaction"
-STUB_INTERACTION_DEFINITION_ID = "stub.interaction_v0@sha256:stub"
+STUB_INTERACTION_DEFINITION_ID = "stub.interaction_v0@notahash:stub"
 
 
 class MinimalStubBackend:
@@ -131,6 +132,7 @@ class MinimalStubBackend:
                             "stub_backend: scheduled technical failure" if failed else ""
                         ),
                         provenance={
+                            OPTIONS_DIGEST_PROVENANCE_KEY: request.options_digest,
                             "backend_name": self.name,
                             "backend_version": self.version,
                             "is_physical": "false",
@@ -200,6 +202,25 @@ class MinimalStubBackend:
                                 evaluation_status=status,
                                 decision=bool(value > self._threshold),
                                 evidence_references=(observation_id,),
+                            )
+                        )
+                if candidate_count == 0:
+                    # Nothing else can attest that the stage was applied to a
+                    # run that reconstructed nothing.
+                    for stage_id in self._stage_ids:
+                        status = DecisionEvaluationStatus.EVALUATED
+                        decisions.append(
+                            StageDecision(
+                                decision_id=stage_decision_id(
+                                    stage_definition_id=stage_id,
+                                    subject_ref=execution_id,
+                                    evidence_references=(),
+                                    evaluation_status=status,
+                                ),
+                                subject_ref=execution_id,
+                                stage_definition_id=stage_id,
+                                evaluation_status=status,
+                                decision=False,
                             )
                         )
                 run_ordinal += 1

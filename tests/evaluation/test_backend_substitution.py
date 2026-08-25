@@ -20,6 +20,7 @@ nothing a real adapter could not also supply.
 from __future__ import annotations
 
 import ast
+import inspect
 import os
 
 import numpy as np
@@ -31,6 +32,7 @@ from ship_muon_bg.simulation.evaluation import evaluate_verified
 from ship_muon_bg.simulation.fake_fairship import FakeFairShipBackend, FakeStageSpec
 from ship_muon_bg.simulation.stub_backend import MinimalStubBackend
 from ship_muon_bg.tagging.aggregation import (
+    DecisionLevel,
     ExecutionStageOutcome,
     aggregate_state_stage_evaluations,
 )
@@ -175,23 +177,71 @@ def test_the_scientific_invariants_hold_for_both_backends(both_backends):
         assert len(multiplicities) > 1, "a backend that only ever yields one N proves nothing"
 
 
-def test_switching_backend_is_configuration_not_a_code_change(both_backends):
-    """The pipeline is one function object, invoked identically both times."""
+def test_the_aggregation_source_contains_no_reference_to_any_backend():
+    """The substantive form of "switching backend is configuration".
+
+    Sweeping the *test's* own helper would prove nothing about the library, so
+    this parses the real aggregation module and checks every identifier,
+    attribute, string and comment in it. If the reduction ever grows a branch on
+    which simulator produced the records, this fails.
+    """
+    import ship_muon_bg.tagging.aggregation as aggregation
+
+    tree = ast.parse(inspect.getsource(aggregation))
+
+    # The executable surface: every identifier the module can name, plus every
+    # module it can reach. Prose is excluded on purpose - the docstring
+    # explains precisely why the module cannot see a backend, and it should be
+    # allowed to say so.
+    surface = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            surface.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            surface.add(node.attr)
+        elif isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            surface.add(node.name)
+        elif isinstance(node, ast.arg):
+            surface.add(node.arg)
+        elif isinstance(node, ast.Import):
+            surface.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            surface.add(node.module)
+        elif isinstance(node, ast.Compare):
+            # A string comparison is the one way prose could become a branch.
+            surface.update(
+                item.value
+                for item in [node.left, *node.comparators]
+                if isinstance(item, ast.Constant) and isinstance(item.value, str)
+            )
+
+    forbidden = ("fairship", "backend", "adapter", "simulation", "root")
+    offenders = sorted(
+        name
+        for name in surface
+        if any(token in name.lower() for token in forbidden)
+    )
+    assert offenders == [], f"aggregation can reach {offenders}"
+
+
+def test_both_backends_exercise_the_full_censoring_taxonomy(both_backends):
+    """A substitution test over two backends that only ever produce clean
+    positives would prove nothing. Both must reach the interesting states."""
     definition, fake, stub = both_backends
     request = _request()
     stages = (definition.stage_definition_id,)
-    calls = [run_pipeline(backend, request, stages) for backend in (fake, stub)]
-    assert len(calls) == 2
 
-    source = ast.parse(open(__file__, encoding="utf-8").read())
-    pipeline = next(
-        node
-        for node in source.body
-        if isinstance(node, ast.FunctionDef) and node.name == "run_pipeline"
-    )
-    text = ast.dump(pipeline)
-    for forbidden in ("fake", "stub", "fairship", "FakeFairShip", "MinimalStub"):
-        assert forbidden.lower() not in text.lower()
+    for backend in (fake, stub):
+        bundle, dataset = run_pipeline(backend, request, stages)
+        outcomes = {result.outcome for result in dataset.results}
+        assert ExecutionStageOutcome.POSITIVE in outcomes
+        assert ExecutionStageOutcome.NEGATIVE in outcomes
+        assert ExecutionStageOutcome.TECHNICAL_FAILURE in outcomes
+        # Every empty run said whether it looked, so none of them fell through
+        # to an unattested NOT_EVALUATED.
+        empty = [r for r in dataset.results if r.candidate_count == 0 and r.is_valid]
+        assert empty
+        assert all(r.decision_level is DecisionLevel.EXECUTION for r in empty)
 
 
 def test_the_full_path_reaches_an_unmodified_proxy_scorer(both_backends):
@@ -211,18 +261,27 @@ def test_the_full_path_reaches_an_unmodified_proxy_scorer(both_backends):
     for backend in (fake, stub):
         _bundle, dataset = run_pipeline(backend, request, stages)
         labelled = [row for row in dataset.rows if row.eta_hat is not None]
-        assert labelled
+        assert len(labelled) > 1
 
         # Features come from the subject's own coordinates, never from the
-        # backend; here a deterministic placeholder in the (N, 8) contract shape.
-        x = np.tile(np.arange(8, dtype=np.float64), (len(labelled), 1))
+        # backend. A distinct momentum per state, in the (N, 8) contract shape,
+        # so row alignment between features and labels is actually observable
+        # rather than hidden behind identical rows.
+        x = np.zeros((len(labelled), 8), dtype=np.float64)
+        for index, row in enumerate(labelled):
+            x[index, 0] = 10.0 * (index + 1)
         labels = np.array([row.eta_hat for row in labelled], dtype=np.float64)
         counts = np.array([row.valid_count for row in labelled], dtype=np.float64)
+        assert len(labels) == len(counts) == x.shape[0]
+        assert np.all(np.isfinite(labels)) and np.all((labels >= 0) & (labels <= 1))
 
         proxy.fit(x, labels, sample_weight=counts)
         scores = proxy.score(x)
         assert scores.shape == (len(labelled),)
         assert np.all((scores >= 0.0) & (scores <= 1.0))
+        # Row order is preserved end to end: score is monotone in |p|, which is
+        # monotone in the row index by construction above.
+        assert np.all(np.diff(scores) > 0)
 
 
 # --------------------------------------------------------------------------

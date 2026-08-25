@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Optional, Tuple
 
 from ship_muon_bg.entities.identifiers import content_hash
@@ -105,3 +106,8 @@ class StageDecision:
                 "value (got a non-None value where NOT_EVALUATED/TECHNICALLY_UNAVAILABLE "
                 "must stay distinct from any concrete decision, including False)"
             )
+        if not isinstance(self.config_provenance, Mapping):
+            raise TypeError("config_provenance must be a mapping")
+        object.__setattr__(
+            self, "config_provenance", MappingProxyType(dict(self.config_provenance))
+        )

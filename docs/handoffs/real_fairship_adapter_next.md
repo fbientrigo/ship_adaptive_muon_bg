@@ -79,12 +79,41 @@ non-zero exit, timeout, truncated ROOT file, missing branch, NaN, empty tree,
 partial event loop. For each, decide whether it is `TECHNICAL_FAILURE` or a
 legitimate physics zero.
 
+There is a **third** case, and it is the one most likely to be reached by
+omission rather than by decision: a run that exited 0 but whose reconstruction
+or stage evidence could not be obtained. It is not a crash and it is not a
+physics zero. Report it as a `SUCCEEDED` execution carrying an execution-level
+`StageDecision` with `TECHNICALLY_UNAVAILABLE`. Report a genuine clean zero as
+`SUCCEEDED` with an execution-level `EVALUATED False`. Emitting neither is not
+neutral: aggregation reads an unattested empty run as `NOT_EVALUATED` and it
+drops out of every rate, which is safe but loses a real measurement.
+
 The boundary already forbids the dangerous middle case: a `TECHNICAL_FAILURE`
-execution may not carry realizations, candidates, or an evaluated decision. So
-a truncated file that yielded three tracks must be reported as a failure with
+execution may not carry realizations, candidates, or an evaluated decision, and
+no `EVALUATED` decision may cite an observation that was never computed. So a
+truncated file that yielded three tracks must be reported as a failure with
 those tracks recorded in provenance, **not** as three candidates. If that turns
 out to be too strict for a real failure mode, that is a contract change to
 argue explicitly — not something to work around.
+
+Related and unresolved: `ExecutionStatus` has exactly two values. Real runs meet
+timeouts, OOM kills, partial output, and non-zero exits that nonetheless
+produced usable events. Deciding whether that taxonomy needs to grow is part of
+this target.
+
+### T4a — Where does the adapter attach its stage decisions? [OPEN]
+
+Today `tagging/aggregation.py` rolls up **execution-level** and
+**candidate-level** decisions only. `EXEC-02a` names `InteractionRealization` as
+the canonical lineage node between an execution and its candidates, which is
+exactly where a DIS selection would naturally sit — and a realization-scoped
+decision is currently **refused** by the aggregation rather than silently
+dropped, because the right rollup semantics for it have not been defined.
+
+If the real adapter needs realization-scoped stages, defining those semantics is
+part of that mission: what does one realization passing mean for the execution,
+and does `TARGET-03`'s prohibition on "silently taking `any()`" force an
+explicit, named rollup at that level too?
 
 ### T5 — Stage evidence [OPEN]
 
@@ -152,3 +181,7 @@ statistics decision, not an implementation one.
 - Let a technical failure produce a decision value of any kind.
 - Use `FakeFairShipBackend` output as physics evidence — it is a hash, and
   `is_physical` is `False` on both the backend and every bundle it emits.
+- Assume the boundary checks make an adapter correct. They are structural. A
+  backend that reports a crashed run as `SUCCEEDED`, emits one candidate for
+  what were physically many, or attributes a run to the wrong subject passes all
+  of them. The adapter needs its own tests against known FairShip output.

@@ -174,14 +174,31 @@ Each `(execution, stage)` pair lands in exactly one of five outcomes:
 
 | Outcome | Meaning | In `eta_hat` denominator? |
 | --- | --- | --- |
-| `POSITIVE` | evaluated, at least one candidate passed | yes, numerator |
-| `NEGATIVE` | evaluated, nothing passed (including zero candidates) | yes |
+| `POSITIVE` | evaluated, and the stage came out positive | yes, numerator |
+| `NEGATIVE` | evaluated, and the stage came out negative | yes |
 | `TECHNICAL_FAILURE` | the run crashed | no |
 | `TECHNICALLY_CENSORED` | ran, but stage evidence was unavailable | no |
-| `NOT_EVALUATED` | the stage was never applied | no |
+| `NOT_EVALUATED` | the stage was never applied, or nothing says it was | no |
 
 Collapsing any of the last three into `NEGATIVE` is the single failure mode this
 layer exists to prevent.
+
+**A negative must be attested, never inferred from silence.** An execution with
+zero candidates and no decision saying the stage was applied is `NOT_EVALUATED`.
+This matters more than it sounds: the commonest real partial failure is a job
+that exits 0 but whose reconstruction output is empty or truncated, and from the
+candidate records alone that is indistinguishable from a clean zero. Resolving
+the ambiguity in favour of a countable negative would manufacture a confident
+physics zero out of a silent reconstruction failure, with
+`technical_failure_count = 0` in the audit columns. So a backend that really did
+look says so, with an execution-level `StageDecision` — `EVALUATED False` for a
+genuine zero, `TECHNICALLY_UNAVAILABLE` when the evidence could not be obtained.
+
+`NOT_EVALUATED` currently merges `CENSOR-02`'s `NOT_APPLICABLE` with
+plain missing evidence. Excluding both from the denominator is this layer's
+conservative default; `CENSOR-04` makes that target-specific and leaves it
+[OPEN], and the count is retained separately so a target that wants them can
+include them.
 
 The rollup from candidate records to one outcome per execution is named and
 stored on every row (`ROLLUP_RULE`) rather than left as an invisible assumption.
@@ -189,13 +206,27 @@ Its precedence:
 
 1. a technically failed run is `TECHNICAL_FAILURE`, whatever else is present;
 2. an execution-level decision for the stage, where a backend reports one, is
-   authoritative — but an execution-level negative contradicting a positive
-   candidate under the *same* stage definition is **refused**, not silently
-   preferred. A veto is a different rule and needs its own stage definition;
+   authoritative — but a contradiction under the *same* stage definition is
+   **refused in both directions**, not silently resolved. An execution-level
+   negative over a positive candidate, and an execution-level positive over
+   candidates that were all evaluated negative, both raise. A veto is a
+   different rule and needs its own stage definition. An identified positive
+   candidate does still win over an execution-level *censoring* marker, because
+   an identified positive is identified whatever the run-level record says;
 3. otherwise: a positive candidate settles the execution regardless of what
    happened to its siblings; censoring only matters when it could still have
    changed the answer. So a positive plus a censored sibling is `POSITIVE`, but
    a negative plus a censored sibling is `TECHNICALLY_CENSORED`, not a negative.
+
+`ROLLUP_RULE` is content-addressed over that precedence written out as data, so
+changing the precedence necessarily changes the id stored on every row — a bare
+version string would let two vintages pool under one label.
+
+`decision_level` records, per execution, which records decided it. `Y` and
+`1{N >= 1}` genuinely diverge on the execution-decided path: a stage whose
+positive condition is the *absence* of a candidate is legitimately positive with
+`N = 0`. Recording the level means a consumer reconstructing `Y` from the
+multiplicity distribution never silently disagrees with `positive_count`.
 
 `eta_hat = positive_count / valid_count`, and `None` — not `0.0` — when nothing
 is evaluable. Writing zero there would fabricate a confident negative out of
@@ -213,10 +244,20 @@ candidate counts and of stage-positive candidate counts over its valid
 executions, so `N` remains recoverable and `Y = 1{N >= 1}` stays derivable from
 `N` rather than the reverse.
 
-Configuration is part of the grouping key, so incompatible settings land in
-different rows and cannot be averaged. `require_single_configuration` and
-`require_single_state_definition` are the explicit gates a caller must pass
-before pooling.
+Configuration is part of the grouping key — and so is the options digest each
+execution records in its provenance, since a configuration *label* cannot cover
+a free-form options mapping. Be precise about the claim: the rows **preserve**
+the axis, they do not defend it. A caller can still average a mixed table, which
+is what `require_single_configuration` and `require_single_state_definition`
+exist to prevent, and why any step that concatenates, averages, or fits across
+rows must call them first. `TaggingDataset` refuses duplicate
+`(state, configuration, options, stage)` rows, so combining batches means
+aggregating over the concatenated records rather than concatenating datasets.
+
+A declared state that produced no execution at all does not appear in the rows.
+It is reported in `unevaluated_subject_ids` instead, because if dropped work
+correlates with anything physical the proxy would otherwise train on a
+selection-biased population with nothing in the artifact to reveal it.
 
 **No weight is applied anywhere in this module.** It emits counts and a
 frequency. How to weight a state is a separate, explicit decision, and emitting
@@ -237,6 +278,14 @@ wanted them to.
 This is evidence, not proof: neither backend is FairShip. What it establishes is
 that the downstream stack contains no branch on backend identity and reads
 nothing a real adapter could not also supply.
+
+**Backend honesty is the trust boundary, and no check here can cross it.** A
+backend that reports a crashed run as `SUCCEEDED`, emits one candidate record
+for what were physically many, or attributes a run to the wrong subject passes
+every structural check by construction. `evaluate_verified` compares a bundle's
+self-declaration against the backend that produced it, which catches a wrapper
+that forgot to propagate `is_physical` — an honest mistake, not a lie. A real
+adapter needs its own tests against known simulator output.
 
 ## 8. What is deliberately not decided here
 

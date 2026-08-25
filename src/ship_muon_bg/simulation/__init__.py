@@ -37,6 +37,10 @@ from ship_muon_bg.simulation.types import (
     SimulationResult,
 )
 
+# The two fake backends are importable from their own modules but deliberately
+# absent from ``__all__``: they are test infrastructure, and a star-import of
+# the production simulation namespace should not hand anyone a non-physical
+# simulator.
 __all__ = [
     "SimulationBackend",
     "FlowProposalRecord",
@@ -49,9 +53,4 @@ __all__ = [
     "evaluate_verified",
     "execution_shortfall",
     "assert_requests_compatible",
-    "FakeFairShipBackend",
-    "FakeStageSpec",
-    "FakeRunPlan",
-    "FakeCandidatePlan",
-    "MinimalStubBackend",
 ]
