@@ -76,9 +76,13 @@ a pass/fail criterion.
 **What is shown.** (a) The empirical `pi_tilt/pi_nominal` ratio for the
 strongest available tilt (`UA_d0p1_a16`), sorted, log scale, both PDG tracks.
 (b) `h_alpha_delta(u; alpha=16)` with `delta=0.1` vs a `delta=0` reference.
-**Observation.** The ratio stays strictly positive and finite across many
-orders of magnitude with `delta=0.1`; the `delta=0` reference curve visibly
-touches zero at `u=0`, which `delta=0.1` never does.
+**Observation.** Because `B_toy` is binary, the empirical `pi_tilt/pi_nominal`
+ratio takes exactly two values — a single large step between the
+tilted-down and tilted-up regions of the indicator, spanning roughly 16
+orders of magnitude at this `alpha`. Both values are strictly positive and
+finite with `delta=0.1`. On panel (b)'s log axis, the `delta=0` reference
+curve drops to the axis floor (numerically indistinguishable from zero) at
+`u=0`, which the `delta=0.1` curve never does — it stays measurably off it.
 **What it does not prove.** Support preservation is relative to the finite
 empirical nominal population. It does not prove that the available dataset
 covers all physically relevant SHiP regions.
@@ -93,8 +97,11 @@ training convention, and `T=200,000` to separate sampler error from
 Monte-Carlo noise), plus target/empirical `B_toy` prevalence, expected vs.
 observed unique rows, and max reuse count.
 **Observation.** Declared and empirical curves are visually indistinguishable
-at both budgets for both tilts; reported prevalences agree to 3 decimal
-places.
+at both budgets for both tilts. Prevalence agreement tightens with draw
+budget, as expected: for the mild tilt, target `0.029151` vs empirical
+`0.028111` at `T=12,664` (agreement to ~2 decimal places) vs `0.029425` at
+`T=200,000` (~3 decimal places); the strong tilt agrees to ~3 decimal places
+at both budgets.
 **What it does not prove.** This validates the sampler implementation only,
 not physics. PDG `-13` was intentionally omitted from this figure (a
 sampler-implementation check does not need both tracks); it is covered by
@@ -107,19 +114,50 @@ target, rather than reverting toward the nominal population?
 (`NOMINAL_PHYSICAL` + the 4 named tilts), three quantities: `P_0` (nominal
 prevalence), `P_U` (exact declared target), and `Q_theta` (occupancy measured
 from the flow's own generated samples, mapped back to physical space).
-**Observation.** `Q_theta` tracks the direction and (roughly) the magnitude of
-`P_U` for every trained variant — e.g. PDG 13, `UP_d0p1_a04`: `P_U=0.995` vs
-`Q_theta=0.943`; PDG -13, same tilt: `P_U=0.995` vs `Q_theta=0.896`. Mild tilts
-stay close to nominal in both `P_U` and `Q_theta`.
-**Status.** `NF SUPPORTED` (not blocked). **Bounded CPU-scale affine-coupling
-flow** (8 blocks, width 96, <=40 epochs, early stopping) — not a converged
-production model. `Q_theta` approaches but does not exactly reach `P_U`, which
-is expected at this training budget and is not evidence of a sampler or
-mathematics bug (those are validated separately and exactly via the
+**Observation.** For the STRONG tilts, `Q_theta` tracks the direction and
+(roughly) the magnitude of `P_U` — e.g. PDG 13, `UP_d0p1_a04`: `P_0=0.026`,
+`P_U=0.995`, `Q_theta=0.943`; PDG -13, same tilt: `P_U=0.995` vs
+`Q_theta=0.896`. For the MILD tilts, `Q_theta` does **not** reliably track
+`P_U`'s direction: PDG 13 `UP_d0p9_a01` has `P_0=0.0263`, `P_U=0.0291` (tilt
+points up), but `Q_theta=0.0048` — down, and below even the untilted
+`NOMINAL_PHYSICAL` arm's own `Q_theta=0.0083`. Three of the four mild-tilt
+`(pdg, tilt)` combinations show this same pattern. This is not a
+sampler/mathematics failure (Figures 01 and 04 establish those exactly, to
+machine precision) — it is a consequence of the small NF sample budget used
+to measure `Q_theta` (see Status below): the mild-tilt signal above nominal
+is a few-percent effect, well inside the sampling noise at this budget.
+**Status.** `NF SUPPORTED` for the strong tilts, `INCONCLUSIVE AT THIS
+SAMPLE BUDGET` for the mild tilts (not blocked either way — the figure and
+this README report both outcomes honestly rather than hiding the mild-tilt
+result). **Bounded CPU-scale affine-coupling flow** (8 blocks, width 96,
+<=40 epochs, early stopping) — not a converged production model.
+`generated_b_toy_occupancy` (`Q_theta`) is measured from `generated_sample_count`
+independently drawn flow samples per run (typically 4000, see the CSV/arena
+report) — its binomial standard error is a sizeable fraction of the
+mild-tilt signal, and Figure 05 now plots that error bar on every `Q_theta`
+bar. `Q_theta` approaching but not exactly reaching `P_U` on the strong
+tilts is expected at this training budget and is not evidence of a sampler
+or mathematics bug (those are validated separately and exactly via the
 closed-form/direct-summation/alias-sampler path in Figures 01 and 04).
 `final_train_nll` is shown as a small separate annotation and is **not**
 equivalent to, or evidence for, sampling agreement — only the occupancy bars
-speak to that question.
+(with their error bars) speak to that question.
+
+## CSV column reference (for the columns not self-explanatory from their name)
+
+- `nominal_validation_nll` / `tilted_validation_nll` — the underlying data
+  calls these `nominal_validation_nll_weighted_by_w` and
+  `tilted_validation_nll_weighted_by_w_times_r` (the CSV schema truncates the
+  names; the mission-specified column names are used verbatim and are not
+  renamed here). These are **two different weighted-NLL measures**, not the
+  same metric evaluated before/after — do not read their numeric difference
+  as a before/after improvement.
+- `nf_b_toy_fraction` / `nf_minus_target` — only populated for the 8 rows (4
+  tilts x 2 PDG) that were actually NF-trained (see Figure 05); empty for
+  the other 32 rows by design, never `0.0`.
+- Every other column is named after the manifest/table field it is read
+  from unchanged (`p0`, `pU_closed_form`, `pU_direct`, `n_eff`, etc.) — see
+  `src/ship_muon_bg/density_lab/pi_demo.py`'s `CSV_FIELDNAMES`.
 
 ## Terminology (enforced throughout)
 
@@ -141,10 +179,8 @@ cd worktrees/ship-pi-demo-v0   # branch demo/pi-utility-guided-v0, base a53eec4
     --pdg-ids 13 -13 --seed 11 --sampler-seed 7 \
     --experiment-id pi_demo_v0 --build-tables --tables-only
 
-# 2. Build the summary CSV + run manifest (Figures 01-04 data).
-.venv/bin/python -m ship_muon_bg.density_lab.pi_demo
-
-# 3. Train the bounded NF arena (Figure 05 data): NOMINAL_PHYSICAL + 4 tilts x 2 PDG.
+# 2. Train the bounded NF arena (Figure 05 data): NOMINAL_PHYSICAL + 4 tilts x 2 PDG.
+#    Independent of step 3 -- run in either order, but must complete before step 4.
 .venv/bin/python scripts/run_utility_tilt_campaign.py \
     --dataset data/samples/muonsFullMC_afterMS_sample.npz \
     --pdg-ids 13 -13 --seed 11 --sampler-seed 7 \
@@ -153,13 +189,30 @@ cd worktrees/ship-pi-demo-v0   # branch demo/pi-utility-guided-v0, base a53eec4
     --train-tilt-ids NOMINAL_PHYSICAL UA_d0p9_a01 UA_d0p1_a04 UP_d0p9_a01 UP_d0p1_a04 \
     --device cpu --arena-report
 
+# 3. Build the summary CSV + run manifest, THEN backfill the NF arena results
+#    from step 2 into them. Both steps live in one committed entry point --
+#    running this module directly always does both, in order, so there is no
+#    separate uncommitted backfill step and no risk of it silently reverting
+#    the CSV/manifest to their pre-NF state. Safe/idempotent to rerun.
+.venv/bin/python -m ship_muon_bg.density_lab.pi_demo
+
 # 4. Render all figures.
 .venv/bin/python scripts/run_pi_demo.py --figures 01 02 03 04 05
 ```
 
-`utility_guided_summary.csv`'s `nf_*` columns are backfilled from step 3's
+`utility_guided_summary.csv`'s `nf_*` columns are backfilled from step 2's
 arena reports for the 4 trained tilts x 2 PDG (8 of 40 rows); the other 16
 rows per PDG were never trained and are left empty by design.
+
+**Provenance limitations, stated explicitly:**
+- `run_manifest.json`'s `environment.git_commit` records the commit at the
+  time the underlying tables were built, not the commit this bundle itself
+  ships in — a manifest committed alongside code cannot self-reference its
+  own future commit hash. Use `git log` on this bundle's containing commit
+  for the authoritative code version.
+- `artifacts/density_lab/` (the raw Table A/B files, NF checkpoints, and
+  arena reports this bundle summarizes) is gitignored and not committed —
+  regenerating it requires rerunning steps 1-2 above.
 
 ## Files
 

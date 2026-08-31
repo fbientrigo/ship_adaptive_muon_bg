@@ -264,3 +264,114 @@ def test_plot_05_uses_default_caveat_when_not_provided(tmp_path):
     out_dir = tmp_path / "figures"
     paths = plots.plot_05_nf_preserves_tilt(arena_reports, out_dir)
     _assert_two_paths_written(paths)
+
+
+# --- review round 1 regression guards (findings I2, I6, I7, I8) -----------
+
+
+@pytest.mark.lab
+def test_plot_05_renders_missing_nf_value_without_crashing_or_faking_zero(tmp_path):
+    """A missing/untrained generated_b_toy_occupancy must not silently render
+    as a zero-height bar (finding I6) -- it must not crash the figure either."""
+
+    pytest.importorskip("matplotlib")
+    from ship_muon_bg.density_lab import pi_demo_plots as plots
+
+    arena_reports = _tiny_arena_reports(pdg_ids=(13,))
+    arena_reports[13]["rows"][1]["generated_b_toy_occupancy"] = None
+    arena_reports[13]["rows"][1]["theoretical_target_b_toy_prevalence"] = None
+    out_dir = tmp_path / "figures"
+    paths = plots.plot_05_nf_preserves_tilt(arena_reports, out_dir, caveat="test caveat text")
+    _assert_two_paths_written(paths)
+
+
+@pytest.mark.lab
+def test_plot_05_writes_two_files_with_generated_sample_count_present(tmp_path):
+    """Same smoke check as test_plot_05_writes_two_files, but with
+    generated_sample_count present (as real arena reports have it) so the
+    binomial-SE error-bar code path (finding I2) actually executes, not just
+    its None-safe fallback."""
+
+    pytest.importorskip("matplotlib")
+    from ship_muon_bg.density_lab import pi_demo_plots as plots
+
+    arena_reports = _tiny_arena_reports(pdg_ids=(13,))
+    for row in arena_reports[13]["rows"]:
+        row["generated_sample_count"] = 4000
+    out_dir = tmp_path / "figures"
+    paths = plots.plot_05_nf_preserves_tilt(arena_reports, out_dir, caveat="test caveat text")
+    _assert_two_paths_written(paths)
+
+
+def test_plot_05_source_computes_binomial_error_bars():
+    """Regression guard (finding I2): Q_theta bars must carry a binomial
+    standard-error bar, computed from generated_sample_count."""
+
+    import inspect
+
+    from ship_muon_bg.density_lab import pi_demo_plots as module
+
+    source = inspect.getsource(module.plot_05_nf_preserves_tilt)
+    assert "generated_sample_count" in source
+    assert "yerr" in source
+
+
+def test_role_style_colors_disjoint_from_combo_and_pdg_colors():
+    """The nominal/exact_target/empirical/nf role palette must never reuse a
+    color that also encodes a tilt family or a PDG track elsewhere (finding
+    I7) -- otherwise the same color means three different things across
+    figures a reader may compare side by side."""
+
+    from ship_muon_bg.density_lab import pi_demo_plots as plots
+
+    role_colors = {v["color"].lower() for v in plots.ROLE_STYLE.values()}
+    combo_colors = {c.lower() for c in plots._COMBO_COLORS.values()}
+    # Figure 03's PDG-track colors, kept in sync with plot_03_support_preservation's
+    # local ``pdg_colors`` dict by convention (tab:blue/tab:red).
+    pdg_colors = {"tab:blue", "tab:red"}
+
+    assert role_colors.isdisjoint(combo_colors), (role_colors, combo_colors)
+    assert role_colors.isdisjoint(pdg_colors), (role_colors, pdg_colors)
+
+
+def test_no_forbidden_physics_language_anywhere_in_plot_source():
+    """Regression guard: no figure title/caption/caveat may ever describe the
+    synthetic B_toy mechanism as a real FairShip/physics result, or imply an
+    ESS pass/fail threshold (finding I8, mission-wide constraint)."""
+
+    import inspect
+
+    from ship_muon_bg.density_lab import pi_demo_plots as module
+
+    source = inspect.getsource(module)
+    lowered = " ".join(source.lower().split())  # collapse whitespace/newlines for substring checks
+
+    # A plain substring blocklist is unusable here: the required disclaimers
+    # legitimately CONTAIN phrases like "background rate" and "validated dis
+    # label" (negated -- "never a background rate"), so any naive forbidden-
+    # word scan false-positives on the very sentences that are supposed to be
+    # present. Assert the required disclaimers positively instead (finding I8):
+    assert "collapse" not in lowered  # never appears in this module, negated or not
+    assert "not a universal law or an ess/ood threshold" in lowered
+    assert "never a validated fairship danger metric" in lowered
+    assert "never a background rate" in lowered
+    assert "never a validated dis label" in lowered
+    assert "never calibrated probabilities" in lowered
+
+
+def test_support_preservation_caveat_is_actually_used():
+    """The required verbatim support-preservation caveat sentence must be both
+    defined and actually rendered by plot_03, not merely defined and orphaned."""
+
+    import inspect
+
+    from ship_muon_bg.density_lab import pi_demo_plots as module
+
+    required_sentence = (
+        "Support preservation is relative to the finite empirical nominal "
+        "population."
+    )
+    assert required_sentence in module._SUPPORT_PRESERVATION_CAVEAT
+
+    source = inspect.getsource(module.plot_03_support_preservation)
+    assert "_SUPPORT_PRESERVATION_CAVEAT" in source

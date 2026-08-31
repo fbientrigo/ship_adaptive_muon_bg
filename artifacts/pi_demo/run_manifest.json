@@ -1,16 +1,19 @@
 {
-  "code_commit": "a53eec41a47152f134395df460dde584f208582b",
+  "code_commit": "b5976bc8fd7328b1508a63a1370c4232dd3970aa",
   "dataset_hash": "718b9197a3965f6842574fec1f3f6b1bf4c16949ff8a1f27dca6232817c03c32",
   "dataset_path": "data/samples/muonsFullMC_afterMS_sample.npz",
   "dataset_scope": "sample",
-  "draw_budget": 12664,
+  "draw_budget_per_pdg": {
+    "-13": 12936,
+    "13": 12664
+  },
   "environment": {
     "actual_device": "cpu",
-    "captured_at": "2026-08-31T02:51:58.026777+00:00",
+    "captured_at": "2026-08-31T14:33:21.381825+00:00",
     "cuda_available": false,
     "cuda_runtime": null,
     "dirty_worktree": true,
-    "git_commit": "a53eec41a47152f134395df460dde584f208582b",
+    "git_commit": "b5976bc8fd7328b1508a63a1370c4232dd3970aa",
     "gpu_name": null,
     "hostname": "debsat",
     "matplotlib_version": "3.11.1",
@@ -22,27 +25,21 @@
     "sklearn_version": "1.9.0",
     "torch_version": "2.13.0+cpu"
   },
-  "extra": {
-    "draw_budget_per_pdg": {
-      "-13": 12936,
-      "13": 12664
-    }
-  },
-  "generated_at": "2026-08-31T02:51:58.026793+00:00",
+  "generated_at": "2026-08-31T14:33:21.381843+00:00",
   "nf_arena": {
     "arena_report_paths": {
       "-13": "artifacts/density_lab/pi_demo_v0/arena_report/pdg_-13/arena_summary.json",
       "13": "artifacts/density_lab/pi_demo_v0/arena_report/pdg_13/arena_summary.json"
     },
-    "caveat": "Bounded CPU-scale affine-coupling flow (8 blocks, width 96, <=40 epochs, early stopping), not a converged production model. generated_b_toy_occupancy is measured from samples drawn from the trained flow and mapped back to physical space; it approaches but does not exactly reach the declared theoretical_target_b_toy_prevalence, which is expected at this training budget and is not evidence of a sampler or mathematics bug (those are validated separately and exactly via the closed-form/direct-summation/alias-sampler path).",
+    "caveat": "Bounded CPU-scale affine-coupling flow (8 blocks, width 96, <=40 epochs, early stopping), not a converged production model. generated_b_toy_occupancy is measured from a small sample (see generated_sample_count per run, typically 4000) drawn from the trained flow and mapped back to physical space. For the strong tilts it approaches but does not exactly reach the declared theoretical_target_b_toy_prevalence, which is expected at this training budget. For the mild tilts, the occupancy measurement is not reliably distinguishable from sampling noise at this sample budget (binomial standard error is a sizeable fraction of the signal) and does not consistently track the tilt's declared direction -- this is a stated NF-training-budget limitation, not evidence of a sampler or mathematics bug (those are validated separately and exactly via the closed-form/direct-summation/alias-sampler path).",
     "config": "configs/density_lab/utility_tilt/pi_demo_cpu_v0.json",
     "status": "SUPPORTED",
     "trained_variants": [
       "NOMINAL_PHYSICAL",
-      "UA_d0p9_a01",
       "UA_d0p1_a04",
-      "UP_d0p9_a01",
-      "UP_d0p1_a04"
+      "UA_d0p9_a01",
+      "UP_d0p1_a04",
+      "UP_d0p9_a01"
     ]
   },
   "pdg_ids": [

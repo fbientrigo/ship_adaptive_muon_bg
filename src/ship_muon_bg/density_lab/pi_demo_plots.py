@@ -19,14 +19,19 @@ below states this explicitly; nothing here should be read as a SHiP physics
 result.
 
 Visual identity (module-level, reused across every figure that shows these
-roles -- see mission instructions):
+roles -- see mission instructions). ROLE_STYLE deliberately avoids the
+tab10 palette entirely (gray + purple + teal + brown) so it never collides
+with _COMBO_COLORS (tilt-family encoding, Figures 01/02) or the PDG-track
+colors (Figure 03), which both use tab10 colors -- review round 1 (finding
+I7) found the original palette reused tab:blue/tab:green for two different
+meanings across figures:
 
 - "nominal"      -- the untilted reference law / p0 (gray).
 - "exact_target" -- an exact, closed-form or direct-summation quantity
-  (blue).
-- "empirical"    -- an alias-sampler empirical draw statistic (green).
+  (purple).
+- "empirical"    -- an alias-sampler empirical draw statistic (teal).
 - "nf"           -- a trained normalizing-flow's own generated samples
-  (red, hatched) -- used only in Figure 05, where it is the fourth,
+  (brown, hatched) -- used only in Figure 05, where it is the fourth,
   necessarily distinct role (an NF sample is neither an exact target nor a
   plain alias-sampler draw).
 """
@@ -53,14 +58,16 @@ from .utility_tilt import (
 
 ROLE_STYLE: Dict[str, Dict[str, Any]] = {
     "nominal": {"color": "#7f7f7f", "marker": "s", "linestyle": "--"},
-    "exact_target": {"color": "#1f77b4", "marker": "o", "linestyle": "-"},
-    "empirical": {"color": "#2ca02c", "marker": "^", "linestyle": ":"},
-    "nf": {"color": "#d62728", "marker": "D", "hatch": "//"},
+    "exact_target": {"color": "#9467bd", "marker": "o", "linestyle": "-"},
+    "empirical": {"color": "#17becf", "marker": "^", "linestyle": ":"},
+    "nf": {"color": "#8c564b", "marker": "D", "hatch": "//"},
 }
 
-# Figure 01/02: (mode, delta) combination colors -- a separate encoding axis
-# from ROLE_STYLE (that dict encodes *what kind of quantity* is plotted;
-# this one encodes *which tilt family*). Kept in the requested display order.
+# Figure 01/02: (mode, delta) combination colors -- a genuinely separate
+# encoding axis from ROLE_STYLE (that dict encodes *what kind of quantity*
+# is plotted -- nominal/exact/empirical/NF; this one encodes *which tilt
+# family*, all tab10 colors, none of which appear in ROLE_STYLE above).
+# Kept in the requested display order.
 _MODE_DELTA_COMBOS: Tuple[Tuple[str, float], ...] = (
     ("UA", 0.1), ("UA", 0.9), ("UP", 0.1), ("UP", 0.9),
 )
@@ -252,6 +259,15 @@ def plot_02_enrichment_vs_concentration(csv_rows: Sequence[Dict[str, Any]], out_
     mode_markers = {"UA": "o", "UP": "^"}
     mode_colors = {"UA": "tab:blue", "UP": "tab:orange"}
 
+    # Shared axis limits across both panels (finding O4): without this, the
+    # same N_eff/N value lands at a different horizontal position in each
+    # panel, defeating the point of a side-by-side PDG comparison.
+    all_x = [float(r["n_eff_fraction"]) for r in csv_rows]
+    all_y = [float(r["enrichment"]) for r in csv_rows]
+    x_margin = 0.05 * (max(all_x) - min(all_x)) if all_x else 0.0
+    shared_xlim = (min(all_x) - x_margin, max(all_x) + x_margin) if all_x else None
+    shared_ylim = (min(all_y) / 1.3, max(all_y) * 1.3) if all_y else None
+
     for ax, pdg_id in zip(axes, pdg_ids):
         pdg_rows = [r for r in csv_rows if int(r["pdg_id"]) == pdg_id]
         for r in pdg_rows:
@@ -268,11 +284,19 @@ def plot_02_enrichment_vs_concentration(csv_rows: Sequence[Dict[str, Any]], out_
                 facecolors=color if filled else "none", edgecolors=color, linewidths=1.3,
             )
             if alpha in (1.0, 16.0):
+                # UA labels nudged up-right, UP labels down-right, so the
+                # two families' annotations separate instead of overlapping
+                # at tightly clustered points (finding O6).
+                dy = 6 if mode == "UA" else -10
                 ax.annotate(
                     "a={:g}".format(alpha), (x, y), fontsize=6, color=color,
-                    xytext=(3, 3), textcoords="offset points",
+                    xytext=(4, dy), textcoords="offset points",
                 )
         ax.set_yscale("log")
+        if shared_xlim is not None:
+            ax.set_xlim(*shared_xlim)
+        if shared_ylim is not None:
+            ax.set_ylim(*shared_ylim)
         ax.set_xlabel("N_eff / N (concentration)")
         ax.set_ylabel("enrichment = pU_direct / p0 (log scale)")
         ax.set_title("PDG {}".format(pdg_id))
@@ -385,7 +409,13 @@ def plot_04_direct_sampler_validation(tables_root: Path, out_dir: Path) -> List[
 
     n_train = table_a.n_rows
     budgets = (n_train, 200000)
-    budget_styles = {n_train: {"linestyle": "--", "color": ROLE_STYLE["empirical"]["color"]}, 200000: {"linestyle": ":", "color": "tab:purple"}}
+    # Both empirical-draw budgets share the "empirical" role color (distinct
+    # linestyle differentiates T=n_train from T=200000); avoids reusing
+    # ROLE_STYLE["exact_target"]'s purple, which is also drawn in this figure.
+    budget_styles = {
+        n_train: {"linestyle": "--", "color": ROLE_STYLE["empirical"]["color"]},
+        200000: {"linestyle": ":", "color": "#bcbd22"},
+    }
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 7))
     for ax, (tilt_id, tag) in zip(axes, _TILT_PAIR_04):
@@ -434,6 +464,11 @@ def plot_04_direct_sampler_validation(tables_root: Path, out_dir: Path) -> List[
         # leaving no reliably empty corner for an inline annotation.
         ax.set_title("\n".join(report_lines), fontsize=7, loc="left")
         ax.legend(loc="lower right", fontsize=7)
+        # Shared, explicit y-limits (finding O5): cumulative probability mass
+        # is inherently bounded in [0, 1] in both panels -- without this,
+        # matplotlib's independent autoscaling gives each panel a different
+        # range, making the two curves harder to compare at a glance.
+        ax.set_ylim(-0.03, 1.05)
 
     fig.suptitle(
         "Direct alias-sampler validation against the declared pi_tilt table "
@@ -471,6 +506,12 @@ def plot_05_nf_preserves_tilt(
     fig, axes = plt.subplots(1, n, figsize=(7 * n, 7), squeeze=False)
     axes = axes[0]
 
+    def _safe(vals):
+        # None -> NaN, never 0.0: a missing/untrained value must never be
+        # visually indistinguishable from a real, measured zero occupancy
+        # (review round 1, finding I6).
+        return [float(v) if isinstance(v, (int, float)) else float("nan") for v in vals]
+
     for ax, pdg_id in zip(axes, pdg_ids):
         payload = arena_reports[pdg_id]
         rows = _sorted_arena_rows(payload)
@@ -478,36 +519,68 @@ def plot_05_nf_preserves_tilt(
         x = np.arange(len(labels))
         width = 0.26
 
-        p0_vals = [r.get("nominal_b_toy_prevalence") for r in rows]
-        pu_vals = [r.get("theoretical_target_b_toy_prevalence") for r in rows]
-        q_vals = [r.get("generated_b_toy_occupancy") for r in rows]
+        p0_vals = _safe([r.get("nominal_b_toy_prevalence") for r in rows])
+        pu_vals = _safe([r.get("theoretical_target_b_toy_prevalence") for r in rows])
+        q_vals = _safe([r.get("generated_b_toy_occupancy") for r in rows])
+        n_samples = [r.get("generated_sample_count") for r in rows]
 
-        def _safe(vals):
-            return [v if isinstance(v, (int, float)) else 0.0 for v in vals]
+        # Binomial standard error on each Q_theta bar (finding I2): occupancy
+        # is a fraction of generated_sample_count independent flow samples,
+        # so its own sampling uncertainty is directly computable and is not
+        # negligible at the ~4000-sample budget used here, especially for
+        # the mild tilts.
+        q_err = [
+            float(np.sqrt(q * (1.0 - q) / n)) if (np.isfinite(q) and isinstance(n, (int, float)) and n > 0)
+            else 0.0
+            for q, n in zip(q_vals, n_samples)
+        ]
 
-        ax.bar(x - width, _safe(p0_vals), width, color=ROLE_STYLE["nominal"]["color"], label="P0: nominal_b_toy_prevalence")
-        ax.bar(x, _safe(pu_vals), width, color=ROLE_STYLE["exact_target"]["color"], label="P_U: theoretical_target_b_toy_prevalence (exact)")
+        for vals, offset, role, label in (
+            (p0_vals, -width, "nominal", "P0: nominal_b_toy_prevalence"),
+            (pu_vals, 0.0, "exact_target", "P_U: theoretical_target_b_toy_prevalence (exact)"),
+        ):
+            heights = np.nan_to_num(vals, nan=0.0)
+            ax.bar(x + offset, heights, width, color=ROLE_STYLE[role]["color"], label=label)
+            for xi, v in zip(x, vals):
+                if not np.isfinite(v):
+                    ax.text(xi + offset, 0.0, "N/A", fontsize=6, color="dimgray", ha="center", va="bottom", rotation=90)
+
+        q_heights = np.nan_to_num(q_vals, nan=0.0)
         ax.bar(
-            x + width, _safe(q_vals), width, color=ROLE_STYLE["nf"]["color"],
-            hatch=ROLE_STYLE["nf"]["hatch"], edgecolor="black",
-            label="Q_theta: generated_b_toy_occupancy (NF, empirical)",
+            x + width, q_heights, width, yerr=q_err, capsize=3,
+            color=ROLE_STYLE["nf"]["color"], hatch=ROLE_STYLE["nf"]["hatch"], edgecolor="black",
+            label="Q_theta: generated_b_toy_occupancy (NF, empirical) +/- 1 binomial SE",
         )
+        for xi, v in zip(x, q_vals):
+            if not np.isfinite(v):
+                ax.text(xi + width, 0.0, "N/A", fontsize=6, color="dimgray", ha="center", va="bottom", rotation=90)
 
-        for xi, r in zip(x, rows):
-            nll = r.get("final_train_nll")
-            if isinstance(nll, (int, float)):
-                bar_top = max(
-                    v for v in (r.get("nominal_b_toy_prevalence"), r.get("theoretical_target_b_toy_prevalence"), r.get("generated_b_toy_occupancy"))
-                    if isinstance(v, (int, float))
-                )
-                ax.annotate(
-                    "final_train_nll={:.2f}".format(nll), (xi, bar_top), fontsize=6, color="dimgray",
-                    xytext=(0, 4), textcoords="offset points", ha="center",
-                )
+        # symlog (not plain log): occupancy values legitimately span from
+        # ~0.003 up to ~1.0, and a plain log axis cannot represent bars that
+        # start at 0 -- symlog keeps mild-tilt bars visible instead of
+        # degenerating to invisible slivers under a linear axis (finding I3).
+        ax.set_yscale("symlog", linthresh=0.01)
+        ax.set_ylim(0, 1.35)
+
+        # A single compact summary line (not one floating annotation per bar)
+        # avoids the top-of-panel text collisions the original per-bar
+        # annotations produced when two or more bars reached similar heights
+        # (finding O6) -- still clearly separate from the occupancy bars, per
+        # the suptitle's "non-bar diagnostic" statement below.
+        nll_parts = [
+            "{}={:.2f}".format(str(r.get("variant_id")), r["final_train_nll"])
+            for r in rows if isinstance(r.get("final_train_nll"), (int, float))
+        ]
+        if nll_parts:
+            ax.text(
+                0.5, 1.10, "final_train_nll: " + ", ".join(nll_parts),
+                transform=ax.transAxes, fontsize=5.5, color="dimgray", ha="center", va="bottom",
+                wrap=True,
+            )
 
         ax.set_xticks(x)
         ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=7)
-        ax.set_ylabel("B_toy occupancy / prevalence (synthetic)")
+        ax.set_ylabel("B_toy occupancy / prevalence (synthetic, symlog scale)")
         ax.set_title("PDG {}".format(pdg_id))
         ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=7)
 
@@ -518,5 +591,5 @@ def plot_05_nf_preserves_tilt(
         fontsize=11, wrap=True,
     )
     fig.text(0.5, 0.01, caveat_text, ha="center", fontsize=7, wrap=True)
-    fig.tight_layout(rect=(0, 0.08, 1, 0.90))
+    fig.tight_layout(rect=(0, 0.08, 1, 0.86))
     return _save_png_and_pdf(fig, out_dir, "05_nf_preserves_tilt")

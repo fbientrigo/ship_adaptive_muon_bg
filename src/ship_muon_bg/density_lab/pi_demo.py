@@ -23,7 +23,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -42,6 +42,26 @@ from .utility_tilt import (
 )
 
 SCHEMA_VERSION = "0"
+
+# Single source of truth for the NF-arena caveat, reused by both the
+# manifest writer and any downstream plotting/README text -- never
+# hand-copied. Revised per review round 1 (BLOCKER 2): the flow does not
+# reliably track the mild tilts at the sample budget used here, so the
+# caveat says so explicitly rather than implying uniform agreement.
+NF_ARENA_CAVEAT = (
+    "Bounded CPU-scale affine-coupling flow (8 blocks, width 96, <=40 epochs, "
+    "early stopping), not a converged production model. generated_b_toy_occupancy "
+    "is measured from a small sample (see generated_sample_count per run, typically "
+    "4000) drawn from the trained flow and mapped back to physical space. For the "
+    "strong tilts it approaches but does not exactly reach the declared "
+    "theoretical_target_b_toy_prevalence, which is expected at this training budget. "
+    "For the mild tilts, the occupancy measurement is not reliably distinguishable "
+    "from sampling noise at this sample budget (binomial standard error is a "
+    "sizeable fraction of the signal) and does not consistently track the tilt's "
+    "declared direction -- this is a stated NF-training-budget limitation, not "
+    "evidence of a sampler or mathematics bug (those are validated separately and "
+    "exactly via the closed-form/direct-summation/alias-sampler path)."
+)
 
 # Frozen CSV schema. A downstream plotting module depends on this exact
 # name/order -- never rename or reorder these columns.
@@ -234,17 +254,26 @@ def write_run_manifest(
     tables_root: Path,
     seed: int,
     sampler_seed: int,
-    draw_budget: int,
+    draw_budget_per_pdg: Mapping[Any, int],
     validation_gate: Dict[str, Any],
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build and write ``run_manifest.json``; returns the payload written."""
+    """Build and write ``run_manifest.json``; returns the payload written.
+
+    ``draw_budget_per_pdg`` is required as a per-track mapping, never a
+    single scalar: PDG tracks have different ``n_rows`` (this dataset's two
+    tracks differ by 272 rows) and the draw budget follows ``n_train``, so a
+    single top-level "draw_budget" field would silently misreport every
+    track but one (review round 1, finding O1).
+    """
 
     if dataset_scope != "sample":
         raise ValueError(
             "dataset_scope must be the literal string 'sample' (this is a "
             "committed sample, never the full parent dataset); got {!r}".format(dataset_scope)
         )
+    if not pdg_ids:
+        raise ValueError("pdg_ids must be non-empty (an empty run has no validation_gate to report)")
 
     tables_root = Path(tables_root)
     per_pdg: Dict[str, Any] = {}
@@ -269,7 +298,7 @@ def write_run_manifest(
         "per_pdg": per_pdg,
         "seed": int(seed),
         "sampler_seed": int(sampler_seed),
-        "draw_budget": int(draw_budget),
+        "draw_budget_per_pdg": {str(k): int(v) for k, v in draw_budget_per_pdg.items()},
         "code_commit": env.get("git_commit"),
         "environment": env,
         "validation_gate": validation_gate,
@@ -350,9 +379,8 @@ def _run_pi_demo_v0() -> None:
         tables_root=tables_root,
         seed=seed,
         sampler_seed=sampler_seed,
-        draw_budget=per_pdg_draw_budget[pdg_ids[0]],
+        draw_budget_per_pdg=per_pdg_draw_budget,
         validation_gate=merged_gate,
-        extra={"draw_budget_per_pdg": {str(k): v for k, v in per_pdg_draw_budget.items()}},
     )
 
     print("wrote {} rows to {}".format(len(all_rows), csv_path))
@@ -361,5 +389,94 @@ def _run_pi_demo_v0() -> None:
     print("manifest:", manifest_path)
 
 
+def backfill_nf_arena_results(
+    *,
+    csv_path: Path,
+    manifest_path: Path,
+    arena_report_paths: Mapping[Any, Path],
+    nf_config_path: str,
+) -> Dict[str, Any]:
+    """Merge trained-NF results from arena reports into an existing summary CSV/manifest.
+
+    This is the ONE committed mechanism that populates the CSV's ``nf_*``
+    columns and the manifest's ``nf_arena`` block -- there is no other path
+    that does this (review round 1, BLOCKER 1: those values were previously
+    inserted by an uncommitted ad-hoc script). Idempotent: rerunning against
+    the same arena reports overwrites the same rows with the same values.
+
+    Only rows whose ``variant_id`` is not ``"NOMINAL_PHYSICAL"`` are used --
+    that variant is the untilted arm and is not one of the 20 tilt_id rows
+    in the summary CSV.
+    """
+
+    csv_path = Path(csv_path)
+    manifest_path = Path(manifest_path)
+
+    nf_by_pdg_tilt: Dict[Tuple[int, str], Dict[str, Any]] = {}
+    trained_variants: List[str] = []
+    for pdg_id, arena_path in arena_report_paths.items():
+        payload = json.loads(Path(arena_path).read_text())
+        for row in payload["rows"]:
+            variant_id = row["variant_id"]
+            if variant_id not in trained_variants:
+                trained_variants.append(variant_id)
+            if variant_id == "NOMINAL_PHYSICAL":
+                continue
+            nf_by_pdg_tilt[(int(pdg_id), variant_id)] = {
+                "nf_run_id": row["run_id"],
+                "nf_b_toy_fraction": row["generated_b_toy_occupancy"],
+                "nf_minus_target": row["generated_b_toy_occupancy"] - row["theoretical_target_b_toy_prevalence"],
+                "nominal_validation_nll": row["nominal_validation_nll_weighted_by_w"],
+                "tilted_validation_nll": row["tilted_validation_nll_weighted_by_w_times_r"],
+            }
+
+    with csv_path.open("r", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    n_backfilled = 0
+    for row in rows:
+        key = (int(row["pdg_id"]), row["tilt_id"])
+        if key in nf_by_pdg_tilt:
+            row.update(nf_by_pdg_tilt[key])
+            n_backfilled += 1
+
+    expected = len(nf_by_pdg_tilt)
+    if n_backfilled != expected:
+        raise ValueError(
+            "expected to backfill exactly {} rows (one per (pdg, trained tilt) pair "
+            "found in the arena reports), matched {} -- summary CSV and arena reports "
+            "disagree on pdg_id/tilt_id, refusing a silent partial backfill".format(
+                expected, n_backfilled
+            )
+        )
+
+    write_summary_csv(rows, csv_path)
+
+    manifest = json.loads(manifest_path.read_text())
+    manifest["nf_arena"] = {
+        "status": "SUPPORTED",
+        "config": nf_config_path,
+        "trained_variants": trained_variants,
+        "arena_report_paths": {str(k): str(v) for k, v in arena_report_paths.items()},
+        "caveat": NF_ARENA_CAVEAT,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True, default=_default))
+
+    return {"n_backfilled": n_backfilled, "trained_variants": trained_variants}
+
+
 if __name__ == "__main__":
+    # Run from the repository root (matches every other command documented in
+    # artifacts/pi_demo/README.md); paths recorded in the manifest are kept
+    # repo-relative, not resolved to this machine's absolute filesystem path.
     _run_pi_demo_v0()
+    backfill_nf_arena_results(
+        csv_path=Path("artifacts/pi_demo/utility_guided_summary.csv"),
+        manifest_path=Path("artifacts/pi_demo/run_manifest.json"),
+        arena_report_paths={
+            13: Path("artifacts/density_lab/pi_demo_v0/arena_report/pdg_13/arena_summary.json"),
+            -13: Path("artifacts/density_lab/pi_demo_v0/arena_report/pdg_-13/arena_summary.json"),
+        },
+        nf_config_path="configs/density_lab/utility_tilt/pi_demo_cpu_v0.json",
+    )
+    print("backfilled NF arena results into the summary CSV and run manifest")

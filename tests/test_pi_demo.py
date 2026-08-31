@@ -149,7 +149,7 @@ def test_write_run_manifest_dataset_scope_and_terminology(tmp_path):
         tables_root=tables_root,
         seed=11,
         sampler_seed=7,
-        draw_budget=10,
+        draw_budget_per_pdg={13: 10},
         validation_gate=validation_gate,
     )
 
@@ -175,7 +175,7 @@ def test_write_run_manifest_rejects_non_sample_scope(tmp_path):
             tables_root=tables_root,
             seed=11,
             sampler_seed=7,
-            draw_budget=10,
+            draw_budget_per_pdg={13: 10},
             validation_gate={
                 "pi_nominal_sums_to_one": {}, "pi_tilt_sums_to_one": {},
                 "max_abs_closed_vs_direct": 0.0, "all_pdg_kept_separate": True,
