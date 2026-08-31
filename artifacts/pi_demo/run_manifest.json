@@ -1,0 +1,128 @@
+{
+  "code_commit": "a53eec41a47152f134395df460dde584f208582b",
+  "dataset_hash": "718b9197a3965f6842574fec1f3f6b1bf4c16949ff8a1f27dca6232817c03c32",
+  "dataset_path": "data/samples/muonsFullMC_afterMS_sample.npz",
+  "dataset_scope": "sample",
+  "draw_budget": 12664,
+  "environment": {
+    "actual_device": "cpu",
+    "captured_at": "2026-08-31T02:51:58.026777+00:00",
+    "cuda_available": false,
+    "cuda_runtime": null,
+    "dirty_worktree": true,
+    "git_commit": "a53eec41a47152f134395df460dde584f208582b",
+    "gpu_name": null,
+    "hostname": "debsat",
+    "matplotlib_version": "3.11.1",
+    "mlflow_version": null,
+    "numpy_version": "2.5.2",
+    "platform": "Linux-6.12.63+deb13-amd64-x86_64-with-glibc2.41",
+    "python_version": "3.13.5",
+    "requested_device": "cpu",
+    "sklearn_version": "1.9.0",
+    "torch_version": "2.13.0+cpu"
+  },
+  "extra": {
+    "draw_budget_per_pdg": {
+      "-13": 12936,
+      "13": 12664
+    }
+  },
+  "generated_at": "2026-08-31T02:51:58.026793+00:00",
+  "nf_arena": {
+    "arena_report_paths": {
+      "-13": "artifacts/density_lab/pi_demo_v0/arena_report/pdg_-13/arena_summary.json",
+      "13": "artifacts/density_lab/pi_demo_v0/arena_report/pdg_13/arena_summary.json"
+    },
+    "caveat": "Bounded CPU-scale affine-coupling flow (8 blocks, width 96, <=40 epochs, early stopping), not a converged production model. generated_b_toy_occupancy is measured from samples drawn from the trained flow and mapped back to physical space; it approaches but does not exactly reach the declared theoretical_target_b_toy_prevalence, which is expected at this training budget and is not evidence of a sampler or mathematics bug (those are validated separately and exactly via the closed-form/direct-summation/alias-sampler path).",
+    "config": "configs/density_lab/utility_tilt/pi_demo_cpu_v0.json",
+    "status": "SUPPORTED",
+    "trained_variants": [
+      "NOMINAL_PHYSICAL",
+      "UA_d0p9_a01",
+      "UA_d0p1_a04",
+      "UP_d0p9_a01",
+      "UP_d0p1_a04"
+    ]
+  },
+  "pdg_ids": [
+    13,
+    -13
+  ],
+  "per_pdg": {
+    "-13": {
+      "n_rows": 12936,
+      "split_hash": "4640b30587bb882f51221cd692abd02c446b0a97d2ac8831ebea6ce1977ee656",
+      "table_a_hash": "90430e330e24e06bb215e65757d5f2bca1d181dd8aae0ce9140ce2ccabe5dc01",
+      "table_b_hash": "ff6183566a0d8a27b7e15f584d17655c8c0e0438a89eff9b1706c58034c1d4ee"
+    },
+    "13": {
+      "n_rows": 12664,
+      "split_hash": "5f6a4d1bcd03eb5f63f0d865d7ecb2892ac90909b7b8be342d028bd5ecd3de18",
+      "table_a_hash": "56f3088cd16b330e9598b1928f81bde983fb6d8b1ae359e166e439125a2421d3",
+      "table_b_hash": "366afab1e6ddb818e7fb144a37f32e1241c7f932f533636c31247ef74dd61c60"
+    }
+  },
+  "sampler_seed": 7,
+  "schema_version": "0",
+  "seed": 11,
+  "terminology": {
+    "pi_tilt": "tilted sampling probability",
+    "r_utility": "utility multiplier h(U), never a physical weight",
+    "w_mc": "physical MC weight"
+  },
+  "validation_gate": {
+    "all_pdg_kept_separate": true,
+    "max_abs_closed_vs_direct": 2.220446049250313e-16,
+    "pi_nominal_sums_to_one": {
+      "-13": true,
+      "13": true
+    },
+    "pi_tilt_sums_to_one": {
+      "-13": {
+        "UA_d0p1_a01": true,
+        "UA_d0p1_a02": true,
+        "UA_d0p1_a04": true,
+        "UA_d0p1_a08": true,
+        "UA_d0p1_a16": true,
+        "UA_d0p9_a01": true,
+        "UA_d0p9_a02": true,
+        "UA_d0p9_a04": true,
+        "UA_d0p9_a08": true,
+        "UA_d0p9_a16": true,
+        "UP_d0p1_a01": true,
+        "UP_d0p1_a02": true,
+        "UP_d0p1_a04": true,
+        "UP_d0p1_a08": true,
+        "UP_d0p1_a16": true,
+        "UP_d0p9_a01": true,
+        "UP_d0p9_a02": true,
+        "UP_d0p9_a04": true,
+        "UP_d0p9_a08": true,
+        "UP_d0p9_a16": true
+      },
+      "13": {
+        "UA_d0p1_a01": true,
+        "UA_d0p1_a02": true,
+        "UA_d0p1_a04": true,
+        "UA_d0p1_a08": true,
+        "UA_d0p1_a16": true,
+        "UA_d0p9_a01": true,
+        "UA_d0p9_a02": true,
+        "UA_d0p9_a04": true,
+        "UA_d0p9_a08": true,
+        "UA_d0p9_a16": true,
+        "UP_d0p1_a01": true,
+        "UP_d0p1_a02": true,
+        "UP_d0p1_a04": true,
+        "UP_d0p1_a08": true,
+        "UP_d0p1_a16": true,
+        "UP_d0p9_a01": true,
+        "UP_d0p9_a02": true,
+        "UP_d0p9_a04": true,
+        "UP_d0p9_a08": true,
+        "UP_d0p9_a16": true
+      }
+    }
+  }
+}

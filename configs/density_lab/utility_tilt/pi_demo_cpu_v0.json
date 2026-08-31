@@ -1,0 +1,34 @@
+{
+  "description": "Bounded CPU direct-sampling utility-tilt config for the PI demonstration (artifacts/pi_demo/). Larger than the 1-epoch fixture-smoke config (configs/density_lab/utility_tilt/d9_fixture_smoke_v0.json) but still sized for a laptop-class CPU, no GPU: ~12k train rows per PDG track, max_epochs bounded, early stopping on. This is a bounded CPU-scale flow for demonstrating that the direct-sampling tilt mechanism trains and produces samples consistent with the declared target -- it is not a converged production model and makes no claim of physical accuracy.",
+  "feature_view": {
+    "view_id": "identity_cartesian_v0"
+  },
+  "model": {
+    "name": "pi_demo_cpu_affine",
+    "family": "affine_coupling",
+    "params": {
+      "activation": "relu",
+      "batch_size": 512,
+      "checkpoint_interval": 1,
+      "data_augmentation": false,
+      "dropout": 0.0,
+      "early_stopping": true,
+      "grad_clip_norm": 5.0,
+      "hidden_depth": 2,
+      "hidden_width": 96,
+      "initializer_mode": "scaled_activation_aware",
+      "input_noise_std": 0.0,
+      "learning_rate": 0.001,
+      "max_epochs": 40,
+      "max_log_scale": 3.0,
+      "memorization_mode": false,
+      "mixing_mode": "alternating_only",
+      "number_of_blocks": 8,
+      "weight_decay": 0.0
+    }
+  },
+  "evaluation": {
+    "ess_sample_count": 4000,
+    "c2st_sample_count": 2000
+  }
+}

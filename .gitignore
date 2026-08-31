@@ -7,4 +7,7 @@ dist/
 .venv/
 # Run/campaign outputs (large data stays out of git)
 outputs/
-artifacts/
+artifacts/*
+# Exception: the PI-ready utility-guided-sampling demo bundle is a
+# deliverable, not bulk run output -- commit it deliberately.
+!artifacts/pi_demo/
