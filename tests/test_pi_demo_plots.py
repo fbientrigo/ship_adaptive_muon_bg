@@ -270,12 +270,26 @@ def test_plot_05_uses_default_caveat_when_not_provided(tmp_path):
 
 
 @pytest.mark.lab
-def test_plot_05_renders_missing_nf_value_without_crashing_or_faking_zero(tmp_path):
+def test_plot_05_renders_missing_nf_value_without_crashing_or_faking_zero(tmp_path, monkeypatch):
     """A missing/untrained generated_b_toy_occupancy must not silently render
-    as a zero-height bar (finding I6) -- it must not crash the figure either."""
+    as a zero-height bar (finding I6) -- it must not crash the figure either.
+
+    Asserts an actual "N/A" text object is drawn on the axes -- not just
+    that files were written (review round 1, finding NEW-3: the original
+    version of this test only checked file existence, which would not have
+    caught a regression back to a zero-height bar)."""
 
     pytest.importorskip("matplotlib")
     from ship_muon_bg.density_lab import pi_demo_plots as plots
+
+    captured_figs = []
+    original_save = plots._save_png_and_pdf
+
+    def _capture_and_save(fig, out_dir, stem):
+        captured_figs.append(fig)
+        return original_save(fig, out_dir, stem)
+
+    monkeypatch.setattr(plots, "_save_png_and_pdf", _capture_and_save)
 
     arena_reports = _tiny_arena_reports(pdg_ids=(13,))
     arena_reports[13]["rows"][1]["generated_b_toy_occupancy"] = None
@@ -283,6 +297,11 @@ def test_plot_05_renders_missing_nf_value_without_crashing_or_faking_zero(tmp_pa
     out_dir = tmp_path / "figures"
     paths = plots.plot_05_nf_preserves_tilt(arena_reports, out_dir, caveat="test caveat text")
     _assert_two_paths_written(paths)
+
+    assert len(captured_figs) == 1
+    fig = captured_figs[0]
+    all_text = " ".join(t.get_text() for ax in fig.axes for t in ax.texts)
+    assert "N/A" in all_text, "expected an 'N/A' text object for the missing NF value, found none"
 
 
 @pytest.mark.lab

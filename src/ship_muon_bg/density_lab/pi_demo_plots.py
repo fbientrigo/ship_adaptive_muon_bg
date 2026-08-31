@@ -372,7 +372,7 @@ def plot_03_support_preservation(tables_root: Path, out_dir: Path) -> List[str]:
     h_floor = h_alpha_delta(u, alpha=16, delta=0.1)
     h_zero = h_alpha_delta(u, alpha=16, delta=0.0)
     ax_b.plot(u, h_floor, color=ROLE_STYLE["exact_target"]["color"], linewidth=1.5, label="delta=0.1 (support-preserving floor)")
-    ax_b.plot(u, h_zero, color=ROLE_STYLE["nominal"]["color"], linestyle="--", linewidth=1.5, label="delta=0.0 (reference, touches zero)")
+    ax_b.plot(u, h_zero, color=ROLE_STYLE["nominal"]["color"], linestyle="--", linewidth=1.5, label="delta=0.0 (reference, drops to the log-axis floor at u=0)")
     ax_b.set_yscale("log")
     ax_b.set_xlabel("u")
     ax_b.set_ylabel("h_alpha_delta(u), alpha=16 (log scale)")
@@ -499,7 +499,12 @@ def plot_05_nf_preserves_tilt(
     """P0 vs exact target P_U vs NF-generated occupancy Q_theta, per trained variant."""
 
     plt = _figure()
-    caveat_text = caveat if caveat else _DEFAULT_NF_CAVEAT
+    caveat_text = (caveat if caveat else _DEFAULT_NF_CAVEAT) + (
+        " Note: the y-axis is symlog-scaled to keep the small mild-tilt bars "
+        "legible alongside the near-1.0 strong-tilt bars -- bar heights are "
+        "therefore not linearly proportional to value; compare the printed "
+        "numbers, not the visual bar-height ratios."
+    )
 
     pdg_ids = sorted(arena_reports.keys(), key=lambda k: (abs(int(k)), int(k)))
     n = max(len(pdg_ids), 1)

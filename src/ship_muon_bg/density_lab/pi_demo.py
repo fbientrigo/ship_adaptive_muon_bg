@@ -466,16 +466,19 @@ def backfill_nf_arena_results(
 
 
 if __name__ == "__main__":
-    # Run from the repository root (matches every other command documented in
-    # artifacts/pi_demo/README.md); paths recorded in the manifest are kept
-    # repo-relative, not resolved to this machine's absolute filesystem path.
+    # Both halves of this entry point resolve paths the same way -- via
+    # _REPO_ROOT, not the process cwd -- so `python -m
+    # ship_muon_bg.density_lab.pi_demo` behaves identically regardless of
+    # where it is invoked from (review round 1, finding NEW-2: the two
+    # halves previously disagreed, cwd-independent vs cwd-relative).
+    _REPO_ROOT = Path(__file__).resolve().parents[3]
     _run_pi_demo_v0()
     backfill_nf_arena_results(
-        csv_path=Path("artifacts/pi_demo/utility_guided_summary.csv"),
-        manifest_path=Path("artifacts/pi_demo/run_manifest.json"),
+        csv_path=_REPO_ROOT / "artifacts/pi_demo/utility_guided_summary.csv",
+        manifest_path=_REPO_ROOT / "artifacts/pi_demo/run_manifest.json",
         arena_report_paths={
-            13: Path("artifacts/density_lab/pi_demo_v0/arena_report/pdg_13/arena_summary.json"),
-            -13: Path("artifacts/density_lab/pi_demo_v0/arena_report/pdg_-13/arena_summary.json"),
+            13: _REPO_ROOT / "artifacts/density_lab/pi_demo_v0/arena_report/pdg_13/arena_summary.json",
+            -13: _REPO_ROOT / "artifacts/density_lab/pi_demo_v0/arena_report/pdg_-13/arena_summary.json",
         },
         nf_config_path="configs/density_lab/utility_tilt/pi_demo_cpu_v0.json",
     )

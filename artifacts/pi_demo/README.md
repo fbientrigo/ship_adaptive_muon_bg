@@ -120,8 +120,13 @@ from the flow's own generated samples, mapped back to physical space).
 `Q_theta=0.896`. For the MILD tilts, `Q_theta` does **not** reliably track
 `P_U`'s direction: PDG 13 `UP_d0p9_a01` has `P_0=0.0263`, `P_U=0.0291` (tilt
 points up), but `Q_theta=0.0048` — down, and below even the untilted
-`NOMINAL_PHYSICAL` arm's own `Q_theta=0.0083`. Three of the four mild-tilt
-`(pdg, tilt)` combinations show this same pattern. This is not a
+`NOMINAL_PHYSICAL` arm's own `Q_theta=0.0083`. All four mild-tilt
+`(pdg, tilt)` combinations show `Q_theta < P_0`, but the strength of that
+pattern differs sharply by PDG: for PDG 13 it is a 9-20 binomial-sigma
+effect (both tilts), while for PDG -13 it is only ~0.3 sigma — consistent
+with sampling noise, not a real directional signal. Only the PDG 13,
+`UP_d0p9_a01` combination falls below the untilted arm's own `Q_theta`.
+This is not a
 sampler/mathematics failure (Figures 01 and 04 establish those exactly, to
 machine precision) — it is a consequence of the small NF sample budget used
 to measure `Q_theta` (see Status below): the mild-tilt signal above nominal
