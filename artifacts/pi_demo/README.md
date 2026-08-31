@@ -144,6 +144,11 @@ bar. `Q_theta` approaching but not exactly reaching `P_U` on the strong
 tilts is expected at this training budget and is not evidence of a sampler
 or mathematics bug (those are validated separately and exactly via the
 closed-form/direct-summation/alias-sampler path in Figures 01 and 04).
+**This "inconclusive at this budget" statement is not just an argument —
+see `seed_robustness/README.md` for a 3-seed check confirming it
+quantitatively**: mild-tilt seed-to-seed spread exceeds the tilt's own
+signal, and one (pdg, tilt) combination even flips sides of `p0` across
+seeds.
 `final_train_nll` is shown as a small separate annotation and is **not**
 equivalent to, or evidence for, sampling agreement — only the occupancy bars
 (with their error bars) speak to that question.

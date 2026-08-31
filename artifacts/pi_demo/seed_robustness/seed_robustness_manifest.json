@@ -1,0 +1,28 @@
+{
+  "arena_report_paths": {
+    "-13,11": "artifacts/density_lab/pi_demo_v0/arena_report/pdg_-13/arena_summary.json",
+    "-13,12": "artifacts/density_lab/pi_demo_seed_robustness_seed12/arena_report/pdg_-13/arena_summary.json",
+    "-13,13": "artifacts/density_lab/pi_demo_seed_robustness_seed13/arena_report/pdg_-13/arena_summary.json",
+    "13,11": "artifacts/density_lab/pi_demo_v0/arena_report/pdg_13/arena_summary.json",
+    "13,12": "artifacts/density_lab/pi_demo_seed_robustness_seed12/arena_report/pdg_13/arena_summary.json",
+    "13,13": "artifacts/density_lab/pi_demo_seed_robustness_seed13/arena_report/pdg_13/arena_summary.json"
+  },
+  "pdg_ids": [
+    13,
+    -13
+  ],
+  "sampler_seed": 7,
+  "schema_version": "0",
+  "seeds": [
+    11,
+    12,
+    13
+  ],
+  "variant_ids": [
+    "NOMINAL_PHYSICAL",
+    "UA_d0p9_a01",
+    "UA_d0p1_a04",
+    "UP_d0p9_a01",
+    "UP_d0p1_a04"
+  ]
+}
