@@ -1,0 +1,41 @@
+{
+  "schema_version": "fairship_connector_v0",
+  "fairship": {
+    "commit": "f73a305a86468c320665cf41b73582ce7e533181",
+    "root": "6.40.02",
+    "source_files_changed": 0
+  },
+  "coordinate_transform": {
+    "status": "PROVISIONAL",
+    "p0_name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+    "p0_rule": "z_out_m = z_declared_m + 2.5916",
+    "coordinate_physics_verified": false
+  },
+  "gates": {
+    "p0a_real_row_ttree": "VERIFIED",
+    "p0b_generated_5d_ttree": "VERIFIED",
+    "p1_current_main_mudis": "VERIFIED",
+    "p2_canonical_bundle": "VERIFIED",
+    "shipreco": "VERIFIED"
+  },
+  "shipreco_artifact": {
+    "tree": "ship_reco_sim",
+    "entries": 2,
+    "sha256": "8a5e0a74ea1b6852f2a7b42b0a2685aae226d20c8473260a866f3fc60b1b9164"
+  },
+  "states": {
+    "empirical_p0a_row": 0,
+    "generated_p0b_fixture": "nf_like_candidate.json",
+    "current_a_rows": [8217, 32029, 25740],
+    "charges_exercised": [13, -13],
+    "dis_realizations_per_state": 2
+  },
+  "current_a_scope": "selected empirical states only; SBT selection is a real current-main condition",
+  "weight_contract": {
+    "empirical_physical_source_weight": 7.6875,
+    "generated_physical_source_weight": null,
+    "fairship_transport_weight": 1.0,
+    "ttree_w": 1.0,
+    "downstream_dis_weight": "not asserted; native CrossSection scalar retained separately"
+  }
+}

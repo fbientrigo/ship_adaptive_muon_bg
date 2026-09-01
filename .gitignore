@@ -8,5 +8,11 @@ dist/
 # Run/campaign outputs (large data stays out of git)
 outputs/
 artifacts/
+!artifacts/
+artifacts/*
+!artifacts/fairship_connector_v0/
+artifacts/fairship_connector_v0/*
+!artifacts/fairship_connector_v0/README.md
+!artifacts/fairship_connector_v0/summary.json
 graphify-out/cache
 data/shards/
