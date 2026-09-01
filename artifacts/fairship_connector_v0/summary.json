@@ -14,6 +14,7 @@
   "gates": {
     "p0a_real_row_ttree": "VERIFIED",
     "p0b_generated_5d_ttree": "VERIFIED",
+    "p0b_final_code_rerun": "VERIFIED",
     "p1_current_main_mudis": "VERIFIED",
     "p2_canonical_bundle": "VERIFIED",
     "shipreco": "VERIFIED"

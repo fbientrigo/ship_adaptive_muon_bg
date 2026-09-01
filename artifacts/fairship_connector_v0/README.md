@@ -133,5 +133,6 @@ using these artifacts to update physical utility.
 
 This directory links the P0 and A-path packages from their isolated worktrees:
 `p0a_real_row_0`, `p0b_generated_5d_0`, `p1_current_main_row_8217`, and the
-four `p3_*` directories.  Large ROOT files remain ignored; each linked package
-is self-contained for its execution.
+four `p3_*` directories.  `p0b_final_code_rerun` is the post-review final-code
+P0-B rerun.  Large ROOT files remain ignored; each linked package is
+self-contained for its execution.
