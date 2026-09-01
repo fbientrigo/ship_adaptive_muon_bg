@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shlex
 import shutil
@@ -74,6 +75,22 @@ def _root_inventory(path: Path, tree_name: str, *, require_cross_section: bool =
         raise RuntimeError(f"{tree_name} has no entries in {path}")
     branches = [branch.GetName() for branch in tree.GetListOfBranches()]
     values: list[float] = []
+    muon_rows: list[list[float]] = []
+    if tree_name == "MuonAndSoftInteractions":
+        if tree.GetEntry(0) <= 0 or not hasattr(tree, "imuondata") or len(tree.imuondata) < 10:
+            raise RuntimeError(f"missing readable imuondata in {path}")
+        muon_rows.append([float(tree.imuondata[index]) for index in range(10)])
+    elif tree_name == "DIS":
+        for index in range(entries):
+            if tree.GetEntry(index) <= 0 or not hasattr(tree, "InMuon") or len(tree.InMuon) < 1:
+                raise RuntimeError(f"missing readable DIS InMuon entry {index} in {path}")
+            muon_rows.append([float(tree.InMuon[0][column]) for column in range(11)])
+    elif tree_name == "cbmsim":
+        for index in range(entries):
+            if tree.GetEntry(index) <= 0 or not hasattr(tree, "MCTrack") or len(tree.MCTrack) < 1:
+                raise RuntimeError(f"missing readable MCTrack entry {index} in {path}")
+            track = tree.MCTrack[0]
+            muon_rows.append([float(track.GetPdgCode()), float(track.GetPx()), float(track.GetPy()), float(track.GetPz())])
     if require_cross_section:
         if "CrossSection" not in branches:
             raise RuntimeError(f"missing CrossSection branch in {path}")
@@ -83,7 +100,7 @@ def _root_inventory(path: Path, tree_name: str, *, require_cross_section: bool =
             values.append(float(getattr(tree, "CrossSection")))
     root_file.Close()
     return {"path": str(path), "tree": tree_name, "entries": entries, "branches": branches,
-            "cross_sections": values}
+            "cross_sections": values, "muon_rows": muon_rows}
 
 
 @dataclass(frozen=True)
@@ -151,7 +168,7 @@ class CurrentMainMuonDISRunner:
             "request_id": request.request_id, "subject_id": subject.subject_id,
             "state_definition_id": subject.state_definition_id,
             "fs_sim_configuration_id": request.fs_sim_configuration_id, "seed": request.seed,
-            "options_digest": request.options_digest, "input_cbmsim": str(source),
+            "options": dict(request.options), "options_digest": request.options_digest, "input_cbmsim": str(source),
             "dis_realizations_per_muon": dis_realizations_per_muon,
         })
         _write_json(out / "environment.json", {
@@ -193,6 +210,7 @@ class CurrentMainMuonDISRunner:
                 }
                 if inventories["dis"]["entries"] != inventories["geant4"]["entries"]:
                     raise RuntimeError("DIS and Geant4 entry counts differ")
+                self._verify_content_continuity(inventories)
             except (OSError, RuntimeError, ValueError) as exc:
                 failure = str(exc)
         _write_json(out / "root_inventory.json", inventories if failure is None else {"technical_failure": failure, **inventories})
@@ -247,6 +265,27 @@ class CurrentMainMuonDISRunner:
         })
         _write_json(out / "bundle.json", self._bundle_manifest(bundle))
         return CurrentMainMuonDISResult(out, bundle, failure)
+
+    @staticmethod
+    def _verify_content_continuity(inventories: Mapping[str, Mapping[str, Any]]) -> None:
+        preprocessed = inventories["preprocessing"]["muon_rows"]
+        dis_rows = inventories["dis"]["muon_rows"]
+        geant4_rows = inventories["geant4"]["muon_rows"]
+        cross_sections = inventories["geant4"]["cross_sections"]
+        if len(preprocessed) != 1 or len(dis_rows) != len(geant4_rows) or len(dis_rows) != len(cross_sections):
+            raise RuntimeError("missing muon lineage rows across current-main MuonDIS outputs")
+        # makeMuonDIS copies the selected SBT muon into each DIS InMuon row;
+        # run_simScript --MuDIS then uses it as the Geant4 primary.
+        for index, dis in enumerate(dis_rows):
+            for dis_column, pre_column in ((0, 0), (1, 1), (2, 2), (3, 3), (5, 4), (6, 5), (7, 6), (8, 7)):
+                if not math.isclose(dis[dis_column], preprocessed[0][pre_column], rel_tol=1e-6, abs_tol=1e-6):
+                    raise RuntimeError(f"preprocessing to DIS muon mismatch at realization {index}")
+            g4 = geant4_rows[index]
+            for left, right in zip(g4, dis[:4]):
+                if not math.isclose(left, right, rel_tol=1e-6, abs_tol=1e-6):
+                    raise RuntimeError(f"DIS to Geant4 primary mismatch at realization {index}")
+            if not math.isclose(cross_sections[index], dis[10], rel_tol=1e-5, abs_tol=1e-10):
+                raise RuntimeError(f"DIS to Geant4 CrossSection mismatch at realization {index}")
 
     @staticmethod
     def _observation(observation_id: str, subject_ref: str, definition: str, units: str,

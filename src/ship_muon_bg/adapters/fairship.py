@@ -73,6 +73,8 @@ class CandidateInjectionRecord:
             raise TypeError("pdg_id must be an int")
         if float(fairship_transport_weight) <= 0:
             raise ValueError("fairship_transport_weight must be positive")
+        if float(fairship_transport_weight) != 1.0:
+            raise ValueError("current connector requires fairship_transport_weight == 1.0")
         for name, value in (("candidate_id", candidate_id), ("px", float(px)), ("py", float(py)),
                             ("pz", float(pz)), ("x", float(x)), ("y", float(y)), ("z", float(z)),
                             ("pdg_id", pdg_id), ("physical_source_weight", None if physical_source_weight is None else float(physical_source_weight)),

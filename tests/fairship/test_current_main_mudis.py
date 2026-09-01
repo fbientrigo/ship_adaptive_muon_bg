@@ -11,10 +11,10 @@ def _request() -> EvaluationRequest:
 
 def _inventory(path: Path, tree: str, *, require_cross_section: bool = False):
     if tree == "MuonAndSoftInteractions":
-        return {"path": str(path), "tree": tree, "entries": 1, "branches": [], "cross_sections": []}
+        return {"path": str(path), "tree": tree, "entries": 1, "branches": [], "cross_sections": [], "muon_rows": [[13, 1, 2, 3, 4, 5, 6, 1, 0, 1]]}
     if tree == "DIS":
-        return {"path": str(path), "tree": tree, "entries": 2, "branches": [], "cross_sections": []}
-    return {"path": str(path), "tree": tree, "entries": 2, "branches": ["CrossSection"], "cross_sections": [.1, .2]}
+        return {"path": str(path), "tree": tree, "entries": 2, "branches": [], "cross_sections": [], "muon_rows": [[13, 1, 2, 3, 4, 4, 5, 6, 1, 1, .1], [13, 1, 2, 3, 4, 4, 5, 6, 1, 0, .2]]}
+    return {"path": str(path), "tree": tree, "entries": 2, "branches": ["CrossSection"], "cross_sections": [.1, .2], "muon_rows": [[13, 1, 2, 3], [13, 1, 2, 3]]}
 
 
 def test_current_main_chain_preserves_lineage_and_cross_sections(tmp_path: Path, monkeypatch) -> None:

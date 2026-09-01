@@ -21,6 +21,12 @@ def test_generated_and_empirical_weights_are_separate() -> None:
     assert empirical.physical_source_weight == 7.5
     assert generated.fairship_transport_weight == empirical.fairship_transport_weight == 1.0
     assert empirical.source_provenance == {"row": 4}
+    try:
+        CandidateInjectionRecord("bad", 1, 2, 3, 4, 5, 6, 13, None, 2.0)
+    except ValueError as error:
+        assert "requires fairship_transport_weight" in str(error)
+    else:
+        raise AssertionError("non-unit transport weight must not be silently ignored")
 
 
 def test_transform_is_explicit_and_does_not_use_historical_offset() -> None:
