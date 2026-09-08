@@ -34,6 +34,16 @@ from .target_transforms import (
     TriangularBananaTransform,
     numerical_forward_log_abs_det_jacobian,
 )
+from .fairship_contract import (
+    ARM_ORDER,
+    SCHEMA_VERSION,
+    BenchmarkArm,
+    BenchmarkConfig,
+    build_report,
+    load_config,
+    summarize_fairship_outcomes,
+    validate_report,
+)
 
 __all__ = [
     "ControlledTarget",
@@ -59,4 +69,12 @@ __all__ = [
     "ComposedTransform",
     "numerical_forward_log_abs_det_jacobian",
     "MahalanobisRegion",
+    "ARM_ORDER",
+    "SCHEMA_VERSION",
+    "BenchmarkArm",
+    "BenchmarkConfig",
+    "build_report",
+    "load_config",
+    "summarize_fairship_outcomes",
+    "validate_report",
 ]

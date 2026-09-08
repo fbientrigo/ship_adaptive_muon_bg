@@ -1,0 +1,10 @@
+{
+  "schema_version": "utility_guided_fairship_benchmark_v0",
+  "benchmark_id": "utility_guided_fairship_benchmark_v0",
+  "fairship_configuration_id": "fairship-f73a305-try2026-straw10-v0",
+  "geometry_tag": "TRY_2026",
+  "source_state_definition_id": "afterms_5d_nf_v0",
+  "downstream_endpoint_definition_id": null,
+  "cohort_manifest_id": "predeclared_cohorts_v0",
+  "no_redraw_until_success": true
+}
