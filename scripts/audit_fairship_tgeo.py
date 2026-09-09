@@ -14,7 +14,7 @@ import json
 import math
 import os
 import re
-import subprocess
+import shlex
 import sys
 from array import array
 from pathlib import Path
@@ -60,7 +60,7 @@ def candidate_state(root_dir: Path) -> dict[str, Any]:
     state["source_provenance"] = payload["records"][0].get("source_provenance", {})
     state["physical_source_weight"] = payload["records"][0].get("physical_source_weight")
     state["coordinate_transform_id"] = payload["records"][0].get("coordinate_transform_id")
-    state["coordinate_transform_status"] = payload["records"][0].get("coordinate_transform_status", "PROVISIONAL")
+    state["coordinate_transform_status"] = payload["records"][0].get("coordinate_transform_status") or "UNKNOWN"
     return state
 
 
@@ -69,7 +69,10 @@ def _point(view: Any) -> tuple[float, float, float]:
 
 
 def trajectory(geometry: Any, state: dict[str, Any], *, max_boundaries: int = 2000) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Walk TGeo boundaries from the recorded injected state."""
+    """Probe TGeo boundaries along the initial injected direction.
+
+    This is a straight-ray geometry probe, not a GEANT4 transport trajectory.
+    """
     momentum = math.sqrt(sum(float(state[k]) ** 2 for k in ("px", "py", "pz")))
     if not math.isfinite(momentum) or momentum <= 0:
         raise ValueError("candidate momentum must be positive and finite")
@@ -83,7 +86,20 @@ def trajectory(geometry: Any, state: dict[str, Any], *, max_boundaries: int = 20
         raise RuntimeError("TGeo could not locate the injection state")
     rows: list[dict[str, Any]] = []
     sensitive: list[str] = []
-    for boundary_index in range(max_boundaries):
+    node = geometry.GetCurrentNode()
+    if not node:
+        raise RuntimeError("TGeo returned no initial node")
+    point = geometry.GetCurrentPoint()
+    volume = node.GetVolume().GetName()
+    material = node.GetVolume().GetMaterial().GetName() if node.GetVolume().GetMaterial() else None
+    rows.append({"boundary_index": 0, "volume": volume, "path": geometry.GetPath(),
+                 "material": material, "x_cm": _point(point)[0], "y_cm": _point(point)[1],
+                 "z_cm": _point(point)[2], "step_cm": 0.0})
+    if volume.startswith("LiSc"):
+        sensitive.append(volume)
+    for boundary_index in range(1, max_boundaries):
+        if not geometry.FindNextBoundaryAndStep():
+            break
         node = geometry.GetCurrentNode()
         point = geometry.GetCurrentPoint()
         if not node:
@@ -97,15 +113,13 @@ def trajectory(geometry: Any, state: dict[str, Any], *, max_boundaries: int = 20
                      "step_cm": float(geometry.GetStep())})
         if volume.startswith("LiSc") and volume not in sensitive:
             sensitive.append(volume)
-        if not geometry.FindNextBoundaryAndStep():
-            break
     else:
         raise RuntimeError(f"TGeo boundary walk exceeded {max_boundaries} steps")
     if not rows:
         raise RuntimeError("TGeo returned no trajectory rows")
     return {"initial_volume": rows[0]["volume"], "initial_path": rows[0]["path"],
-            "initial_material": rows[0]["material"], "sensitive_volumes": sensitive,
-            "boundary_count": len(rows) - 1}, rows
+            "initial_material": rows[0]["material"], "ray_sensitive_volumes": sensitive,
+            "ray_boundary_count": len(rows) - 1}, rows
 
 
 def _entries(collection: Any) -> list[Any]:
@@ -158,7 +172,46 @@ def run_config(commands_path: Path) -> dict[str, Any]:
         values[option] = match.group(1) if match else "UNDECLARED"
     for option in ("noSND", "reproducible", "validation"):
         values[option] = f"--{option}" in text
+    signature: list[list[str]] = []
+    for line in text.splitlines():
+        tokens = shlex.split(line)
+        if not tokens:
+            continue
+        marker = next((i for i, token in enumerate(tokens)
+                       if token.endswith(("eminem_importer.py", "run_simScript.py"))), None)
+        if marker is None:
+            continue
+        normalized = [Path(tokens[marker]).name]
+        dynamic = {"-f", "-o", "-n", "-s", "-r", "--output", "--config"}
+        index = marker + 1
+        while index < len(tokens):
+            token = tokens[index]
+            if tokens[marker].endswith("eminem_importer.py") and index == marker + 1:
+                normalized.append("<input>")
+                index += 1
+                continue
+            normalized.append(token)
+            if token in dynamic and index + 1 < len(tokens):
+                normalized.append("<value>")
+                index += 2
+            else:
+                index += 1
+        signature.append(normalized)
+    values["command_signature"] = signature
     return values
+
+
+def geometry_identity(path: Path) -> str:
+    """Hash the serialized ShipGeo declaration, excluding ROOT metadata."""
+    import ROOT  # type: ignore
+
+    root_file = ROOT.TFile.Open(str(path), "READ")
+    value = root_file.Get("ShipGeo") if root_file else None
+    if not value:
+        raise RuntimeError(f"missing ShipGeo declaration in {path}")
+    identity = hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+    root_file.Close()
+    return identity
 
 
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -205,11 +258,26 @@ def audit(*, pilot_dir: Path, controls_dir: Path, fairship: Path, output: Path) 
     anchor_environment = load_json(anchor / "environment.json")
     anchor_config = run_config(anchor / "commands.txt")
     anchor_commit = anchor_environment.get("fairship_commit")
+    anchor_geometry_id = geometry_identity(geometry_path)
+    geometry_ids: dict[str, str] = {}
+    for candidate_id, root_dir, _ in entries:
+        sim_root, geo_root = root_dir / "sim_connector.root", root_dir / "geo_connector.root"
+        if not sim_root.is_file() or not geo_root.is_file():
+            raise FileNotFoundError(f"missing ROOT evidence for {candidate_id}")
+        environment = load_json(root_dir / "environment.json")
+        config = run_config(root_dir / "commands.txt")
+        geometry_id = geometry_identity(geo_root)
+        if environment.get("fairship_commit") != anchor_commit:
+            raise RuntimeError(f"FairShip commit differs for {candidate_id}")
+        if config != anchor_config:
+            raise RuntimeError(f"FairShip command/config differs for {candidate_id}")
+        if geometry_id != anchor_geometry_id:
+            raise RuntimeError(f"ShipGeo geometry identity differs for {candidate_id}")
+        geometry_ids[candidate_id] = geometry_id
     candidate_rows: list[dict[str, Any]] = []
     trajectory_rows: list[dict[str, Any]] = []
     observation_rows: list[dict[str, Any]] = []
     source_hashes: dict[str, str] = {}
-    configs = []
     for candidate_id, root_dir, kind in entries:
         state = candidate_state(root_dir)
         if state["candidate_id"] != candidate_id:
@@ -217,13 +285,12 @@ def audit(*, pilot_dir: Path, controls_dir: Path, fairship: Path, output: Path) 
         sim_root, geo_root = root_dir / "sim_connector.root", root_dir / "geo_connector.root"
         if not sim_root.is_file() or not geo_root.is_file():
             raise FileNotFoundError(f"missing ROOT evidence for {candidate_id}")
-        environment = load_json(root_dir / "environment.json")
-        if environment.get("fairship_commit") != anchor_commit:
-            raise RuntimeError(f"FairShip commit differs for {candidate_id}")
         geo_summary, rows = trajectory(geometry, state)
         sim_summary, detector_rows = root_observations(sim_root, candidate_id)
         source_hashes[candidate_id] = sha256(sim_root)
-        configs.append(run_config(root_dir / "commands.txt"))
+        coordinate_status = state.get("coordinate_transform_status")
+        if coordinate_status == "UNKNOWN":
+            coordinate_status = source_metadata.get(candidate_id, {}).get("coordinate_transform_status", "UNKNOWN")
         candidate_rows.append({"candidate_id": candidate_id, "cohort": kind, **state,
                                **source_metadata.get(candidate_id, {}),
                                "injection_x_cm": 100.0 * state["x"],
@@ -231,16 +298,15 @@ def audit(*, pilot_dir: Path, controls_dir: Path, fairship: Path, output: Path) 
                                "injection_z_cm": 100.0 * state["z"], **geo_summary,
                                **sim_summary, "sim_root_sha256": source_hashes[candidate_id],
                                "geometry_root_sha256": sha256(geo_root),
+                               "geometry_id": geometry_ids[candidate_id],
                                "sim_root": str(sim_root), "geometry_anchor": str(geometry_path),
-                               "coordinate_status": "PROVISIONAL"})
+                               "coordinate_status": coordinate_status})
         trajectory_rows.extend({"candidate_id": candidate_id, "cohort": kind, **row} for row in rows)
         observation_rows.extend({"cohort": kind, **row} for row in detector_rows)
     geometry_file.Close()
     controls = [row for row in candidate_rows if row["cohort"] == "empirical_sbt_positive_control"]
     if not all(row["sbt_qualifying_hit_count"] > 0 for row in controls):
         raise RuntimeError("no empirical SBT-positive control was reproduced")
-    if any(config != anchor_config for config in configs):
-        raise RuntimeError("FairShip run configuration differs across audit inputs")
 
     output.mkdir(parents=True, exist_ok=True)
     write_csv(output / "candidate_audit.csv", candidate_rows)
@@ -254,9 +320,12 @@ def audit(*, pilot_dir: Path, controls_dir: Path, fairship: Path, output: Path) 
         "inputs": {"pilot_dir": str(pilot_dir), "controls_dir": str(controls_dir)},
         "fairship": {"commit": anchor_commit, "root_version": ROOT.gROOT.GetVersion(),
                      "geometry_anchor": str(geometry_path), "geometry_anchor_sha256": sha256(geometry_path),
+                     "geometry_id": anchor_geometry_id, "geometry_identity_rule": "equal ShipGeo declaration SHA-256",
                      "declared_config": anchor_config, "sensitive_volume_authority": SBT_SOURCE},
-        "coordinate_transform": {"status": "PROVISIONAL", "mapping_question": "not resolved by this audit",
-                                 "rule": "existing connector transform recorded in candidate.json"},
+        "geometry_probe": {"kind": "straight_initial_direction_ray", "not_geant4_transport": True,
+                           "sensitive_names_are_probe_intersections": True},
+        "coordinate_transform": {"status": "PER_RECORD", "mapping_question": "not resolved by this audit",
+                                 "source": "candidate metadata when supplied; UNKNOWN when omitted"},
         "sbt_selection": {"source": "FairShip/muonDIS/make_nTuple_SBT.py", "threshold_gev": 3.0,
                           "rule": "1000 < detector_id < 999999 AND abs(pdg_id) == 13 AND momentum_gev > 3.0"},
         "artifacts": {"candidate_audit": "candidate_audit.csv", "trajectory_boundaries": "trajectory_boundaries.csv",
@@ -268,9 +337,16 @@ def audit(*, pilot_dir: Path, controls_dir: Path, fairship: Path, output: Path) 
 
 Decision: `{DECISION}`.
 
-The fixed 12-candidate genuine NF cohort and {len(controls)} empirical SBT-positive controls were read from existing ROOT outputs. Every row is matched to the same FairShip commit/configuration and one geometry anchor. `candidate_audit.csv` keeps injection state, TGeo initial volume/material, sensitive-volume encounters, detector counts, and the current preprocessing decision together; `trajectory_boundaries.csv` and `detector_observations.csv` provide the inspectable detail.
+The fixed 12-candidate genuine NF cohort and {len(controls)} empirical SBT-positive controls were read from existing ROOT outputs. Every row is matched to the same FairShip commit/configuration and canonical `ShipGeo` identity before the shared geometry anchor is used. `candidate_audit.csv` keeps injection state, TGeo initial volume/material, straight-ray probe intersections, detector counts, and the current preprocessing decision together; `trajectory_boundaries.csv` and `detector_observations.csv` provide the inspectable detail.
 
-`LiSc*` is not a hand mask: it is the FairShip veto implementation's volume family created with `sens=true` (`{SBT_SOURCE}`). The coordinate transform remains PROVISIONAL; this is recorded uncertainty, not a #27 activation or a causal interpretation. No candidate was redrawn or tuned and no endpoint/rate claim is made.
+`LiSc*` names are TGeo straight-ray probe intersections, not GEANT4 transport crossings or causal track assignments. The FairShip veto implementation creates this volume family with `sens=true` (`{SBT_SOURCE}`). Actual GEANT4 `vetoPoint` observations remain in their separate table. Coordinate status is preserved per record (`PROVISIONAL` where supplied, `UNKNOWN` where controls omitted it); this is not a #27 activation or a causal interpretation. No candidate was redrawn or tuned and no endpoint/rate claim is made.
+
+Reproduce with the FairShip runtime:
+
+```sh
+cd /home/fabian/thesis/worktrees/FairShip-current-main-f73a305
+pixi run python /tmp/ship-sprint1-issue-30/scripts/audit_fairship_tgeo.py --pilot-dir /home/fabian/thesis/worktrees/ship-fairship-utility-connector-v0/artifacts/utility_guided_fairship_pilot_v0 --controls-dir /home/fabian/thesis/worktrees/ship-fairship-current-mudis-v0/artifacts/fairship_connector_v0 --fairship-dir /home/fabian/thesis/worktrees/FairShip-current-main-f73a305 --output /tmp/ship-sprint1-issue-30/artifacts/fairship_tgeo_audit_v0
+```
 """
     (output / "README.md").write_text(readme, encoding="utf-8")
     return manifest

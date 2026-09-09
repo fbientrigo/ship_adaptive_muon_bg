@@ -10,14 +10,51 @@
   },
   "coordinate_transform": {
     "mapping_question": "not resolved by this audit",
-    "rule": "existing connector transform recorded in candidate.json",
-    "status": "PROVISIONAL"
+    "source": "candidate metadata when supplied; UNKNOWN when omitted",
+    "status": "PER_RECORD"
   },
   "decision": "SBT_USABLE_FOR_FIRST_EMPIRICAL_ENDPOINT",
   "decision_scope": "audit usability only; no endpoint B, rate, or causal claim",
   "fairship": {
     "commit": "f73a305a86468c320665cf41b73582ce7e533181",
     "declared_config": {
+      "command_signature": [
+        [
+          "eminem_importer.py",
+          "<input>",
+          "--output",
+          "<value>",
+          "--format",
+          "ttree",
+          "--tree-name",
+          "converted_ntuple",
+          "--config",
+          "<value>"
+        ],
+        [
+          "run_simScript.py",
+          "--ttree",
+          "-f",
+          "<value>",
+          "-o",
+          "<value>",
+          "-n",
+          "<value>",
+          "-s",
+          "<value>",
+          "-r",
+          "<value>",
+          "--tag",
+          "connector",
+          "--reproducible",
+          "--validation",
+          "--shieldName",
+          "TRY_2026",
+          "--strawDesign",
+          "10",
+          "--noSND"
+        ]
+      ],
       "noSND": true,
       "reproducible": true,
       "shieldName": "TRY_2026",
@@ -26,8 +63,15 @@
     },
     "geometry_anchor": "/home/fabian/thesis/worktrees/ship-fairship-current-mudis-v0/artifacts/fairship_connector_v0/p3_row_25740/geo_connector.root",
     "geometry_anchor_sha256": "e4488556a561da00fac5c29d0548a383f3977b928c2cbcfdd39e95f483cbf407",
+    "geometry_id": "7588f2e62432574ed2487d6c71aadc4d03758c0c7e6b03ce3699079e0f11661a",
+    "geometry_identity_rule": "equal ShipGeo declaration SHA-256",
     "root_version": "6.40.02",
     "sensitive_volume_authority": "FairShip/veto/veto.cxx:GeoSideObj/GeoCornerLiSc* sens=true"
+  },
+  "geometry_probe": {
+    "kind": "straight_initial_direction_ray",
+    "not_geant4_transport": true,
+    "sensitive_names_are_probe_intersections": true
   },
   "inputs": {
     "controls_dir": "/home/fabian/thesis/worktrees/ship-fairship-current-mudis-v0/artifacts/fairship_connector_v0",
