@@ -62,6 +62,8 @@ def test_predeclared_cohort_and_fairship_outcome_censoring() -> None:
     assert report["arms"]["P0"]["generation"]["candidate_count"] == 3
     assert report["arms"]["PU_DIRECT"]["proposal_fidelity"]["declared_target_measure"] == "PU"
     assert report["arms"]["Q_THETA"]["proposal_fidelity"]["declared_target_measure"] == "PU"
+    assert report["arms"]["PU_DIRECT"]["arm_id"] == "PU_DIRECT"
+    assert report["arms"]["PU_DIRECT"]["generation"]["measure"] == "PU"
 
 
 def test_technical_failure_cannot_be_a_physics_negative() -> None:
@@ -154,7 +156,7 @@ def test_technical_and_physics_buckets_cannot_overlap() -> None:
 def test_predeclared_generation_count_must_match_ids() -> None:
     report = build_report(load_config(CONFIG))
     generation = report["arms"]["P0"]["generation"]
-    generation.update({"predeclared_cohort": True, "cohort_manifest_ref": "manifest-v0", "cohort_manifest_sha256": HASH,
+    generation.update({"predeclared_cohort": True, "cohort_id": "cohort-p0", "cohort_manifest_ref": "manifest-v0", "cohort_manifest_sha256": HASH,
                        "candidate_ids": ["aa"], "candidate_count": 2,
                        "candidate_provenance": {"source_state_definition_id": "afterms_5d_nf_v0", "dataset_hash": HASH, "candidate_table_ref": "candidate-table"},
                        "proposal_provenance": {"proposal_id": "p0", "proposal_version": "v0", "checkpoint_id": None}})
