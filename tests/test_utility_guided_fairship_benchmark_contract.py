@@ -36,8 +36,8 @@ def test_predeclared_cohort_and_fairship_outcome_censoring() -> None:
     config = BenchmarkConfig("b", "fs", "geo", "state", downstream_endpoint_definition_id="endpoint-B-v0")
     def refs(candidate, decision):
         return {"source_state_ref": "source-" + candidate, "execution_ref": "exec-" + candidate,
-                "interaction_realization_refs": ["interaction-" + candidate],
-                "observation_refs": ["observation-" + candidate], "decision_ref": decision}
+                "interaction_realization_refs": [] if decision is None else ["interaction-" + candidate],
+                "observation_refs": [] if decision is None else ["observation-" + candidate], "decision_ref": decision}
     records = [
         {"candidate_id": "aa", "execution_status": "technical_failure", "failure_reason": "timeout",
          "lineage_refs": refs("aa", None)},
@@ -60,6 +60,8 @@ def test_predeclared_cohort_and_fairship_outcome_censoring() -> None:
     assert report["arms"]["P0"]["fairship_outcomes"]["technical_failure_count"] == 1
     assert report["arms"]["P0"]["fairship_outcomes"]["accepted_candidate_count"] == 1
     assert report["arms"]["P0"]["generation"]["candidate_count"] == 3
+    assert report["arms"]["PU_DIRECT"]["proposal_fidelity"]["declared_target_measure"] == "PU"
+    assert report["arms"]["Q_THETA"]["proposal_fidelity"]["declared_target_measure"] == "PU"
 
 
 def test_technical_failure_cannot_be_a_physics_negative() -> None:
@@ -82,6 +84,18 @@ def test_successful_execution_can_have_unavailable_endpoint() -> None:
     assert result["unevaluated_executions"][0]["lineage_refs"]["observation_refs"] == ["Y-k-a"]
 
 
+def test_technical_failure_cannot_carry_child_refs_and_healthy_execution_may_have_zero_children() -> None:
+    with pytest.raises(ValueError, match="technical_failure must not carry"):
+        summarize_fairship_outcomes([{"candidate_id": "aa", "execution_status": "technical_failure",
+                                      "lineage_refs": {"source_state_ref": "source-aa", "execution_ref": "exec-aa",
+                                                       "interaction_realization_refs": ["interaction-aa"],
+                                                       "observation_refs": [], "decision_ref": None}}])
+    result = summarize_fairship_outcomes([{"candidate_id": "aa", "execution_status": "succeeded",
+                                           "lineage_refs": {"source_state_ref": "source-aa", "execution_ref": "exec-aa",
+                                                            "interaction_realization_refs": [], "observation_refs": [], "decision_ref": None}}])
+    assert result["valid_execution_count"] == 1
+
+
 def test_no_redraw_and_no_universal_ess_threshold() -> None:
     config = load_config(CONFIG)
     with pytest.raises(ValueError, match="redraw"):
@@ -90,6 +104,8 @@ def test_no_redraw_and_no_universal_ess_threshold() -> None:
     assert report["arms"]["P0"]["utility_tilt"]["ess"] is None
     assert report["arms"]["P0"]["utility_tilt"]["ess_is_diagnostic_only"] is True
     assert "threshold" not in json.dumps(report).lower()
+    with pytest.raises(ValueError, match="not_run"):
+        build_report(config, {"P0": {"fairship_outcomes": {"candidate_count": 0}}})
 
 
 def test_computed_outcomes_need_cohort_and_counts_cannot_lie() -> None:
@@ -116,7 +132,7 @@ def test_unknown_report_fields_and_qtheta_target_are_rejected() -> None:
         build_report(config, {"Q_THETA": {"proposal_fidelity": {"invented": 1}}})
     report = build_report(config)
     report["arms"]["Q_THETA"]["proposal_fidelity"]["comparison_target"] = "Q_THETA"
-    with pytest.raises(ValueError, match="declared PU_DIRECT"):
+    with pytest.raises(ValueError, match="declared PU"):
         validate_report(report)
 
 
@@ -133,3 +149,14 @@ def test_technical_and_physics_buckets_cannot_overlap() -> None:
                 "physics_outcomes": [{"candidate_id": "aa", "outcome": "physics_rejection", "endpoint_definition_id": "endpoint-B-v0", "lineage_refs": {}}]}
     with pytest.raises(ValueError, match="disjoint"):
         build_report(config, {"P0": {"cohort": cohort, "fairship_outcomes": outcomes}})
+
+
+def test_predeclared_generation_count_must_match_ids() -> None:
+    report = build_report(load_config(CONFIG))
+    generation = report["arms"]["P0"]["generation"]
+    generation.update({"predeclared_cohort": True, "cohort_manifest_ref": "manifest-v0", "cohort_manifest_sha256": HASH,
+                       "candidate_ids": ["aa"], "candidate_count": 2,
+                       "candidate_provenance": {"source_state_definition_id": "afterms_5d_nf_v0", "dataset_hash": HASH, "candidate_table_ref": "candidate-table"},
+                       "proposal_provenance": {"proposal_id": "p0", "proposal_version": "v0", "checkpoint_id": None}})
+    with pytest.raises(ValueError, match="candidate_count"):
+        validate_report(report)

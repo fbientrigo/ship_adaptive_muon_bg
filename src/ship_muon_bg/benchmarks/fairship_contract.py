@@ -45,10 +45,7 @@ def _nonempty(value: Any, name: str) -> str:
 
 
 def _identifier(value: Any, name: str) -> str:
-    value = _nonempty(value, name)
-    if len(value) < 2 or any(char.isspace() for char in value):
-        raise ValueError(f"{name} must be a valid identifier")
-    return value
+    return _nonempty(value, name)
 
 
 def _sha256(value: Any, name: str) -> str:
@@ -161,8 +158,8 @@ def _empty_arm(arm: str) -> dict[str, Any]:
             "physical_space_diagnostics": None,
             "high_utility_region_occupancy": None,
             "two_sample_diagnostic": None,
-            "declared_target_measure": "PU_DIRECT" if arm == "Q_THETA" else arm,
-            "comparison_target": "PU_DIRECT" if arm == "Q_THETA" else arm,
+            "declared_target_measure": "PU" if arm in {"PU_DIRECT", "Q_THETA"} else "P0",
+            "comparison_target": "PU" if arm in {"PU_DIRECT", "Q_THETA"} else "P0",
         },
         "fairship_outcomes": {
             "status": "not_run",
@@ -191,16 +188,22 @@ def _lineage_refs(record: Mapping[str, Any], *, technical: bool, decision_requir
               "execution_ref": _identifier(refs["execution_ref"], "execution_ref")}
     for field in ("interaction_realization_refs", "observation_refs"):
         values = refs[field]
-        if not isinstance(values, (tuple, list)) or not values or any(not isinstance(item, str) or not item for item in values):
-            raise ValueError(f"{field} must be a non-empty sequence of references")
+        if not isinstance(values, (tuple, list)) or any(not isinstance(item, str) or not item for item in values):
+            raise ValueError(f"{field} must be a sequence of references")
         result[field] = [_identifier(item, field) for item in values]
     decision = refs["decision_ref"]
     if technical:
+        if refs["interaction_realization_refs"] or refs["observation_refs"]:
+            raise ValueError("technical_failure must not carry interaction or observation refs")
         if decision is not None:
             raise ValueError("technical_failure must not carry a decision_ref")
+        result["decision_ref"] = None
     elif decision_required:
         result["decision_ref"] = _identifier(decision, "decision_ref")
-    result["decision_ref"] = decision
+    else:
+        if decision is not None:
+            raise ValueError("an unevaluated execution must not carry a decision_ref")
+        result["decision_ref"] = None
     return result
 
 
@@ -213,8 +216,9 @@ def _validate_lineage_output(refs: Any, *, technical: bool, decision_required: b
 def summarize_fairship_outcomes(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Summarize canonical execution/physics records without conflation.
 
-    Each record must carry one execution status and, only for a successful
-    execution, one physics outcome.  ``records`` is intentionally a flat
+    Each record must carry one execution status.  A successful execution may
+    have an unavailable endpoint; only a declared endpoint-B decision is a
+    physics outcome.  ``records`` is intentionally a flat
     summary input: source state, execution, interaction realization, and
     observation remain separate upstream entities.
     """
@@ -285,7 +289,6 @@ _FIDELITY_KEYS = {"status", "fit_metric", "physical_space_diagnostics", "high_ut
                   "declared_target_measure", "comparison_target"}
 _PROVENANCE_KEYS = {"fairship_configuration_id", "geometry_tag", "source_state_definition_id",
                     "downstream_endpoint_definition_id", "cohort_manifest_id"}
-_LINEAGE_AXES = {"source_state", "fs_sim_execution", "interaction_realization", "observation", "intermediate_Y_k_is_not_endpoint_B"}
 
 
 def _validate_fairship_summary(value: Mapping[str, Any], cohort_ids: Sequence[str] | None = None,
@@ -295,6 +298,10 @@ def _validate_fairship_summary(value: Mapping[str, Any], cohort_ids: Sequence[st
     if value.get("status") not in {"not_run", "computed"}:
         raise ValueError("FairShip status must be not_run or computed")
     if value.get("status") != "computed":
+        count_fields = ("candidate_count", "valid_execution_count", "technical_failure_count", "endpoint_evaluated_count",
+                        "physics_rejection_count", "accepted_candidate_count")
+        if any(value.get(field) is not None for field in count_fields) or any(value.get(field) != [] for field in ("technical_failures", "unevaluated_executions", "physics_outcomes")):
+            raise ValueError("not_run FairShip outcomes must have zero records and no counts")
         return
     required = ("candidate_count", "valid_execution_count", "technical_failure_count", "endpoint_evaluated_count",
                 "physics_rejection_count", "accepted_candidate_count", "technical_failures", "unevaluated_executions", "physics_outcomes")
@@ -432,7 +439,7 @@ def build_report(
         if report["fairship_outcomes"].get("candidate_count") is not None and cohort is not None:
             if report["fairship_outcomes"]["candidate_count"] != len(report["generation"]["candidate_ids"]):
                 raise ValueError(f"{arm} FairShip count does not match declared cohort")
-        target = "PU_DIRECT" if arm == "Q_THETA" else arm
+        target = "PU" if arm in {"PU_DIRECT", "Q_THETA"} else "P0"
         if report["proposal_fidelity"].get("comparison_target") != target or report["proposal_fidelity"].get("declared_target_measure") != target:
             raise ValueError(f"{arm} proposal fidelity must compare against declared {target}")
         arms[arm] = report
@@ -513,7 +520,7 @@ def validate_report(report: Mapping[str, Any]) -> None:
             raise ValueError("utility_tilt status must be not_run or computed")
         if value["proposal_fidelity"].get("status") not in {"not_run", "computed"}:
             raise ValueError("proposal_fidelity status must be not_run or computed")
-        target = "PU_DIRECT" if arm == "Q_THETA" else arm
+        target = "PU" if arm in {"PU_DIRECT", "Q_THETA"} else "P0"
         if value["proposal_fidelity"].get("comparison_target") != target:
             raise ValueError(f"{arm} proposal fidelity must compare against declared {target}")
         if value["proposal_fidelity"].get("declared_target_measure") != target:
@@ -526,6 +533,8 @@ def validate_report(report: Mapping[str, Any]) -> None:
             candidate_ids = value["generation"].get("candidate_ids")
             if not isinstance(candidate_ids, list) or not candidate_ids or len(candidate_ids) != len(set(candidate_ids)) or any(not isinstance(item, str) or not item for item in candidate_ids):
                 raise ValueError("predeclared cohorts require non-empty unique candidate ids")
+            if value["generation"].get("candidate_count") != len(candidate_ids):
+                raise ValueError("cohort candidate_count must equal candidate id count")
             candidate_provenance = value["generation"].get("candidate_provenance")
             proposal_provenance = value["generation"].get("proposal_provenance")
             if not isinstance(candidate_provenance, Mapping) or set(candidate_provenance) != _CANDIDATE_KEYS or candidate_provenance.get("source_state_definition_id") != report["provenance"]["source_state_definition_id"]:
