@@ -21,5 +21,11 @@ artifacts/utility_guided_fairship_pilot_v0/*
 !artifacts/utility_guided_fairship_pilot_v0/candidates.csv
 !artifacts/utility_guided_fairship_pilot_v0/executions.csv
 !artifacts/utility_guided_fairship_pilot_v0/observations.csv
+!artifacts/fairship_tgeo_audit_v0/
+!artifacts/fairship_tgeo_audit_v0/README.md
+!artifacts/fairship_tgeo_audit_v0/manifest.json
+!artifacts/fairship_tgeo_audit_v0/candidate_audit.csv
+!artifacts/fairship_tgeo_audit_v0/trajectory_boundaries.csv
+!artifacts/fairship_tgeo_audit_v0/detector_observations.csv
 graphify-out/cache
 data/shards/

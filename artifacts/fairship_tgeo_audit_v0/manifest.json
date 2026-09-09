@@ -1,0 +1,102 @@
+{
+  "artifacts": {
+    "candidate_audit": "candidate_audit.csv",
+    "detector_observations": "detector_observations.csv",
+    "trajectory_boundaries": "trajectory_boundaries.csv"
+  },
+  "cohort": {
+    "empirical_positive_controls": 2,
+    "genuine_nf_candidates": 12
+  },
+  "coordinate_transform": {
+    "mapping_question": "not resolved by this audit",
+    "source": "candidate metadata when supplied; UNKNOWN when omitted",
+    "status": "PER_RECORD"
+  },
+  "decision": "SBT_USABLE_FOR_FIRST_EMPIRICAL_ENDPOINT",
+  "decision_scope": "audit usability only; no endpoint B, rate, or causal claim",
+  "fairship": {
+    "commit": "f73a305a86468c320665cf41b73582ce7e533181",
+    "declared_config": {
+      "command_signature": [
+        [
+          "eminem_importer.py",
+          "<input>",
+          "--output",
+          "<value>",
+          "--format",
+          "ttree",
+          "--tree-name",
+          "converted_ntuple",
+          "--config",
+          "<value>"
+        ],
+        [
+          "run_simScript.py",
+          "--ttree",
+          "-f",
+          "<value>",
+          "-o",
+          "<value>",
+          "-n",
+          "<value>",
+          "-s",
+          "<value>",
+          "-r",
+          "<value>",
+          "--tag",
+          "connector",
+          "--reproducible",
+          "--validation",
+          "--shieldName",
+          "TRY_2026",
+          "--strawDesign",
+          "10",
+          "--noSND"
+        ]
+      ],
+      "noSND": true,
+      "reproducible": true,
+      "shieldName": "TRY_2026",
+      "strawDesign": "10",
+      "validation": true
+    },
+    "geometry_anchor": "/home/fabian/thesis/worktrees/ship-fairship-current-mudis-v0/artifacts/fairship_connector_v0/p3_row_25740/geo_connector.root",
+    "geometry_anchor_sha256": "e4488556a561da00fac5c29d0548a383f3977b928c2cbcfdd39e95f483cbf407",
+    "geometry_id": "7588f2e62432574ed2487d6c71aadc4d03758c0c7e6b03ce3699079e0f11661a",
+    "geometry_identity_rule": "equal ShipGeo declaration SHA-256",
+    "root_version": "6.40.02",
+    "sensitive_volume_authority": "FairShip/veto/veto.cxx:GeoSideObj/GeoCornerLiSc* sens=true"
+  },
+  "geometry_probe": {
+    "kind": "straight_initial_direction_ray",
+    "not_geant4_transport": true,
+    "sensitive_names_are_probe_intersections": true
+  },
+  "inputs": {
+    "controls_dir": "/home/fabian/thesis/worktrees/ship-fairship-current-mudis-v0/artifacts/fairship_connector_v0",
+    "pilot_dir": "/home/fabian/thesis/worktrees/ship-fairship-utility-connector-v0/artifacts/utility_guided_fairship_pilot_v0"
+  },
+  "sbt_selection": {
+    "rule": "1000 < detector_id < 999999 AND abs(pdg_id) == 13 AND momentum_gev > 3.0",
+    "source": "FairShip/muonDIS/make_nTuple_SBT.py",
+    "threshold_gev": 3.0
+  },
+  "schema_version": "fairship_tgeo_audit_v0",
+  "source_root_sha256": {
+    "afterms-sample-a45fc522-row-25740": "6844aad0d989718d1ecb65092c3429dac1937fde943ff0176a4f5684ce9ca791",
+    "afterms-sample-a45fc522-row-32029": "199e926c77183930a09ca87404a0c3ccea282589f52f297663289d2cbc5ed052",
+    "utility-pilot-UA_d0p1_a04-pdg-13-00": "d0a59b8b0ab3a3820e3a0bcb1b8160b7ba0f10bada3ed1355d15340786f0491a",
+    "utility-pilot-UA_d0p1_a04-pdg-13-01": "0b09c98f093d3f7534b98be4a8abd3774e824d3ed9d1c31acb1d69be9c892457",
+    "utility-pilot-UA_d0p1_a04-pdg-13-02": "5225eaeb8e3668ef5575489f98fbb6f74092eeead026609cb59ebf7a52e0f424",
+    "utility-pilot-UA_d0p1_a04-pdg-13-03": "ddc7989c537d3471abe8e58fc63562bffd12892404b5311c2d7efdd228d30135",
+    "utility-pilot-UA_d0p1_a04-pdg-13-04": "c175881151ac40e4d2044388b22ba8d7f66a8073075959fe2f8a9f9e0e8020b4",
+    "utility-pilot-UA_d0p1_a04-pdg-13-05": "e569c39e4f58c281fddd81e45202dfd0207ecd35c96cd061754c68cd4920c489",
+    "utility-pilot-UA_d0p1_a04-pdg13-00": "8d7fa55b1a16d82b9c4297ed73ecf74ef246e847549f33dd5d6450637c6a8bb0",
+    "utility-pilot-UA_d0p1_a04-pdg13-01": "6808618ad21b8d5b784d205632b5b3ca6426f0d43d61f3f4bb88035e726a954a",
+    "utility-pilot-UA_d0p1_a04-pdg13-02": "d3db6abdc672db3b478a92e45cb1456a709528b9a01b38afa0364b5f525b353a",
+    "utility-pilot-UA_d0p1_a04-pdg13-03": "e3b7c38c899b2a171f554f678f1a441febd97a80544ea7c8271050465221496f",
+    "utility-pilot-UA_d0p1_a04-pdg13-04": "c90d3fa58f972fb51a9594b51fa6ce1b78d96f01a16e5f4cc4cf8c052d1acf08",
+    "utility-pilot-UA_d0p1_a04-pdg13-05": "1e727da369c6a3dbcae016b02fcf32dedfe8b493012b9a7ce03d250a3ce7d3a7"
+  }
+}
