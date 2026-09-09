@@ -64,6 +64,8 @@ def test_predeclared_cohort_and_fairship_outcome_censoring() -> None:
     assert report["arms"]["Q_THETA"]["proposal_fidelity"]["declared_target_measure"] == "PU"
     assert report["arms"]["PU_DIRECT"]["arm_id"] == "PU_DIRECT"
     assert report["arms"]["PU_DIRECT"]["generation"]["measure"] == "PU"
+    assert report["arms"]["Q_THETA"]["generation"]["measure"] == "Q_THETA"
+    assert report["arms"]["Q_THETA"]["proposal_fidelity"]["comparison_target"] == "PU"
 
 
 def test_technical_failure_cannot_be_a_physics_negative() -> None:

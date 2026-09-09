@@ -29,7 +29,7 @@ _SAMPLING_METHOD = {
     "PU_DIRECT": "direct_pu_sampling",
     "Q_THETA": "learned_q_theta_generation",
 }
-_GENERATION_MEASURE = {"P0": "P0", "PU_DIRECT": "PU", "Q_THETA": "PU"}
+_GENERATION_MEASURE = {"P0": "P0", "PU_DIRECT": "PU", "Q_THETA": "Q_THETA"}
 _LINEAGE_REF_FIELDS = (
     "source_state_ref",
     "execution_ref",
