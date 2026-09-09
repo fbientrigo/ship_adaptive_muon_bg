@@ -15,6 +15,7 @@ from ship_muon_bg.benchmarks.fairship_contract import (
 
 
 CONFIG = Path(__file__).parents[1] / "configs" / "utility_guided_fairship_benchmark_v0.json"
+HASH = "a" * 64
 
 
 def test_versioned_config_and_identical_three_arm_shape() -> None:
@@ -32,25 +33,25 @@ def test_versioned_config_and_identical_three_arm_shape() -> None:
 
 
 def test_predeclared_cohort_and_fairship_outcome_censoring() -> None:
-    config = BenchmarkConfig("b", "fs", "geo", "state")
+    config = BenchmarkConfig("b", "fs", "geo", "state", downstream_endpoint_definition_id="endpoint-B-v0")
     def refs(candidate, decision):
         return {"source_state_ref": "source-" + candidate, "execution_ref": "exec-" + candidate,
                 "interaction_realization_refs": ["interaction-" + candidate],
                 "observation_refs": ["observation-" + candidate], "decision_ref": decision}
     records = [
-        {"candidate_id": "a", "execution_status": "technical_failure", "failure_reason": "timeout",
-         "lineage_refs": refs("a", None)},
-        {"candidate_id": "b", "execution_status": "succeeded", "physics_outcome": "physics_rejection",
-         "lineage_refs": refs("b", "decision-b")},
-        {"candidate_id": "c", "execution_status": "succeeded", "physics_outcome": "accepted_candidate",
-         "lineage_refs": refs("c", "decision-c")},
+        {"candidate_id": "aa", "execution_status": "technical_failure", "failure_reason": "timeout",
+         "lineage_refs": refs("aa", None)},
+        {"candidate_id": "bb", "execution_status": "succeeded", "physics_outcome": "physics_rejection", "endpoint_status": "evaluated", "endpoint_definition_id": "endpoint-B-v0",
+         "lineage_refs": refs("bb", "decision-b")},
+        {"candidate_id": "cc", "execution_status": "succeeded", "physics_outcome": "accepted_candidate", "endpoint_status": "evaluated", "endpoint_definition_id": "endpoint-B-v0",
+         "lineage_refs": refs("cc", "decision-c")},
     ]
     outcomes = summarize_fairship_outcomes(records)
     report = build_report(config, {
         "P0": {
-            "cohort": {"cohort_id": "p0", "candidate_ids": ["a", "b", "c"], "predeclared": True,
-                       "manifest_ref": "cohorts/p0.json", "manifest_sha256": "hash-p0",
-                       "candidate_provenance": {"source_state_definition_id": "state", "dataset_hash": "data-hash", "candidate_table_ref": "candidates-p0.csv"},
+            "cohort": {"cohort_id": "p0", "candidate_ids": ["aa", "bb", "cc"], "predeclared": True,
+                       "manifest_ref": "cohorts/p0.json", "manifest_sha256": HASH,
+                       "candidate_provenance": {"source_state_definition_id": "state", "dataset_hash": HASH, "candidate_table_ref": "candidates-p0-csv"},
                        "proposal_provenance": {"proposal_id": "p0", "proposal_version": "v0", "checkpoint_id": None}},
             "fairship_outcomes": outcomes,
         }
@@ -71,6 +72,16 @@ def test_technical_failure_cannot_be_a_physics_negative() -> None:
         }])
 
 
+def test_successful_execution_can_have_unavailable_endpoint() -> None:
+    refs = {"source_state_ref": "source-a", "execution_ref": "exec-a",
+            "interaction_realization_refs": ["interaction-a"], "observation_refs": ["Y-k-a"], "decision_ref": None}
+    result = summarize_fairship_outcomes([{"candidate_id": "aa", "execution_status": "succeeded",
+                                           "endpoint_status": "unavailable", "lineage_refs": refs}])
+    assert result["valid_execution_count"] == 1
+    assert result["endpoint_evaluated_count"] == 0
+    assert result["unevaluated_executions"][0]["lineage_refs"]["observation_refs"] == ["Y-k-a"]
+
+
 def test_no_redraw_and_no_universal_ess_threshold() -> None:
     config = load_config(CONFIG)
     with pytest.raises(ValueError, match="redraw"):
@@ -82,18 +93,20 @@ def test_no_redraw_and_no_universal_ess_threshold() -> None:
 
 
 def test_computed_outcomes_need_cohort_and_counts_cannot_lie() -> None:
-    config = BenchmarkConfig("b", "fs", "geo", "state")
+    config = BenchmarkConfig("b", "fs", "geo", "state", downstream_endpoint_definition_id="endpoint-B-v0")
     outcomes = {"status": "computed", "candidate_count": 2, "valid_execution_count": 2,
                 "technical_failure_count": 0, "physics_rejection_count": 1,
                 "accepted_candidate_count": 0, "technical_failures": [],
-                "physics_outcomes": [{"candidate_id": "a", "outcome": "physics_rejection", "lineage_refs": {}}]}
+                "endpoint_evaluated_count": 1, "unevaluated_executions": [],
+                "physics_outcomes": [{"candidate_id": "aa", "outcome": "physics_rejection", "endpoint_definition_id": "endpoint-B-v0",
+                                       "lineage_refs": {"source_state_ref": "s", "execution_ref": "e", "interaction_realization_refs": ["i"], "observation_refs": ["o"], "decision_ref": "d"}}]}
     with pytest.raises(ValueError, match="predeclared cohort"):
         build_report(config, {"P0": {"fairship_outcomes": outcomes}})
     with pytest.raises(ValueError, match="valid_execution_count"):
-        build_report(config, {"P0": {"cohort": {"cohort_id": "p0", "candidate_ids": ["a", "b"], "predeclared": True,
-                                                   "manifest_ref": "p0.json", "manifest_sha256": "h",
-                                                   "candidate_provenance": {"source_state_definition_id": "s", "dataset_hash": "d", "candidate_table_ref": "c"},
-                                                   "proposal_provenance": {"proposal_id": "p", "proposal_version": "v", "checkpoint_id": None}},
+        build_report(config, {"P0": {"cohort": {"cohort_id": "p0", "candidate_ids": ["aa", "bb"], "predeclared": True,
+                                                   "manifest_ref": "p0.json", "manifest_sha256": HASH,
+                                                   "candidate_provenance": {"source_state_definition_id": "state", "dataset_hash": HASH, "candidate_table_ref": "candidate-table"},
+                                                   "proposal_provenance": {"proposal_id": "pp", "proposal_version": "vv", "checkpoint_id": None}},
                                       "fairship_outcomes": outcomes}})
 
 
@@ -108,15 +121,15 @@ def test_unknown_report_fields_and_qtheta_target_are_rejected() -> None:
 
 
 def test_technical_and_physics_buckets_cannot_overlap() -> None:
-    config = BenchmarkConfig("b", "fs", "geo", "state")
-    cohort = {"cohort_id": "p0", "candidate_ids": ["a"], "predeclared": True,
-              "manifest_ref": "p0.json", "manifest_sha256": "h",
-              "candidate_provenance": {"source_state_definition_id": "s", "dataset_hash": "d", "candidate_table_ref": "c"},
-              "proposal_provenance": {"proposal_id": "p", "proposal_version": "v", "checkpoint_id": None}}
-    outcomes = {"status": "computed", "candidate_count": 1, "valid_execution_count": 1,
-                "technical_failure_count": 0, "physics_rejection_count": 1,
+    config = BenchmarkConfig("b", "fs", "geo", "state", downstream_endpoint_definition_id="endpoint-B-v0")
+    cohort = {"cohort_id": "p0", "candidate_ids": ["aa"], "predeclared": True,
+              "manifest_ref": "p0.json", "manifest_sha256": HASH,
+              "candidate_provenance": {"source_state_definition_id": "state", "dataset_hash": HASH, "candidate_table_ref": "candidate-table"},
+              "proposal_provenance": {"proposal_id": "pp", "proposal_version": "vv", "checkpoint_id": None}}
+    outcomes = {"status": "computed", "candidate_count": 2, "valid_execution_count": 1,
+                "technical_failure_count": 1, "endpoint_evaluated_count": 1, "physics_rejection_count": 1,
                 "accepted_candidate_count": 0,
-                "technical_failures": [{"candidate_id": "a", "reason": "timeout", "lineage_refs": {}}],
-                "physics_outcomes": [{"candidate_id": "a", "outcome": "physics_rejection", "lineage_refs": {}}]}
+                "technical_failures": [{"candidate_id": "aa", "reason": "timeout", "lineage_refs": {}}], "unevaluated_executions": [],
+                "physics_outcomes": [{"candidate_id": "aa", "outcome": "physics_rejection", "endpoint_definition_id": "endpoint-B-v0", "lineage_refs": {}}]}
     with pytest.raises(ValueError, match="disjoint"):
         build_report(config, {"P0": {"cohort": cohort, "fairship_outcomes": outcomes}})

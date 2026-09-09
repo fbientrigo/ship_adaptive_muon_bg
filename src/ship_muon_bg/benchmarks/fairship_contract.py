@@ -9,6 +9,7 @@ keeping their generation measures distinct.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -43,6 +44,20 @@ def _nonempty(value: Any, name: str) -> str:
     return value
 
 
+def _identifier(value: Any, name: str) -> str:
+    value = _nonempty(value, name)
+    if len(value) < 2 or any(char.isspace() for char in value):
+        raise ValueError(f"{name} must be a valid identifier")
+    return value
+
+
+def _sha256(value: Any, name: str) -> str:
+    value = _nonempty(value, name).lower()
+    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ValueError(f"{name} must be a 64-character SHA256 digest")
+    return value
+
+
 @dataclass(frozen=True)
 class BenchmarkConfig:
     """The immutable, shared provenance and cohort policy for all arms."""
@@ -67,6 +82,8 @@ class BenchmarkConfig:
             _nonempty(getattr(self, name), name)
         if self.schema_version != SCHEMA_VERSION:
             raise ValueError(f"unsupported schema_version: {self.schema_version!r}")
+        if self.downstream_endpoint_definition_id is not None:
+            _identifier(self.downstream_endpoint_definition_id, "downstream_endpoint_definition_id")
         if not isinstance(self.no_redraw_until_success, bool):
             raise TypeError("no_redraw_until_success must be a bool")
         if not self.no_redraw_until_success:
@@ -152,15 +169,17 @@ def _empty_arm(arm: str) -> dict[str, Any]:
             "candidate_count": None,
             "valid_execution_count": None,
             "technical_failure_count": None,
+            "endpoint_evaluated_count": None,
             "physics_rejection_count": None,
             "accepted_candidate_count": None,
             "technical_failures": [],
+            "unevaluated_executions": [],
             "physics_outcomes": [],
         },
     }
 
 
-def _lineage_refs(record: Mapping[str, Any], *, technical: bool) -> dict[str, Any]:
+def _lineage_refs(record: Mapping[str, Any], *, technical: bool, decision_required: bool = False) -> dict[str, Any]:
     refs = record.get("lineage_refs")
     if not isinstance(refs, Mapping):
         raise ValueError("each outcome requires lineage_refs for source/execution/interaction/observation/decision")
@@ -168,21 +187,27 @@ def _lineage_refs(record: Mapping[str, Any], *, technical: bool) -> dict[str, An
     missing = set(_LINEAGE_REF_FIELDS) - set(refs)
     if unknown or missing:
         raise ValueError(f"lineage_refs must contain exactly {_LINEAGE_REF_FIELDS}")
-    result = {"source_state_ref": _nonempty(refs["source_state_ref"], "source_state_ref"),
-              "execution_ref": _nonempty(refs["execution_ref"], "execution_ref")}
+    result = {"source_state_ref": _identifier(refs["source_state_ref"], "source_state_ref"),
+              "execution_ref": _identifier(refs["execution_ref"], "execution_ref")}
     for field in ("interaction_realization_refs", "observation_refs"):
         values = refs[field]
-        if not isinstance(values, (tuple, list)) or any(not isinstance(item, str) or not item for item in values):
-            raise ValueError(f"{field} must be a sequence of non-empty references")
-        result[field] = list(values)
+        if not isinstance(values, (tuple, list)) or not values or any(not isinstance(item, str) or not item for item in values):
+            raise ValueError(f"{field} must be a non-empty sequence of references")
+        result[field] = [_identifier(item, field) for item in values]
     decision = refs["decision_ref"]
     if technical:
         if decision is not None:
             raise ValueError("technical_failure must not carry a decision_ref")
-    else:
-        result["decision_ref"] = _nonempty(decision, "decision_ref")
+    elif decision_required:
+        result["decision_ref"] = _identifier(decision, "decision_ref")
     result["decision_ref"] = decision
     return result
+
+
+def _validate_lineage_output(refs: Any, *, technical: bool, decision_required: bool = False) -> None:
+    if not isinstance(refs, Mapping):
+        raise ValueError("outcome must preserve structured lineage_refs")
+    _lineage_refs({"lineage_refs": refs}, technical=technical, decision_required=decision_required)
 
 
 def summarize_fairship_outcomes(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -195,6 +220,7 @@ def summarize_fairship_outcomes(records: Sequence[Mapping[str, Any]]) -> dict[st
     """
 
     technical: list[dict[str, Any]] = []
+    unevaluated: list[dict[str, Any]] = []
     physics: list[dict[str, Any]] = []
     seen: set[str] = set()
     for record in records:
@@ -210,10 +236,19 @@ def summarize_fairship_outcomes(records: Sequence[Mapping[str, Any]]) -> dict[st
             technical.append({"candidate_id": candidate_id, "reason": record.get("failure_reason", ""),
                               "lineage_refs": _lineage_refs(record, technical=True)})
         elif execution_status == "succeeded":
-            if outcome not in {"physics_rejection", "accepted_candidate"}:
-                raise ValueError("succeeded execution requires physics_rejection or accepted_candidate")
-            physics.append({"candidate_id": candidate_id, "outcome": outcome,
-                            "lineage_refs": _lineage_refs(record, technical=False)})
+            endpoint_status = record.get("endpoint_status", "not_evaluated")
+            if outcome in {"physics_rejection", "accepted_candidate"}:
+                endpoint_definition_id = _identifier(record.get("endpoint_definition_id"), "endpoint_definition_id")
+                if endpoint_status != "evaluated":
+                    raise ValueError("accepted/rejected outcome requires endpoint_status=evaluated")
+                physics.append({"candidate_id": candidate_id, "outcome": outcome,
+                                "endpoint_definition_id": endpoint_definition_id,
+                                "lineage_refs": _lineage_refs(record, technical=False, decision_required=True)})
+            elif outcome is None and endpoint_status in {"not_evaluated", "unavailable"}:
+                unevaluated.append({"candidate_id": candidate_id, "endpoint_status": endpoint_status,
+                                    "lineage_refs": _lineage_refs(record, technical=False)})
+            else:
+                raise ValueError("successful execution requires an evaluated declared endpoint or an explicit unavailable status")
         else:
             raise ValueError("execution_status must be technical_failure or succeeded")
     accepted = sum(item["outcome"] == "accepted_candidate" for item in physics)
@@ -221,11 +256,13 @@ def summarize_fairship_outcomes(records: Sequence[Mapping[str, Any]]) -> dict[st
     return {
         "status": "computed",
         "candidate_count": len(seen),
-        "valid_execution_count": len(physics),
+        "valid_execution_count": len(unevaluated) + len(physics),
         "technical_failure_count": len(technical),
+        "endpoint_evaluated_count": len(physics),
         "physics_rejection_count": rejected,
         "accepted_candidate_count": accepted,
         "technical_failures": technical,
+        "unevaluated_executions": unevaluated,
         "physics_outcomes": physics,
     }
 
@@ -237,8 +274,8 @@ _GENERATION_KEYS = {"measure", "sampling_method", "predeclared_cohort", "redraw_
                     "cohort_id", "candidate_ids", "candidate_count"}
 _GENERATION_REQUIRED = {"measure", "sampling_method", "predeclared_cohort", "redraw_until_success", "cohort_manifest_ref",
                         "cohort_manifest_sha256", "candidate_provenance", "proposal_provenance", "fairship_configuration_id"}
-_FAIRSHIP_KEYS = {"status", "candidate_count", "valid_execution_count", "technical_failure_count", "physics_rejection_count",
-                  "accepted_candidate_count", "technical_failures", "physics_outcomes"}
+_FAIRSHIP_KEYS = {"status", "candidate_count", "valid_execution_count", "technical_failure_count", "endpoint_evaluated_count",
+                  "physics_rejection_count", "accepted_candidate_count", "technical_failures", "unevaluated_executions", "physics_outcomes"}
 _COHORT_KEYS = {"cohort_id", "candidate_ids", "predeclared", "redraw_until_success", "manifest_ref", "manifest_sha256",
                 "candidate_provenance", "proposal_provenance"}
 _PROPOSAL_KEYS = {"proposal_id", "proposal_version", "checkpoint_id"}
@@ -246,48 +283,66 @@ _CANDIDATE_KEYS = {"source_state_definition_id", "dataset_hash", "candidate_tabl
 _UTILITY_KEYS = {"status", "normalization", "support", "enrichment_vs_concentration", "ess", "ess_is_diagnostic_only", "empirical_utility_association"}
 _FIDELITY_KEYS = {"status", "fit_metric", "physical_space_diagnostics", "high_utility_region_occupancy", "two_sample_diagnostic",
                   "declared_target_measure", "comparison_target"}
+_PROVENANCE_KEYS = {"fairship_configuration_id", "geometry_tag", "source_state_definition_id",
+                    "downstream_endpoint_definition_id", "cohort_manifest_id"}
+_LINEAGE_AXES = {"source_state", "fs_sim_execution", "interaction_realization", "observation", "intermediate_Y_k_is_not_endpoint_B"}
 
 
-def _validate_fairship_summary(value: Mapping[str, Any], cohort_ids: Sequence[str] | None = None) -> None:
+def _validate_fairship_summary(value: Mapping[str, Any], cohort_ids: Sequence[str] | None = None,
+                               declared_endpoint_definition_id: str | None = None) -> None:
     if set(value) - _FAIRSHIP_KEYS:
         raise ValueError("unknown fairship_outcomes field")
     if value.get("status") not in {"not_run", "computed"}:
         raise ValueError("FairShip status must be not_run or computed")
     if value.get("status") != "computed":
         return
-    required = ("candidate_count", "valid_execution_count", "technical_failure_count",
-                "physics_rejection_count", "accepted_candidate_count", "technical_failures", "physics_outcomes")
+    required = ("candidate_count", "valid_execution_count", "technical_failure_count", "endpoint_evaluated_count",
+                "physics_rejection_count", "accepted_candidate_count", "technical_failures", "unevaluated_executions", "physics_outcomes")
     if any(field not in value for field in required):
         raise ValueError("computed FairShip outcomes require all count and record fields")
-    counts = tuple(value[field] for field in required[:5])
+    counts = tuple(value[field] for field in required[:6])
     if any(isinstance(item, bool) or not isinstance(item, int) or item < 0 for item in counts):
         raise ValueError("FairShip outcome counts must be non-negative integers")
     technical = value["technical_failures"]
+    unevaluated = value["unevaluated_executions"]
     physics = value["physics_outcomes"]
-    if not isinstance(technical, list) or not isinstance(physics, list):
+    if not isinstance(technical, list) or not isinstance(unevaluated, list) or not isinstance(physics, list):
         raise ValueError("FairShip outcome records must be lists")
-    technical_ids = [item.get("candidate_id") for item in technical]
-    physics_ids = [item.get("candidate_id") for item in physics]
-    if len(technical_ids) != len(set(technical_ids)) or len(physics_ids) != len(set(physics_ids)):
-        raise ValueError("FairShip outcome ids must be unique within each bucket")
-    if set(technical_ids) & set(physics_ids):
-        raise ValueError("technical and physics outcome buckets must be disjoint")
+    if any(not isinstance(item, Mapping) for item in technical + unevaluated + physics):
+        raise ValueError("FairShip outcome records must be mappings")
+    technical_ids = [_identifier(item.get("candidate_id"), "candidate_id") for item in technical]
+    unevaluated_ids = [_identifier(item.get("candidate_id"), "candidate_id") for item in unevaluated]
+    physics_ids = [_identifier(item.get("candidate_id"), "candidate_id") for item in physics]
+    all_ids = technical_ids + unevaluated_ids + physics_ids
+    if len(all_ids) != len(set(all_ids)):
+        raise ValueError("FairShip outcome ids must be unique and buckets disjoint")
+    if value["endpoint_evaluated_count"] != len(physics):
+        raise ValueError("endpoint_evaluated_count must match evaluated outcomes")
     if value["candidate_count"] != value["valid_execution_count"] + value["technical_failure_count"]:
         raise ValueError("candidate_count must equal valid plus technical executions")
-    if value["valid_execution_count"] != value["physics_rejection_count"] + value["accepted_candidate_count"]:
-        raise ValueError("valid_execution_count must equal physics rejection plus accepted counts")
-    if len(technical) != value["technical_failure_count"] or len(physics) != value["valid_execution_count"]:
+    if value["valid_execution_count"] != len(unevaluated) + value["endpoint_evaluated_count"]:
+        raise ValueError("valid_execution_count must equal unevaluated plus endpoint-evaluated executions")
+    if value["endpoint_evaluated_count"] != value["physics_rejection_count"] + value["accepted_candidate_count"]:
+        raise ValueError("endpoint_evaluated_count must equal physics rejection plus accepted counts")
+    if len(technical) != value["technical_failure_count"] or len(unevaluated) != value["valid_execution_count"] - value["endpoint_evaluated_count"] or len(physics) != value["endpoint_evaluated_count"]:
         raise ValueError("FairShip counts must match outcome records")
-    if cohort_ids is not None and set(technical_ids + physics_ids) != set(cohort_ids):
+    if cohort_ids is not None and set(all_ids) != set(cohort_ids):
         raise ValueError("FairShip outcome ids must resolve to the declared cohort manifest")
     for item in technical:
-        if set(item) != {"candidate_id", "reason", "lineage_refs"}:
+        if not isinstance(item, Mapping) or set(item) != {"candidate_id", "reason", "lineage_refs"}:
             raise ValueError("technical outcome has unknown or missing fields")
+        _validate_lineage_output(item["lineage_refs"], technical=True)
+    for item in unevaluated:
+        if not isinstance(item, Mapping) or set(item) != {"candidate_id", "endpoint_status", "lineage_refs"} or item["endpoint_status"] not in {"not_evaluated", "unavailable"}:
+            raise ValueError("unevaluated execution has unknown or invalid fields")
+        _validate_lineage_output(item["lineage_refs"], technical=False)
     for item in physics:
-        if set(item) != {"candidate_id", "outcome", "lineage_refs"} or item["outcome"] not in {"physics_rejection", "accepted_candidate"}:
+        if not isinstance(item, Mapping) or set(item) != {"candidate_id", "outcome", "endpoint_definition_id", "lineage_refs"} or item["outcome"] not in {"physics_rejection", "accepted_candidate"}:
             raise ValueError("physics outcome has unknown or invalid fields")
-        if not isinstance(item["lineage_refs"], Mapping):
-            raise ValueError("physics outcome must preserve lineage_refs")
+        _identifier(item["endpoint_definition_id"], "endpoint_definition_id")
+        if declared_endpoint_definition_id is None or item["endpoint_definition_id"] != declared_endpoint_definition_id:
+            raise ValueError("accepted/rejected outcomes require the declared endpoint definition")
+        _validate_lineage_output(item["lineage_refs"], technical=False, decision_required=True)
 
 
 def build_report(
@@ -308,6 +363,7 @@ def build_report(
     arms: dict[str, Any] = {}
     for arm in ARM_ORDER:
         report = _empty_arm(arm)
+        report["generation"]["fairship_configuration_id"] = config.fairship_configuration_id
         data = supplied.get(arm, {})
         if not isinstance(data, Mapping):
             raise TypeError(f"{arm} arm data must be a mapping")
@@ -322,9 +378,12 @@ def build_report(
                 raise ValueError(f"{arm} cohort must be predeclared")
             if cohort.get("redraw_until_success", False):
                 raise ValueError("redraw_until_success is forbidden")
-            for field in ("manifest_ref", "manifest_sha256"):
-                _nonempty(cohort.get(field), field)
-            candidate_ids = tuple(_nonempty(item, "candidate_id") for item in cohort.get("candidate_ids", ()))
+            _identifier(cohort.get("cohort_id"), "cohort_id")
+            _identifier(cohort.get("manifest_ref"), "manifest_ref")
+            _sha256(cohort.get("manifest_sha256"), "manifest_sha256")
+            candidate_ids = tuple(_identifier(item, "candidate_id") for item in cohort.get("candidate_ids", ()))
+            if not candidate_ids:
+                raise ValueError(f"{arm} predeclared cohort must contain candidate ids")
             if len(candidate_ids) != len(set(candidate_ids)):
                 raise ValueError(f"{arm} cohort contains duplicate candidate ids")
             candidate_provenance = cohort.get("candidate_provenance")
@@ -333,15 +392,18 @@ def build_report(
                 raise ValueError(f"{arm} cohort requires candidate provenance fields {_CANDIDATE_KEYS}")
             if not isinstance(proposal_provenance, Mapping) or set(proposal_provenance) != _PROPOSAL_KEYS:
                 raise ValueError(f"{arm} cohort requires proposal provenance fields {_PROPOSAL_KEYS}")
-            for field in _CANDIDATE_KEYS:
-                _nonempty(candidate_provenance.get(field), field)
+            if candidate_provenance.get("source_state_definition_id") != config.source_state_definition_id:
+                raise ValueError(f"{arm} candidate provenance state definition does not match config")
+            _nonempty(candidate_provenance.get("source_state_definition_id"), "source_state_definition_id")
+            _sha256(candidate_provenance.get("dataset_hash"), "dataset_hash")
+            _identifier(candidate_provenance.get("candidate_table_ref"), "candidate_table_ref")
             for field in ("proposal_id", "proposal_version"):
-                _nonempty(proposal_provenance.get(field), field)
+                _identifier(proposal_provenance.get(field), field)
             checkpoint_id = proposal_provenance.get("checkpoint_id")
             if arm == "Q_THETA":
-                _nonempty(checkpoint_id, "checkpoint_id")
+                _identifier(checkpoint_id, "checkpoint_id")
             elif checkpoint_id is not None:
-                _nonempty(checkpoint_id, "checkpoint_id")
+                _identifier(checkpoint_id, "checkpoint_id")
             report["generation"].update({
                 "predeclared_cohort": True,
                 "cohort_id": _nonempty(cohort.get("cohort_id"), "cohort_id"),
@@ -366,7 +428,7 @@ def build_report(
         if report["fairship_outcomes"].get("status") == "computed" and cohort is None:
             raise ValueError(f"{arm} computed FairShip outcomes require a predeclared cohort")
         if report["fairship_outcomes"].get("status") == "computed":
-            _validate_fairship_summary(report["fairship_outcomes"], report["generation"]["candidate_ids"])
+            _validate_fairship_summary(report["fairship_outcomes"], report["generation"]["candidate_ids"], config.downstream_endpoint_definition_id)
         if report["fairship_outcomes"].get("candidate_count") is not None and cohort is not None:
             if report["fairship_outcomes"]["candidate_count"] != len(report["generation"]["candidate_ids"]):
                 raise ValueError(f"{arm} FairShip count does not match declared cohort")
@@ -413,6 +475,18 @@ def validate_report(report: Mapping[str, Any]) -> None:
         raise ValueError("report has unknown or missing top-level fields")
     if report.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("unsupported benchmark report schema")
+    if set(report["provenance"]) != _PROVENANCE_KEYS or set(report["cohort_policy"]) != {"predeclared_before_fairship", "no_redraw_until_success"} or set(report["weight_policy"]) != {"physical_source_weight_field", "utility_multiplier_field", "distinct_objects"}:
+        raise ValueError("report policy/provenance schema is incomplete")
+    _identifier(report["provenance"]["fairship_configuration_id"], "fairship_configuration_id")
+    _identifier(report["provenance"]["geometry_tag"], "geometry_tag")
+    _identifier(report["provenance"]["source_state_definition_id"], "source_state_definition_id")
+    _identifier(report["provenance"]["cohort_manifest_id"], "cohort_manifest_id")
+    if report["cohort_policy"] != {"predeclared_before_fairship": True, "no_redraw_until_success": True}:
+        raise ValueError("cohort policy permits an invalid redraw or declaration mode")
+    if report["weight_policy"] != {"physical_source_weight_field": "physical_source_weight", "utility_multiplier_field": "utility_multiplier", "distinct_objects": True}:
+        raise ValueError("source and utility weights must remain distinct")
+    if report["lineage_axes"] != {"source_state": "declared input state and physical source weight", "fs_sim_execution": "execution health and technical censoring", "interaction_realization": "zero_or_more_realizations_per_execution", "observation": "measured detector/downstream evidence", "intermediate_Y_k_is_not_endpoint_B": True}:
+        raise ValueError("lineage policy was changed")
     if tuple(report.get("arms", {}).keys()) != ARM_ORDER:
         raise ValueError("report must contain P0, PU_DIRECT, Q_THETA in order")
     for arm in ARM_ORDER:
@@ -429,6 +503,8 @@ def validate_report(report: Mapping[str, Any]) -> None:
             raise ValueError(f"{arm} FairShip section does not match the standard schema")
         if value["generation"]["sampling_method"] != _SAMPLING_METHOD[arm]:
             raise ValueError(f"wrong sampling method for {arm}")
+        if value["arm_id"] != arm or value["generation"].get("measure") != arm:
+            raise ValueError(f"{arm} report arm identity was changed")
         if value["generation"].get("redraw_until_success"):
             raise ValueError("redraw_until_success is forbidden")
         if value["utility_tilt"].get("ess_is_diagnostic_only") is not True:
@@ -440,10 +516,36 @@ def validate_report(report: Mapping[str, Any]) -> None:
         target = "PU_DIRECT" if arm == "Q_THETA" else arm
         if value["proposal_fidelity"].get("comparison_target") != target:
             raise ValueError(f"{arm} proposal fidelity must compare against declared {target}")
+        if value["proposal_fidelity"].get("declared_target_measure") != target:
+            raise ValueError(f"{arm} declared target measure is invalid")
+        if value["generation"].get("predeclared_cohort"):
+            if value["generation"].get("fairship_configuration_id") != report["provenance"]["fairship_configuration_id"]:
+                raise ValueError("all arms must use the shared FairShip configuration identity")
+            _identifier(value["generation"].get("cohort_manifest_ref"), "cohort_manifest_ref")
+            _sha256(value["generation"].get("cohort_manifest_sha256"), "cohort_manifest_sha256")
+            candidate_ids = value["generation"].get("candidate_ids")
+            if not isinstance(candidate_ids, list) or not candidate_ids or len(candidate_ids) != len(set(candidate_ids)) or any(not isinstance(item, str) or not item for item in candidate_ids):
+                raise ValueError("predeclared cohorts require non-empty unique candidate ids")
+            candidate_provenance = value["generation"].get("candidate_provenance")
+            proposal_provenance = value["generation"].get("proposal_provenance")
+            if not isinstance(candidate_provenance, Mapping) or set(candidate_provenance) != _CANDIDATE_KEYS or candidate_provenance.get("source_state_definition_id") != report["provenance"]["source_state_definition_id"]:
+                raise ValueError("candidate provenance does not resolve to the declared source state")
+            _sha256(candidate_provenance.get("dataset_hash"), "dataset_hash")
+            _identifier(candidate_provenance.get("candidate_table_ref"), "candidate_table_ref")
+            if not isinstance(proposal_provenance, Mapping) or set(proposal_provenance) != _PROPOSAL_KEYS:
+                raise ValueError("proposal provenance is incomplete")
+            _identifier(proposal_provenance.get("proposal_id"), "proposal_id")
+            _identifier(proposal_provenance.get("proposal_version"), "proposal_version")
+            if arm == "Q_THETA":
+                _identifier(proposal_provenance.get("checkpoint_id"), "checkpoint_id")
+        elif any(value["generation"].get(field) is not None for field in ("cohort_manifest_ref", "cohort_manifest_sha256", "candidate_provenance", "proposal_provenance")):
+            raise ValueError("non-predeclared arm cannot carry cohort/provenance material")
+        if value["generation"].get("fairship_configuration_id") != report["provenance"]["fairship_configuration_id"]:
+            raise ValueError("all arms must use the shared FairShip configuration identity")
         if value["fairship_outcomes"].get("status") == "computed":
             if not value["generation"].get("predeclared_cohort"):
                 raise ValueError(f"{arm} computed FairShip outcomes require a predeclared cohort")
-        _validate_fairship_summary(value["fairship_outcomes"], value["generation"].get("candidate_ids"))
+        _validate_fairship_summary(value["fairship_outcomes"], value["generation"].get("candidate_ids"), report["provenance"].get("downstream_endpoint_definition_id"))
 
 
 __all__ = [
