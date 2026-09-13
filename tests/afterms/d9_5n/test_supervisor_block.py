@@ -10,6 +10,8 @@ from __future__ import annotations
 import time as time_module
 from pathlib import Path
 
+import pytest
+
 from ship_muon_bg.afterms.d9_5 import model_adapter as ma
 from ship_muon_bg.afterms.d9_5 import nightly_runner as nr
 
