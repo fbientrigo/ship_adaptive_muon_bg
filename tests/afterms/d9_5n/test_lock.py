@@ -81,6 +81,7 @@ def test_live_lock_with_real_child_process_refuses_second_start(tmp_path):
         proc.wait(timeout=5)
 
 
+@pytest.mark.local_env
 def test_pid_reuse_with_mismatched_start_time_is_not_treated_as_live(tmp_path):
     """A stale lock's pid may have been reused by an unrelated process after
     a reboot; process_start_time mismatch must catch this, not just pid
