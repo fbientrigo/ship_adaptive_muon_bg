@@ -15,6 +15,7 @@ def test_worker_script_exists_and_resolves():
     assert script.exists()
 
 
+@pytest.mark.local_env
 def test_python_executable_resolves_into_venv():
     """Required test 5: child process command uses `.venv\\Scripts\\python.exe`."""
 
@@ -98,6 +99,7 @@ def test_gpu_gate_module_never_issues_a_broad_kill():
     assert "/PID" in full_source
 
 
+@pytest.mark.local_env
 def test_terminate_pid_tree_is_pid_specific(tmp_path):
     """Required test 7/8: PID-specific ownership; a harmless dummy subprocess
     is terminated by PID, not by name, and no unrelated process is touched."""
@@ -114,6 +116,7 @@ def test_terminate_pid_tree_is_pid_specific(tmp_path):
             dummy.wait(timeout=10)
 
 
+@pytest.mark.local_env
 def test_enumerate_descendant_pids_finds_a_real_child(tmp_path):
     """Required test 7: PID-specific descendant enumeration via WMI, not by name."""
 
