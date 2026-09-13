@@ -42,5 +42,8 @@ jobs:
       - name: Run flow and lab tests on CPU
         run: python -m pytest -q -m "flow or lab"
 
-      - name: Run full suite (core + optional)
-        run: python -m pytest -q
+      # afterms includes a small set of workstation/integration checks that
+      # depend on local artifacts or Windows process semantics. They are
+      # explicitly marked local_env and are not portable CI gates.
+      - name: Run portable afterms suite
+        run: python -m pytest -q tests/afterms -m "not local_env"

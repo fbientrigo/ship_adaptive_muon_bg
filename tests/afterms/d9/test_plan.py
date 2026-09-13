@@ -19,6 +19,7 @@ def test_plan_parses_and_is_valid(plan):
     assert plan["status"] == "D9_PLAN_VALID"
 
 
+@pytest.mark.local_env
 def test_d7_d8_inputs_unchanged(plan):
     """Required test 35: D7/D8 input hashes remain unchanged."""
 

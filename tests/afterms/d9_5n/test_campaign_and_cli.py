@@ -94,6 +94,7 @@ def test_full_synthetic_multi_night_campaign_drains_queue_in_order_no_duplicate_
     assert not (nr.nightly_root(tmp_path) / "locks" / "supervisor.lock").exists()
 
 
+@pytest.mark.local_env
 def test_status_and_tail_never_write_any_file(tmp_path):
     init_result = _run_nightly_cli("init", artifact_root=tmp_path)
     assert init_result.returncode == 0, init_result.stderr
@@ -119,6 +120,7 @@ def test_status_and_tail_never_write_any_file(tmp_path):
     assert before_mtimes == after_mtimes
 
 
+@pytest.mark.local_env
 def test_init_via_cli_is_idempotent(tmp_path):
     first = _run_nightly_cli("init", artifact_root=tmp_path)
     assert first.returncode == 0, first.stderr
@@ -156,6 +158,7 @@ def test_no_broad_process_kill_mechanism_anywhere_in_source():
         assert forbidden not in cli_src
 
 
+@pytest.mark.local_env
 def test_abort_terminates_only_the_exact_recorded_pids(tmp_path):
     _run_nightly_cli("init", artifact_root=tmp_path)
 
@@ -204,6 +207,7 @@ def test_abort_requires_a_live_lock(tmp_path):
     assert result.returncode != 0
 
 
+@pytest.mark.local_env
 def test_detached_process_survives_conceptual_parent_exit_and_is_pid_terminable(tmp_path):
     """Proves the exact OS-level mechanism `start` uses (DETACHED_PROCESS |
     CREATE_NEW_PROCESS_GROUP, no wait()) genuinely detaches on this Windows
@@ -231,6 +235,7 @@ def test_detached_process_survives_conceptual_parent_exit_and_is_pid_terminable(
         assert not nr.is_pid_alive(proc.pid)
 
 
+@pytest.mark.local_env
 def test_canary_artifact_root_never_touches_production_artifact_root(tmp_path):
     canary_root = tmp_path / "afterms_d9_5_nightly_canary_v0"
     production_root = REPO_ROOT / "artifacts" / "afterms_d9_5_model_family_arena_v0"

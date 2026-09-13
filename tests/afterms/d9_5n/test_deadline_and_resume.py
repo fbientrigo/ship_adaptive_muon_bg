@@ -11,6 +11,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from ship_muon_bg.afterms.d9 import runner as d9runner
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -32,6 +34,7 @@ def test_fit_help_documents_deadline_timestamp_flag():
     assert "--deadline-timestamp" in result.stdout
 
 
+@pytest.mark.local_env
 def test_fit_dry_run_unchanged_when_deadline_timestamp_omitted(tmp_path):
     result = _run_cli(
         "fit", "--track-id", "TRK_PDG13_UW_ID", "--model-family", "NF_AC", "--seed", "20260720",
@@ -41,6 +44,7 @@ def test_fit_dry_run_unchanged_when_deadline_timestamp_omitted(tmp_path):
     assert '"executed": false' in result.stdout
 
 
+@pytest.mark.local_env
 def test_fit_dry_run_unchanged_when_deadline_timestamp_present(tmp_path):
     """Regression guard: passing --deadline-timestamp without --execute must
     behave identically to omitting it (no scientific-behavior change from
