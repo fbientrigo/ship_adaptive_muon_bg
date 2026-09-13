@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "scripts" / "run_afterms_d9_5_model_family_arena.py"
 
@@ -24,6 +26,7 @@ def _run(*args, artifact_root=None):
     )
 
 
+@pytest.mark.local_env
 def test_audit_dry_run_performs_no_scan_and_writes_nothing(tmp_path):
     result = _run("audit", "--dry-run", artifact_root=tmp_path)
     assert result.returncode == 0, result.stderr
@@ -31,6 +34,7 @@ def test_audit_dry_run_performs_no_scan_and_writes_nothing(tmp_path):
     assert list(tmp_path.rglob("*")) == []
 
 
+@pytest.mark.local_env
 def test_plan_dry_run_shows_workload_table_and_fits_nothing(tmp_path):
     result = _run("plan", "--dry-run", artifact_root=tmp_path)
     assert result.returncode == 0, result.stderr
@@ -62,6 +66,7 @@ def test_fit_deterministic_family_rejects_seed(tmp_path):
     assert "deterministic" in result.stderr
 
 
+@pytest.mark.local_env
 def test_fit_without_execute_performs_no_fit(tmp_path):
     result = _run(
         "fit", "--track-id", "TRK_PDG13_UW_ID", "--model-family", "GAUSS_DIAG", artifact_root=tmp_path,
@@ -71,6 +76,7 @@ def test_fit_without_execute_performs_no_fit(tmp_path):
     assert list(tmp_path.rglob("*")) == []
 
 
+@pytest.mark.local_env
 def test_status_never_writes_artifacts(tmp_path):
     before = list(tmp_path.rglob("*"))
     result = _run("status", artifact_root=tmp_path)
