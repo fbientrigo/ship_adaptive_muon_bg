@@ -4,7 +4,7 @@
   "fairship_configuration_id": "fairship-f73a305-try2026-straw10-v0",
   "geometry_tag": "TRY_2026",
   "source_state_definition_id": "afterms_5d_nf_v0",
-  "downstream_endpoint_definition_id": null,
+  "downstream_endpoint_definition_id": "fairship_sbt_selection_v0@sha256:1ac14cb360d7500eb652ede256b17b7cf12aa384e43fc3101e6e49eaa0eb07f2",
   "cohort_manifest_id": "predeclared_cohorts_v0",
   "no_redraw_until_success": true
 }
