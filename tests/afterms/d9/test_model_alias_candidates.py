@@ -177,6 +177,7 @@ def test_alias_resolution_never_writes_the_training_config_file():
     assert before == after
 
 
+@pytest.mark.local_env
 def test_frozen_d7_d8_source_hashes_unchanged(plan):
     mismatches = d9plan.verify_source_hashes(plan, REPO_ROOT)
     assert mismatches == []
