@@ -91,6 +91,7 @@ def test_no_hpo_command_is_active_yet():
     assert set(subparsers_action.choices.keys()) == {"gpu-gate", "status"}
 
 
+@pytest.mark.local_env
 def test_frozen_d7_d8_inputs_hashes_unchanged():
     """Required test 18: frozen input hashes remain unchanged by this gate's
     own presence (re-verifies the same D8 source hashes D9's own
