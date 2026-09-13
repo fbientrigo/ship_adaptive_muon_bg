@@ -197,6 +197,7 @@ def test_cpu_thread_env_vars_are_set_on_child(
         assert captured_envs[0][key] == value
 
 
+@pytest.mark.local_env
 def test_keep_awake_is_attempted_recorded_and_undone(
     tmp_path, tiny_scout_report, tiny_shard_dir, tiny_nf_execution_policy,
     tiny_nf_optimizer_settings, tiny_evaluation_policy,
