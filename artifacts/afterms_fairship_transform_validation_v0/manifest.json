@@ -1,0 +1,123 @@
+{
+  "blocking_reason": "The references replay the asserted transform and match their TGeo anchors, but do not independently locate the after-MS plane in the FairShip frame; coordinate_physics_verified remains false.",
+  "checks": {
+    "common_frame_anchor": false,
+    "independent_reference_states": true,
+    "mechanical_replay": true,
+    "pinned_identity": true
+  },
+  "decision": "BLOCKED",
+  "fairship_commit": "f73a305a86468c320665cf41b73582ce7e533181",
+  "fairship_configuration": {
+    "command_signature": [
+      [
+        "eminem_importer.py",
+        "<input>",
+        "--output",
+        "<value>",
+        "--format",
+        "ttree",
+        "--tree-name",
+        "converted_ntuple",
+        "--config",
+        "<value>"
+      ],
+      [
+        "run_simScript.py",
+        "--ttree",
+        "-f",
+        "<value>",
+        "-o",
+        "<value>",
+        "-n",
+        "<value>",
+        "-s",
+        "<value>",
+        "-r",
+        "<value>",
+        "--tag",
+        "connector",
+        "--reproducible",
+        "--validation",
+        "--shieldName",
+        "TRY_2026",
+        "--strawDesign",
+        "10",
+        "--noSND"
+      ]
+    ],
+    "noSND": true,
+    "reproducible": true,
+    "shieldName": "TRY_2026",
+    "strawDesign": "10",
+    "validation": true
+  },
+  "geometry_id": "7588f2e62432574ed2487d6c71aadc4d03758c0c7e6b03ce3699079e0f11661a",
+  "references": [
+    {
+      "candidate_id": "afterms-sample-a45fc522-row-25740",
+      "coordinate_physics_verified": false,
+      "geometry_anchor": "fairship_connector_v0/p3_row_25740/geo_connector.root",
+      "geometry_anchor_ok": true,
+      "geometry_anchor_sha256": "e4488556a561da00fac5c29d0548a383f3977b928c2cbcfdd39e95f483cbf407",
+      "geometry_id": "7588f2e62432574ed2487d6c71aadc4d03758c0c7e6b03ce3699079e0f11661a",
+      "initial_material": "iron",
+      "initial_volume": "Magn7_MiddleMagR",
+      "mechanical_replay_ok": true,
+      "reference_directory": "fairship_connector_v0/p3_row_25740",
+      "sim_root": "fairship_connector_v0/p3_row_25740/sim_connector.root",
+      "sim_root_sha256": "6844aad0d989718d1ecb65092c3429dac1937fde943ff0176a4f5684ce9ca791",
+      "source_state": {
+        "sample_file_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+        "sample_row_index": 25740,
+        "source_dataset_hash": "44336e8e3629149c813026cf21334c6fc2db75ae9ffa12e78ed2b064f3a54579",
+        "source_kind": "empirical_post_shield_row"
+      }
+    },
+    {
+      "candidate_id": "afterms-sample-a45fc522-row-32029",
+      "coordinate_physics_verified": false,
+      "geometry_anchor": "fairship_connector_v0/p3_row_32029/geo_connector.root",
+      "geometry_anchor_ok": true,
+      "geometry_anchor_sha256": "e2b39ccc23aa5eaa113d7388fa95f50799e4fec63a3aa9aa228ce4aa27b434af",
+      "geometry_id": "7588f2e62432574ed2487d6c71aadc4d03758c0c7e6b03ce3699079e0f11661a",
+      "initial_material": "iron",
+      "initial_volume": "Magn7_MiddleMagL",
+      "mechanical_replay_ok": true,
+      "reference_directory": "fairship_connector_v0/p3_row_32029",
+      "sim_root": "fairship_connector_v0/p3_row_32029/sim_connector.root",
+      "sim_root_sha256": "199e926c77183930a09ca87404a0c3ccea282589f52f297663289d2cbc5ed052",
+      "source_state": {
+        "sample_file_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+        "sample_row_index": 32029,
+        "source_dataset_hash": "44336e8e3629149c813026cf21334c6fc2db75ae9ffa12e78ed2b064f3a54579",
+        "source_kind": "empirical_post_shield_row"
+      }
+    }
+  ],
+  "regression_check": "tests/test_afterms_fairship_transform_validation.py",
+  "reproduction": {
+    "reference_dirs": [
+      "fairship_connector_v0/p3_row_25740",
+      "fairship_connector_v0/p3_row_32029"
+    ],
+    "script": "scripts/validate_afterms_fairship_transform.py",
+    "tgeo_audit_root": "artifacts/fairship_tgeo_audit_v0"
+  },
+  "schema_version": "afterms_fairship_transform_validation_v0",
+  "tgeo_audit_manifest_sha256": "d1418a4d8c110d6f30f446cf63631a5f52cf2a443219c548dd8284588aae7183",
+  "tgeo_audit_root": "artifacts/fairship_tgeo_audit_v0",
+  "transform": {
+    "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+    "status": "PROVISIONAL",
+    "x_to_m": 1.0,
+    "x_unit": "m",
+    "y_to_m": 1.0,
+    "y_unit": "m",
+    "z_offset_m": 2.5916,
+    "z_rule": "affine_declared_z",
+    "z_scale": 1.0,
+    "z_value_m": null
+  },
+  "u0_label_acquisition_permitted": false
+}

@@ -27,5 +27,8 @@ artifacts/utility_guided_fairship_pilot_v0/*
 !artifacts/fairship_tgeo_audit_v0/candidate_audit.csv
 !artifacts/fairship_tgeo_audit_v0/trajectory_boundaries.csv
 !artifacts/fairship_tgeo_audit_v0/detector_observations.csv
+!artifacts/afterms_fairship_transform_validation_v0/
+!artifacts/afterms_fairship_transform_validation_v0/README.md
+!artifacts/afterms_fairship_transform_validation_v0/manifest.json
 graphify-out/cache
 data/shards/
