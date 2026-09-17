@@ -40,6 +40,9 @@ provenance, and separate bookkeeping.  For the mechanical runs, the transform
 `afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0` maps
 `z_out_m = z_declared_m + 2.5916`; it is `PROVISIONAL`, not a statement that
 the after-MS plane and this FairShip plane are physically identified.
+LEGACY EVIDENCE: this transform is the historical `.pkl`-connector interface
+and must not define the canonical post-MS `SourceState`; see
+`docs/decisions/canonical_post_ms_source_state.md` and #43.
 
 ## WHAT FAIRSHIP RECEIVED
 
@@ -110,10 +113,11 @@ seed does not make the DIS realization bit-reproducible.
 
 ## WHAT REMAINS OPEN
 
-Coordinate closure is tracked in issue #27; physical reweighting for generated
-muons in #24; the updated MuonDIS adapter in #25; and operational endpoint B in
-#26.  This work does not estimate a background rate, natural DIS probability,
-utility calibration, veto efficiency, or a final downstream label.
+Coordinate closure is now tracked in #43 (`#27` closed as `not planned`, not as
+physically verified); physical reweighting for generated muons in #24; the
+updated MuonDIS adapter in #25; and operational endpoint B in #26.  This work
+does not estimate a background rate, natural DIS probability, utility
+calibration, veto efficiency, or a final downstream label.
 
 ## CURRENT A VS FUTURE B
 
@@ -125,9 +129,10 @@ EvaluationBundle` seam; no B compatibility is claimed or implemented here.
 
 ## NEXT SCIENTIFIC STEP
 
-Validate the after-MS coordinate transform against a documented shared frame,
-then define the physical reweighting and a versioned downstream endpoint before
-using these artifacts to update physical utility.
+Freeze a geometry-derived post-MS scoring surface (`Sigma_postMS`) and
+`SourceState` schema and verify round-trip reinjection per #43, then define
+the physical reweighting and a versioned downstream endpoint before using
+these artifacts to update physical utility.
 
 ## ARTIFACT MAP
 
