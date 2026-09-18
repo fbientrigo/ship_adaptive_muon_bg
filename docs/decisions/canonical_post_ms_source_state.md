@@ -39,7 +39,9 @@ only until #43 lands the actual schema/round-trip.
   ```
 
   #27 is **CLOSED as `not planned`**, not as physically verified — closing it
-  removed a blocker, it did not supply an answer.
+  removed a blocker, it did not supply an answer. The historical `.pkl`
+  coordinate mapping itself **remains unresolved**; it is simply no longer a
+  gate for the canonical thesis pipeline or canonical U0 label acquisition.
 
 ## VERIFIED
 
@@ -48,8 +50,10 @@ FairShip:
 
 - GitHub: #27 is `CLOSED` / `NOT_PLANNED`; #43 is `OPEN` and is the P0 gate;
   #41 points from #27 to #43; #32 is `OPEN`, downstream of #43.
-- `artifacts/fairship_connector_v0/summary.json` records
-  `"coordinate_physics_verified": false` for every P0/P1/P3 run so far.
+- `artifacts/fairship_connector_v0/summary.json` records its single
+  `coordinate_transform` block as `"status": "PROVISIONAL"` /
+  `"coordinate_physics_verified": false`; this is the connector-level
+  transform status, not a claim independently checked per P0/P1/P3 run.
 - `src/ship_muon_bg/adapters/fairship.py:273` returns
   `"coordinate_physics_verified": False` alongside `coordinate_transform_status`
   on every mechanical-injection check — the transform has never been marked
@@ -94,7 +98,18 @@ memory — see AGENT_POLICY §5.
 5. Empirical round-trip equivalence: full FairShip event -> capture at
    `Sigma_postMS` -> exact reinjection -> downstream FairShip, compared against
    the un-cut continuation. FairShip/GEANT4 remains the final oracle for this
-   comparison.
+   comparison. **This is not event-by-event downstream equality** —
+   FairShip/GEANT4 downstream physics is stochastic, so the round-trip splits
+   into two layers: (a) a deterministic/mechanical check that the captured
+   state is faithfully serialized and reinjected (position/momentum/PDG/
+   charge/time/config identity, lineage to downstream `MCTrack`/detector
+   points); (b) a stochastic check comparing the *conditional distribution*
+   `P(Y | S=s, native continuation, config C)` against
+   `P(Y | S=s, reinjection, config C)` over repeated FairShip executions from
+   the same `SourceState` — those repeats are conditional realizations, not
+   new P0 draws. No universal numerical acceptance threshold is fixed here;
+   the comparison is not to be tuned until a single-muon interface appears to
+   pass.
 
 ## Constraints that this decision does not change
 
@@ -110,15 +125,22 @@ memory — see AGENT_POLICY §5.
   is an intermediate project endpoint; `Y^(k) != B`, and nothing here claims
   otherwise.
 
-## LEGACY EVIDENCE
+## LEGACY VALIDATION RECORD
 
-`artifacts/afterms_fairship_transform_validation_v0/` (published by PR #42)
-tested the historical `.pkl`-based dataset connector against the `+2.5916 m`
-transform. Its `u0_label_acquisition_permitted: false` / `common_frame_anchor:
-false` result is historically truthful and is **not rewritten**, but its scope
-is now legacy: it validates a connector this decision does not use as the
-canonical interface. It is no longer the gate for `SourceState` generation —
-see #43.
+`artifacts/afterms_fairship_transform_validation_v0/` is published on PR #42,
+which is **OPEN and unmerged** — this artifact is not part of the integrated
+branch unless and until #42 is merged. It tested the historical `.pkl`-based
+dataset connector against the `+2.5916 m` transform. Its
+`u0_label_acquisition_permitted: false` / `common_frame_anchor: false` result
+is **not rewritten**, but it is a legacy/mechanical validation record, not
+strong verified evidence of a physical shared-frame mapping: the validator has
+open review limitations (sidecar state not fully bound to the audited ROOT
+state; the common-frame gate can depend on self-reported
+`coordinate_physics_verified`; clean-checkout replay does not contain all
+required reference artifacts). Its BLOCKED result remains historically useful,
+but its scope is now legacy — it validates a connector this decision does not
+use as the canonical interface, and it is no longer the gate for `SourceState`
+generation. See #43.
 
 ## Next scientific action for #43
 

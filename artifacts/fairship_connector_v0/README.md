@@ -113,8 +113,10 @@ seed does not make the DIS realization bit-reproducible.
 
 ## WHAT REMAINS OPEN
 
-Coordinate closure is now tracked in #43 (`#27` closed as `not planned`, not as
-physically verified); physical reweighting for generated muons in #24; the
+The historical `.pkl` coordinate mapping remains unresolved and is no longer
+a gate for the canonical thesis pipeline (`#27` closed as `not planned`, not
+as physically verified); #43 defines the replacement canonical post-MS
+interface. Physical reweighting for generated muons in #24; the
 updated MuonDIS adapter in #25; and operational endpoint B in #26.  This work
 does not estimate a background rate, natural DIS probability, utility
 calibration, veto efficiency, or a final downstream label.
