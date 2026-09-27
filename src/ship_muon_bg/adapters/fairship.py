@@ -222,9 +222,16 @@ def _ttree_config() -> dict[str, Any]:
 
 
 def inspect_root_output(root_path: Path | str, expected: CandidateInjectionRecord,
-                        transform: CoordinateTransformConfig, *, atol: float = 1e-6,
+                        transform: CoordinateTransformConfig, *, event_index: int = 0,
+                        atol: float = 1e-6,
                         fairship_dir: Path | str | None = None) -> dict[str, Any]:
-    """Read cbmsim and falsify the first injected MCTrack if it differs."""
+    """Read one cbmsim event and falsify its injected primary if it differs.
+
+    The event index binds each requested candidate to its corresponding FairShip
+    event. Multi-candidate connector runs must inspect every executed candidate.
+    """
+    if isinstance(event_index, bool) or not isinstance(event_index, int) or event_index < 0:
+        raise ValueError("event_index must be a non-negative int")
     try:
         import ROOT  # type: ignore
         import shipunit as u  # type: ignore
@@ -249,11 +256,16 @@ def inspect_root_output(root_path: Path | str, expected: CandidateInjectionRecor
     tree = file_handle.Get("cbmsim")
     if not tree or not tree.GetBranch("MCTrack"):
         raise TechnicalFailure("cbmsim or MCTrack branch is missing")
-    if int(tree.GetEntries()) < 1 or tree.GetEntry(0) <= 0:
-        raise TechnicalFailure("cbmsim has no readable first event")
+    entries = int(tree.GetEntries())
+    if event_index >= entries or tree.GetEntry(event_index) <= 0:
+        raise TechnicalFailure(
+            f"cbmsim has no readable event {event_index} for candidate {expected.candidate_id}"
+        )
     tracks = getattr(tree, "MCTrack", None)
     if tracks is None or len(tracks) < 1:
-        raise TechnicalFailure("first cbmsim event has no MCTrack")
+        raise TechnicalFailure(
+            f"cbmsim event {event_index} has no MCTrack for candidate {expected.candidate_id}"
+        )
     track = tracks[0]
     x, y, z = transform.apply(expected)
     observed = {
@@ -268,12 +280,27 @@ def inspect_root_output(root_path: Path | str, expected: CandidateInjectionRecor
     if observed["pdg_id"] != intended["pdg_id"]:
         mismatches.append("pdg_id")
     if mismatches:
-        raise TechnicalFailure(f"first MCTrack differs from injected state: {mismatches}")
-    return {"status": "verified", "mechanical_injection_verified": True,
-            "coordinate_physics_verified": False, "coordinate_transform_status": transform.status,
-            "root_version": ROOT.gROOT.GetVersion(), "tree": "cbmsim",
-            "branches": [branch.GetName() for branch in tree.GetListOfBranches()],
-            "entries": int(tree.GetEntries()), "first_mctrack": observed, "intended": intended}
+        raise TechnicalFailure(
+            f"MCTrack for candidate {expected.candidate_id} at event {event_index} "
+            f"differs from injected state: {mismatches}"
+        )
+    result = {
+        "status": "verified",
+        "mechanical_injection_verified": True,
+        "coordinate_physics_verified": False,
+        "coordinate_transform_status": transform.status,
+        "root_version": ROOT.gROOT.GetVersion(),
+        "tree": "cbmsim",
+        "branches": [branch.GetName() for branch in tree.GetListOfBranches()],
+        "entries": entries,
+        "candidate_id": expected.candidate_id,
+        "event_index": event_index,
+        "mctrack": observed,
+        "intended": intended,
+    }
+    if event_index == 0:
+        result["first_mctrack"] = observed
+    return result
 
 
 class FairShipTTreeConnector:
@@ -347,8 +374,24 @@ class FairShipTTreeConnector:
         verification: dict[str, Any] = {"status": "technical_failure", "technical_failures": failures}
         if not failures and inspect:
             try:
-                verification = inspect_root_output(sim_root, candidates[0], transform,
-                                                   fairship_dir=self.fairship_dir)
+                executed_candidates = candidates[:min(n_events, len(candidates))]
+                if not executed_candidates:
+                    raise TechnicalFailure("no candidate event was requested for inspection")
+                candidate_verifications = [
+                    inspect_root_output(
+                        sim_root, candidate, transform, event_index=event_index,
+                        fairship_dir=self.fairship_dir,
+                    )
+                    for event_index, candidate in enumerate(executed_candidates)
+                ]
+                verification = dict(candidate_verifications[0])
+                verification["candidate_verifications"] = candidate_verifications
+                verification["verified_candidate_count"] = len(candidate_verifications)
+                verification["expected_candidate_count"] = len(executed_candidates)
+                verification["mechanical_injection_verified"] = all(
+                    item.get("mechanical_injection_verified") is True
+                    for item in candidate_verifications
+                )
             except (TechnicalFailure, OSError, ValueError) as exc:
                 failures.append(str(exc))
                 verification = {"status": "technical_failure", "technical_failures": failures}
