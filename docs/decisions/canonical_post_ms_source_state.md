@@ -113,10 +113,20 @@ memory — see AGENT_POLICY §5.
 
 ## Constraints that this decision does not change
 
-- `SHIP-EMPIRICAL-FS-SIM-CONTRACT-V0-SOURCE` remains authoritative for
-  empirical semantics (`SourceState`, `FSSimExecution`, `DISRealization` where
-  identifiable, `Candidate`, `StageDecision`, aggregates) and is not altered by
-  this architecture change.
+- For a clean repository checkout, the normative implementation contract for
+  lineage/tagging semantics is `docs/contracts/tagging_contract_v0.md`, backed
+  by the canonical entities in `src/ship_muon_bg/entities/`. In that
+  repository-local vocabulary the lineage nodes are `FSSimExecution`,
+  interaction-neutral `InteractionRealization`, `ReconstructedCandidate`,
+  and `StageDecision`; current Muon DIS is an `interaction_type`, not a
+  DIS-specific canonical entity.
+- The project-level source
+  `SHIP-EMPIRICAL-FS-SIM-CONTRACT-V0-SOURCE` remains the higher-level
+  scientific authority when available in the thesis project context, but it is
+  not stored in this repository and therefore is not an inspectable dependency
+  for implementing #43. Repository code must follow the repository-local
+  contract above and must not reintroduce superseded `DISRealization` /
+  `Candidate` entity names.
 - Technical failure is never a physics negative.
 - Repeated FairShip executions from one `SourceState` are conditional repeats,
   not new P0 draws.
