@@ -1,5 +1,21 @@
 # Agent Instructions
 
+## Current scientific gate
+
+Canonical checkout path: `~/thesis/ship_adaptive_muon_bg`. Authoritative
+integration base: `origin/integration/sprint1-complete` (a working branch may
+temporarily be checked out there). The active P0 gate chain is
+`#43 (freeze canonical post-MS SourceState + round-trip) -> #32 (train U0) ->
+adaptive loop`. The historical `.pkl` coordinate mapping remains unresolved
+and is no longer a gate for the canonical thesis pipeline; #43 defines the
+replacement canonical post-MS interface. #27 is closed as `not planned` — that
+removed a blocker, it did not answer the coordinate question — and no longer
+gates the canonical thesis pipeline or canonical U0 label acquisition. The
+legacy transforms `+2.5916 m` (after-MS-to-FairShip), `+70.845 m` (MuonBack),
+and `-68.500 m` (M&M importer) are historical code paths only and must not be
+combined into or treated as the canonical `SourceState` interface. See
+`docs/decisions/canonical_post_ms_source_state.md`.
+
 ## Running D9-5 Gate D nightly GPU training blocks
 
 Gate D (the six-run NF_AC production arena, `configs/afterms/d9_5_model_family_arena_v0.json`)
