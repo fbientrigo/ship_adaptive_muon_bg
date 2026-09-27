@@ -393,3 +393,28 @@ def test_queue_loop_job13_failure_clears_active_job_and_pid_and_marks_failed(tmp
     assert queue_state["active_job"] is None
     assert queue_state["pid"] is None
     assert "13_build_nightly_report" in queue_state["failed_jobs"]
+
+
+
+def test_shard_validation_fails_when_manifest_declares_missing_files(tmp_path):
+    shard_dir = tmp_path / "shards"
+    job_dir = tmp_path / "job"
+    shard_dir.mkdir()
+    manifest = {
+        "shards": [
+            {
+                "npy_file": "missing.npy",
+                "indices_file": "missing_indices.npy",
+                "row_count": 10,
+            }
+        ]
+    }
+    (shard_dir / "shard_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    args = _Args(tmp_path / "artifacts", shard_dir)
+
+    with pytest.raises(FileNotFoundError, match="missing declared artifact"):
+        queue_mod.run_validate_afterms_shards(args, str(job_dir))
+
+    metrics = json.loads((job_dir / "metrics.json").read_text())
+    assert metrics["valid"] is False
+    assert sorted(metrics["missing_files"]) == ["missing.npy", "missing_indices.npy"]
