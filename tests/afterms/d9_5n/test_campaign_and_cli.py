@@ -11,10 +11,12 @@ test data and not a GPU run.
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 import time as time_module
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -247,3 +249,66 @@ def test_canary_artifact_root_never_touches_production_artifact_root(tmp_path):
     assert (nr.nightly_root(canary_root) / "run_queue.json").exists()
     if before:
         assert sorted(production_root.rglob("*")) == before
+
+
+
+def _load_nightly_cli_module():
+    spec = importlib.util.spec_from_file_location("nightly_cli_issue45", NIGHTLY_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_start_campaign_initializes_fresh_root_before_spawning(tmp_path, monkeypatch):
+    module = _load_nightly_cli_module()
+    events = []
+
+    monkeypatch.setattr(
+        module.nr,
+        "init_nightly_runner",
+        lambda artifact_root, repo_root=None: events.append("init") or {"action": "initialized"},
+    )
+    monkeypatch.setattr(module.nr, "_read_json_if_exists", lambda _path: None)
+    monkeypatch.setattr(module.nr, "reconcile_queue_and_persist", lambda _root: [])
+    monkeypatch.setattr(module.nr, "determine_current_run", lambda _items, _root: None)
+
+    class _Proc:
+        pid = 12345
+
+    def fake_popen(*_args, **_kwargs):
+        events.append("spawn")
+        return _Proc()
+
+    monkeypatch.setattr(module.subprocess, "Popen", fake_popen)
+    args = SimpleNamespace(
+        artifact_root=tmp_path,
+        python_exe=Path(sys.executable),
+        device="cpu",
+        duration_hours=8.0,
+        soft_stop_hours=7.5,
+    )
+
+    assert module.cmd_start_campaign(args) == 0
+    assert events[:2] == ["init", "spawn"]
+
+
+def test_abort_preserves_lock_when_child_termination_cannot_be_verified(tmp_path, monkeypatch):
+    module = _load_nightly_cli_module()
+    lock_data = {"pid": 101, "active_run_id": "run-1", "block_id": "block-1"}
+    released = []
+
+    monkeypatch.setattr(module.nr, "_read_json_if_exists", lambda _path: lock_data)
+    monkeypatch.setattr(module.nr, "is_lock_live", lambda _data: True)
+    monkeypatch.setattr(module.nr, "find_active_child_pid", lambda *_args: 202)
+    monkeypatch.setattr(module.nr, "is_pid_alive", lambda pid: pid in {101, 202})
+    monkeypatch.setattr(module.nr, "terminate_pid", lambda _pid: False)
+    monkeypatch.setattr(
+        module.nr,
+        "force_release_lock_after_abort",
+        lambda _path: released.append(True),
+    )
+
+    args = SimpleNamespace(artifact_root=tmp_path)
+    assert module.cmd_abort(args) == 4
+    assert released == []

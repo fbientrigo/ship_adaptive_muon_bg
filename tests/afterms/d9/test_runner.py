@@ -270,3 +270,10 @@ def test_train_only_preprocessing_fit(tmp_path):
     fitted_mean = np.array(preprocessing["fitted_state"]["mean"])
     train_only_mean = np.mean(train_raw[:, :5], axis=0)
     np.testing.assert_allclose(fitted_mean, train_only_mean, atol=1e-6)
+
+
+
+def test_resume_stale_count_continues_patience_from_best_epoch():
+    assert runner._stale_epochs_at_resume(0, None) == 0
+    assert runner._stale_epochs_at_resume(5, 5) == 0
+    assert runner._stale_epochs_at_resume(5, 3) == 2

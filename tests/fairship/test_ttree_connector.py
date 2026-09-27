@@ -62,6 +62,42 @@ def test_dry_run_writes_rows_and_required_artifacts(tmp_path: Path, monkeypatch)
     assert json.loads((tmp_path / "artifacts" / "bookkeeping.json").read_text())["ttree_w"] == [1.0]
 
 
+def test_multi_candidate_run_verifies_every_executed_event(tmp_path: Path, monkeypatch) -> None:
+    records = [
+        CandidateInjectionRecord.generated("c0", px=1, py=2, pz=3, x=4, y=5, z=6),
+        CandidateInjectionRecord.generated("c1", px=7, py=8, pz=9, x=10, y=11, z=12),
+    ]
+    monkeypatch.setattr(
+        "ship_muon_bg.adapters.fairship.subprocess.run",
+        lambda *args, **kwargs: type(
+            "Completed", (), {"returncode": 0, "stdout": "", "stderr": ""}
+        )(),
+    )
+    seen = []
+
+    def inspect(_root, expected, _transform, *, event_index=0, **_kwargs):
+        seen.append((expected.candidate_id, event_index))
+        return {
+            "status": "verified",
+            "mechanical_injection_verified": True,
+            "entries": 2,
+            "candidate_id": expected.candidate_id,
+            "event_index": event_index,
+        }
+
+    monkeypatch.setattr("ship_muon_bg.adapters.fairship.inspect_root_output", inspect)
+    result = FairShipTTreeConnector(tmp_path / "FairShip").run(
+        records, tmp_path / "artifacts"
+    )
+
+    assert result.ok
+    assert seen == [("c0", 0), ("c1", 1)]
+    assert result.verification["verified_candidate_count"] == 2
+    assert result.verification["expected_candidate_count"] == 2
+    assert result.verification["mechanical_injection_verified"] is True
+    assert [item["candidate_id"] for item in result.verification["candidate_verifications"]] == ["c0", "c1"]
+
+
 def test_nonzero_importer_is_technical_failure_not_physics_negative(tmp_path: Path, monkeypatch) -> None:
     def fake_run(command, **kwargs):
         return type("Completed", (), {"returncode": 2, "stdout": "", "stderr": "bad ROOT"})()

@@ -433,12 +433,33 @@ def run_validate_afterms_shards(args, job_dir):
             "row_count": shard["row_count"],
         })
         
+    missing_files = []
+    for item in shards_checked:
+        if not item["exists"]:
+            missing_files.append(item["npy_file"])
+        if not item["indices_exists"]:
+            missing_files.append(
+                next(
+                    shard["indices_file"]
+                    for shard in manifest.get("shards", [])
+                    if shard["npy_file"] == item["npy_file"]
+                )
+            )
+
     with open(os.path.join(job_dir, "metrics.json"), "w") as f:
         json.dump({
             "manifest_checked": True,
             "shards_checked": shards_checked,
             "total_shards": len(shards_checked),
+            "valid": not missing_files,
+            "missing_files": missing_files,
         }, f, indent=2)
+
+    if missing_files:
+        raise FileNotFoundError(
+            "Shard validation failed; missing declared artifact(s): "
+            + ", ".join(sorted(missing_files))
+        )
 
 
 def run_preprocessing_roundtrip_and_plots(args, job_dir):
@@ -1228,15 +1249,16 @@ def build_final_nightly_report(args, git_commit, target_hashes):
             with open(metrics_path, "r") as f:
                 job_metrics[name] = json.load(f)
                 
-    # Detect memory retention
-    possible_memory_retention = False
-    # Check job 12 memory
+    # Job 12 runs the same tiny smoke in two independent subprocesses. Its
+    # evidence is therefore process-footprint/release evidence, not an
+    # in-process leak detector. Preserve the measured payload verbatim rather
+    # than inventing a retention boolean from model-output differences.
     job12_data = job_metrics.get("12_memory_release_repeat_smoke")
-    if job12_data:
-        m1 = job12_data.get("identity_standardized_v0_affine_tiny_unweighted") # first (actually there is only one run because we defined list, wait, let's look at job 12 requirement:
-        # Job 12 must execute the same tiny affine smoke twice in separate subprocesses and compare: initial memory, peak memory, final memory
-        # We will handle it manually in run-job or in report.
-        pass
+    memory_release_check = None
+    memory_measurement = None
+    if isinstance(job12_data, dict):
+        memory_release_check = job12_data.get("memory_release_check")
+        memory_measurement = job12_data.get("memory_measurement")
         
     # Write summary files
     # build report/nightly_summary.md, nightly_summary.json, nightly_results.csv
@@ -1252,7 +1274,8 @@ def build_final_nightly_report(args, git_commit, target_hashes):
         "git_commit": git_commit,
         "raw_file_sha256": target_hashes.get("raw_file_sha256"),
         "job_statuses": {k: v.get("status") for k, v in job_statuses.items()},
-        "memory_retention_flag": possible_memory_retention,
+        "memory_release_check": memory_release_check,
+        "memory_measurement": memory_measurement,
         "status_code": "NIGHTLY_SMOKES_COMPLETE" if all(v.get("status") == "completed" for v in smoke_job_statuses.values()) else "NIGHTLY_SMOKES_PARTIAL"
     }
     
@@ -1290,7 +1313,7 @@ def build_final_nightly_report(args, git_commit, target_hashes):
     md_buffer.write("# NIGHTLY MISSION SUMMARY REPORT\n\n")
     md_buffer.write(f"- **Git Commit**: `{git_commit}`\n")
     md_buffer.write(f"- **Dataset Raw File SHA-256**: `{target_hashes.get('raw_file_sha256')}`\n")
-    md_buffer.write(f"- **Memory Retention Flag**: `{possible_memory_retention}`\n")
+    md_buffer.write(f"- **Memory Release Check**: `{memory_release_check}`\n")
     md_buffer.write(f"- **Status Code**: `{status_code}`\n\n")
 
     md_buffer.write("## Job Statuses\n\n")
@@ -1387,49 +1410,100 @@ def run_build_nightly_report_job(args, git_commit, target_hashes):
     _write_job13_status(args, git_commit, "completed")
 
 
+def _job12_memory_footprint(run_data):
+    """Extract measured memory evidence from one tiny-smoke subprocess result."""
+
+    label = "identity_standardized_v0_affine_tiny_unweighted"
+    run = run_data.get(label)
+    if not isinstance(run, dict):
+        raise ValueError(f"job 12 result is missing {label!r}")
+    history = run.get("history")
+    if not isinstance(history, list) or not history:
+        raise ValueError("job 12 result has no per-epoch memory history")
+
+    def values(key):
+        return [int(epoch.get(key, 0) or 0) for epoch in history]
+
+    cpu_rss = values("cpu_rss_bytes")
+    gpu_allocated = values("gpu_allocated_bytes")
+    gpu_reserved = values("gpu_reserved_bytes")
+    gpu_peak = values("gpu_peak_bytes")
+    return {
+        "cpu_rss_peak_bytes": max(cpu_rss),
+        "cpu_rss_final_bytes": cpu_rss[-1],
+        "gpu_allocated_peak_bytes": max(gpu_allocated),
+        "gpu_allocated_final_bytes": gpu_allocated[-1],
+        "gpu_reserved_peak_bytes": max(gpu_reserved),
+        "gpu_reserved_final_bytes": gpu_reserved[-1],
+        "gpu_peak_bytes": max(gpu_peak),
+    }
+
+
 def execute_job_12_memory_release(args, target_hashes, git_commit):
-    """Job 12: Executes the same tiny affine smoke twice in separate subprocesses and compares memory."""
+    """Run the same tiny smoke twice in separate processes and report memory evidence."""
     job_dir = os.path.join(args.artifact_dir, "jobs", "12_memory_release_repeat_smoke")
     os.makedirs(job_dir, exist_ok=True)
     
     # Run 1
     print("[Job 12] Launching Run 1...")
     cmd1 = [sys.executable, __file__, "--run-job", "12_run1", "--device", args.device, "--shard-dir", args.shard_dir, "--artifact-dir", args.artifact_dir]
-    t0 = time.time()
     proc1 = subprocess.Popen(cmd1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    proc1.communicate()
-    time.sleep(1.0)
-    
+    stdout1, stderr1 = proc1.communicate()
+    if proc1.returncode != 0:
+        raise RuntimeError(
+            f"job 12 run 1 failed with return code {proc1.returncode}: {stderr1 or stdout1}"
+        )
+
     # Read metrics 1
     with open(os.path.join(job_dir, "metrics_run1.json"), "r") as f:
         run1_data = json.load(f)
-        
+
     # Run 2
     print("[Job 12] Launching Run 2...")
     cmd2 = [sys.executable, __file__, "--run-job", "12_run2", "--device", args.device, "--shard-dir", args.shard_dir, "--artifact-dir", args.artifact_dir]
     proc2 = subprocess.Popen(cmd2, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    proc2.communicate()
-    time.sleep(1.0)
-    
+    stdout2, stderr2 = proc2.communicate()
+    if proc2.returncode != 0:
+        raise RuntimeError(
+            f"job 12 run 2 failed with return code {proc2.returncode}: {stderr2 or stdout2}"
+        )
+
     # Read metrics 2
     with open(os.path.join(job_dir, "metrics_run2.json"), "r") as f:
         run2_data = json.load(f)
-        
-    # Compare memory and output hashes
+
+    footprint1 = _job12_memory_footprint(run1_data)
+    footprint2 = _job12_memory_footprint(run2_data)
     m1 = run1_data["identity_standardized_v0_affine_tiny_unweighted"]["metrics"]
     m2 = run2_data["identity_standardized_v0_affine_tiny_unweighted"]["metrics"]
-    
-    # Output metrics
+
+    # The children are separate processes, so successful exit is the relevant
+    # release evidence. Their peak/final footprints are retained for
+    # comparison, but no cross-process "memory leak" classification is
+    # inferred from generated samples or from different absolute RSS values.
     comparison = {
         "run1": run1_data,
         "run2": run2_data,
-        "memory_retention_detected": bool(m2["nn_test_generated"]["mean"] != m1["nn_test_generated"]["mean"]), # placeholder for output difference or similar
-        "memory_comparison": {
+        "memory_release_check": {
+            "status": "verified_process_exit",
+            "run1_returncode": proc1.returncode,
+            "run2_returncode": proc2.returncode,
+            "retention_classification": "not_inferred_cross_process",
+        },
+        "memory_measurement": {
+            "scope": "independent_subprocess_footprints",
+            "run1": footprint1,
+            "run2": footprint2,
+            "cpu_rss_peak_delta_bytes": footprint2["cpu_rss_peak_bytes"] - footprint1["cpu_rss_peak_bytes"],
+            "cpu_rss_final_delta_bytes": footprint2["cpu_rss_final_bytes"] - footprint1["cpu_rss_final_bytes"],
+            "gpu_peak_delta_bytes": footprint2["gpu_peak_bytes"] - footprint1["gpu_peak_bytes"],
+        },
+        "run_comparison": {
             "run1_wall_time": m1["wall_time_seconds"],
             "run2_wall_time": m2["wall_time_seconds"],
             "run1_params": m1["parameter_count"],
             "run2_params": m2["parameter_count"],
-        }
+        },
     }
     with open(os.path.join(job_dir, "metrics.json"), "w") as f:
         json.dump(comparison, f, indent=2)

@@ -393,3 +393,102 @@ def test_queue_loop_job13_failure_clears_active_job_and_pid_and_marks_failed(tmp
     assert queue_state["active_job"] is None
     assert queue_state["pid"] is None
     assert "13_build_nightly_report" in queue_state["failed_jobs"]
+
+
+
+def test_shard_validation_fails_when_manifest_declares_missing_files(tmp_path):
+    shard_dir = tmp_path / "shards"
+    job_dir = tmp_path / "job"
+    shard_dir.mkdir()
+    manifest = {
+        "shards": [
+            {
+                "npy_file": "missing.npy",
+                "indices_file": "missing_indices.npy",
+                "row_count": 10,
+            }
+        ]
+    }
+    (shard_dir / "shard_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    args = _Args(tmp_path / "artifacts", shard_dir)
+
+    with pytest.raises(FileNotFoundError, match="missing declared artifact"):
+        queue_mod.run_validate_afterms_shards(args, str(job_dir))
+
+    metrics = json.loads((job_dir / "metrics.json").read_text())
+    assert metrics["valid"] is False
+    assert sorted(metrics["missing_files"]) == ["missing.npy", "missing_indices.npy"]
+
+
+
+def test_job12_memory_footprint_uses_recorded_process_metrics():
+    run_data = {
+        "identity_standardized_v0_affine_tiny_unweighted": {
+            "history": [
+                {
+                    "cpu_rss_bytes": 100,
+                    "gpu_allocated_bytes": 10,
+                    "gpu_reserved_bytes": 20,
+                    "gpu_peak_bytes": 25,
+                },
+                {
+                    "cpu_rss_bytes": 120,
+                    "gpu_allocated_bytes": 5,
+                    "gpu_reserved_bytes": 15,
+                    "gpu_peak_bytes": 30,
+                },
+            ],
+            "metrics": {},
+        }
+    }
+    footprint = queue_mod._job12_memory_footprint(run_data)
+    assert footprint == {
+        "cpu_rss_peak_bytes": 120,
+        "cpu_rss_final_bytes": 120,
+        "gpu_allocated_peak_bytes": 10,
+        "gpu_allocated_final_bytes": 5,
+        "gpu_reserved_peak_bytes": 20,
+        "gpu_reserved_final_bytes": 15,
+        "gpu_peak_bytes": 30,
+    }
+
+
+def test_final_report_propagates_job12_memory_release_evidence(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    job12_dir = artifact_dir / "jobs" / "12_memory_release_repeat_smoke"
+    job12_dir.mkdir(parents=True)
+
+    release_check = {
+        "status": "verified_process_exit",
+        "run1_returncode": 0,
+        "run2_returncode": 0,
+        "retention_classification": "not_inferred_cross_process",
+    }
+    measurement = {
+        "scope": "independent_subprocess_footprints",
+        "run1": {"cpu_rss_peak_bytes": 100},
+        "run2": {"cpu_rss_peak_bytes": 110},
+    }
+    (job12_dir / "metrics.json").write_text(json.dumps({
+        "memory_release_check": release_check,
+        "memory_measurement": measurement,
+    }), encoding="utf-8")
+    (job12_dir / "status.json").write_text(
+        json.dumps({"status": "completed"}), encoding="utf-8"
+    )
+
+    args = _Args(artifact_dir, tmp_path / "shards")
+    queue_mod.build_final_nightly_report(
+        args, "deadbeef", {"raw_file_sha256": "raw-hash"}
+    )
+
+    summary = json.loads(
+        (artifact_dir / "report" / "nightly_summary.json").read_text()
+    )
+    assert summary["memory_release_check"] == release_check
+    assert summary["memory_measurement"] == measurement
+    assert "memory_retention_flag" not in summary
+
+    markdown = (artifact_dir / "report" / "nightly_summary.md").read_text()
+    assert "Memory Release Check" in markdown
+    assert "Memory Retention Flag" not in markdown

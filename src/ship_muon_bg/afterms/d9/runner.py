@@ -49,6 +49,14 @@ class MaxEpochsExtensionError(RuntimeError):
     contract, or the extension did not strictly increase the value."""
 
 
+def _stale_epochs_at_resume(start_epoch: int, best_epoch: Optional[int]) -> int:
+    """Recover early-stopping patience state from the persisted best epoch."""
+
+    if start_epoch <= 0 or best_epoch is None:
+        return 0
+    return max(0, int(start_epoch) - int(best_epoch))
+
+
 def pdg_filter(raw: np.ndarray, pdg_value: Optional[int]) -> np.ndarray:
     if pdg_value is None:
         return raw
@@ -323,7 +331,7 @@ def train_candidate_seed(
 
     _write_status(run_dir, {"status": STATUS_RUNNING, "run_id": run_id, "candidate_id": candidate_id, "seed": seed})
 
-    stale = 0
+    stale = _stale_epochs_at_resume(start_epoch, best_epoch)
     epoch = start_epoch
     interrupted = False
     try:

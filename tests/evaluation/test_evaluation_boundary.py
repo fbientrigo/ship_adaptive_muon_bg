@@ -103,6 +103,34 @@ def test_request_is_immutable():
         req.seed = 99
 
 
+def test_request_deep_freezes_nested_options_and_caches_digest():
+    caller_options = {
+        "geometry": {
+            "files": ["geo_a.root"],
+            "metadata": {"revision": 1},
+        }
+    }
+    req = EvaluationRequest(
+        request_id="nested-options",
+        subjects=(fx.subject("s1"),),
+        fs_sim_configuration_id=fx.CONFIG_A,
+        seed=1,
+        options=caller_options,
+    )
+    digest = req.options_digest
+
+    caller_options["geometry"]["files"].append("geo_b.root")
+    caller_options["geometry"]["metadata"]["revision"] = 2
+
+    assert req.options_digest == digest
+    assert req.options["geometry"]["files"] == ("geo_a.root",)
+    assert req.options["geometry"]["metadata"]["revision"] == 1
+    with pytest.raises(TypeError, match="deeply immutable"):
+        req.options["geometry"]["metadata"]["revision"] = 3
+    with pytest.raises(AttributeError):
+        req.options["geometry"]["files"].append("geo_c.root")
+
+
 # --------------------------------------------------------------------------
 # EvaluationBundle: intrinsic integrity
 # --------------------------------------------------------------------------

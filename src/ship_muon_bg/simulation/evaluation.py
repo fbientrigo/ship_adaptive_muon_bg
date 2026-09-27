@@ -43,8 +43,8 @@ Backend-independent: imports neither ROOT, FairShip, nor
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import Any, Mapping, Protocol, Sequence, Tuple, runtime_checkable
 
 from ship_muon_bg.entities.decision import DecisionEvaluationStatus, StageDecision
@@ -90,6 +90,35 @@ def _reject_duplicates(ids: Tuple[str, ...], field_name: str) -> None:
         if value in seen:
             raise ValueError(f"duplicate {field_name}: {value!r}")
         seen.add(value)
+
+
+class _FrozenDict(dict):
+    """A JSON-serializable dict snapshot that rejects every mutating method."""
+
+    @staticmethod
+    def _immutable(*_args: Any, **_kwargs: Any) -> None:
+        raise TypeError("EvaluationRequest.options is deeply immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+    __ior__ = _immutable
+
+
+def _deep_freeze_option(value: Any) -> Any:
+    """Detach nested option state from the caller and freeze common containers."""
+
+    if isinstance(value, Mapping):
+        return _FrozenDict({key: _deep_freeze_option(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_deep_freeze_option(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_deep_freeze_option(item) for item in value)
+    return copy.deepcopy(value)
 
 
 @dataclass(frozen=True)
@@ -142,6 +171,7 @@ class EvaluationRequest:
     replications_per_subject: int = 1
     subject_observations: Tuple[ObservationEnvelope, ...] = ()
     options: Mapping[str, Any] = field(default_factory=dict)
+    _options_digest: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         _require_nonempty_str(self.request_id, "request_id")
@@ -183,9 +213,13 @@ class EvaluationRequest:
 
         object.__setattr__(self, "subjects", subjects)
         object.__setattr__(self, "subject_observations", observations)
-        # Copy, then freeze: storing the caller's mapping by reference would
-        # let ``options_digest`` change after the request was verified.
-        object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
+        # Snapshot before freezing so caller-owned nested dict/list state can
+        # never alter either backend configuration or provenance after the
+        # request is constructed. The digest is cached from that same snapshot
+        # instead of being recomputed from potentially mutable state.
+        options_snapshot = copy.deepcopy(dict(self.options))
+        object.__setattr__(self, "_options_digest", content_hash(options_snapshot))
+        object.__setattr__(self, "options", _deep_freeze_option(options_snapshot))
 
     @property
     def subject_ids(self) -> Tuple[str, ...]:
@@ -199,8 +233,8 @@ class EvaluationRequest:
 
     @property
     def options_digest(self) -> str:
-        """Content hash of ``options`` — the handle for detecting silent drift."""
-        return content_hash(dict(self.options))
+        """Construction-time content hash of the detached options snapshot."""
+        return self._options_digest
 
 
 @dataclass(frozen=True)

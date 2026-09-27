@@ -33,6 +33,7 @@ from __future__ import annotations
 import csv
 import ctypes
 import os
+import signal
 import socket
 import subprocess
 import tempfile
@@ -298,28 +299,70 @@ def get_process_start_time(pid: int) -> Optional[float]:
     return None
 
 
-def terminate_pid(pid: int, *, timeout: float = 5.0) -> None:
-    """PID-specific termination -- never a broad by-name kill."""
+def _wait_pid_dead(pid: int, timeout: float) -> bool:
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    while time.monotonic() < deadline:
+        if not is_pid_alive(pid):
+            return True
+        time.sleep(0.05)
+    return not is_pid_alive(pid)
+
+
+def terminate_pid(pid: int, *, timeout: float = 5.0) -> bool:
+    """Terminate exactly one PID and verify that it is no longer alive.
+
+    Returns True only after liveness has been re-checked. Callers must not
+    release ownership locks when this returns False.
+    """
+
+    pid = int(pid)
+    if not is_pid_alive(pid):
+        return True
 
     psutil = _psutil()
     if psutil is not None:
         try:
-            proc = psutil.Process(int(pid))
+            proc = psutil.Process(pid)
             proc.terminate()
             try:
                 proc.wait(timeout=timeout)
             except Exception:
                 proc.kill()
-            return
+                try:
+                    proc.wait(timeout=timeout)
+                except Exception:
+                    pass
+            return not is_pid_alive(pid)
         except Exception:
             pass
+
     if hasattr(ctypes, "windll"):
         process_terminate = 0x0001
         kernel32 = _configured_kernel32()
-        handle = kernel32.OpenProcess(process_terminate, False, int(pid))
+        handle = kernel32.OpenProcess(process_terminate, False, pid)
         if handle:
-            kernel32.TerminateProcess(handle, 1)
-            kernel32.CloseHandle(handle)
+            try:
+                kernel32.TerminateProcess(handle, 1)
+            finally:
+                kernel32.CloseHandle(handle)
+            return _wait_pid_dead(pid, timeout)
+        return not is_pid_alive(pid)
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return not is_pid_alive(pid)
+    if _wait_pid_dead(pid, timeout):
+        return True
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    return _wait_pid_dead(pid, timeout)
 
 
 # --- keep-awake -----------------------------------------------------------
@@ -366,28 +409,68 @@ def is_lock_live(lock_data: Optional[Dict[str, Any]]) -> bool:
     return abs(float(current_start) - float(recorded_start)) < 2.0
 
 
+def _acquire_lock_guard(lock_path: Path, *, timeout: float = 5.0) -> Path:
+    """Serialize the lock check-and-create critical section with atomic mkdir."""
+
+    guard_path = Path(str(lock_path) + ".acquire")
+    guard_path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    while True:
+        try:
+            guard_path.mkdir()
+            return guard_path
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                try:
+                    age = time.time() - guard_path.stat().st_mtime
+                except OSError:
+                    continue
+                existing = _read_json_if_exists(lock_path)
+                if age > 30.0 and not is_lock_live(existing):
+                    try:
+                        guard_path.rmdir()
+                        continue
+                    except OSError:
+                        pass
+                raise SupervisorAlreadyRunningError(
+                    f"lock acquisition is already in progress for {lock_path}"
+                )
+            time.sleep(0.01)
+
+
 def acquire_supervisor_lock(
     lock_path: Path, *, block_id: str, repo_path: Path, active_run_id: Optional[str] = None,
     pid: Optional[int] = None,
 ) -> Dict[str, Any]:
     lock_path = Path(lock_path)
-    existing = _read_json_if_exists(lock_path)
-    if existing is not None and is_lock_live(existing):
-        raise SupervisorAlreadyRunningError(
-            f"a supervisor is already running: pid={existing.get('pid')} block_id={existing.get('block_id')}"
-        )
-    pid = pid if pid is not None else os.getpid()
-    data = {
-        "pid": pid,
-        "process_start_time": get_process_start_time(pid),
-        "block_id": block_id,
-        "hostname": socket.gethostname(),
-        "repo_path": str(repo_path),
-        "active_run_id": active_run_id,
-        "acquired_at": time.time(),
-    }
-    ma.atomic_write_json(lock_path, data)
-    return data
+    guard_path = _acquire_lock_guard(lock_path)
+    try:
+        existing = _read_json_if_exists(lock_path)
+        if existing is not None and is_lock_live(existing):
+            raise SupervisorAlreadyRunningError(
+                f"a supervisor is already running: pid={existing.get('pid')} "
+                f"block_id={existing.get('block_id')}"
+            )
+        if existing is not None:
+            lock_path.unlink(missing_ok=True)
+
+        pid = pid if pid is not None else os.getpid()
+        data = {
+            "pid": pid,
+            "process_start_time": get_process_start_time(pid),
+            "block_id": block_id,
+            "hostname": socket.gethostname(),
+            "repo_path": str(repo_path),
+            "active_run_id": active_run_id,
+            "acquired_at": time.time(),
+        }
+        ma.atomic_write_json(lock_path, data)
+        return data
+    finally:
+        try:
+            guard_path.rmdir()
+        except OSError:
+            pass
 
 
 def release_supervisor_lock(lock_path: Path) -> None:

@@ -28,8 +28,9 @@ TRANSFORM = CoordinateTransformConfig(
 )
 FIELDS = [
     "candidate_id", "pdg_id", "tilt_id", "delta", "alpha", "nf_run_id", "checkpoint_path",
-    "checkpoint_sha256", "model_config_hash", "training_dataset_hash", "utility_mode", "sampling_seed",
-    "sample_index", "px", "py", "pz", "x", "y", "proposal_log_prob", "physical_source_weight",
+    "checkpoint_sha256", "model_checkpoint_hash", "model_config_hash", "training_dataset_hash",
+    "utility_mode", "sampling_seed", "sample_index", "px", "py", "pz", "x", "y", "z_metadata_m",
+    "proposal_log_prob", "proposal_log_prob_space", "physical_source_weight",
     "fairship_transport_weight", "coordinate_transform_id", "coordinate_transform_status",
     "mechanical_injection_verified", "n_mctracks", "n_sbt_hits", "n_ubt_hits", "n_tracker_points",
     "current_mudis_preprocessing_eligible", "n_dis_realizations", "geant4_completed", "shipreco_completed",
