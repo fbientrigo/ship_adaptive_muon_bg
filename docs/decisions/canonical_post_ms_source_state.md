@@ -107,9 +107,20 @@ memory — see AGENT_POLICY §5.
    `P(Y | S=s, native continuation, config C)` against
    `P(Y | S=s, reinjection, config C)` over repeated FairShip executions from
    the same `SourceState` — those repeats are conditional realizations, not
-   new P0 draws. No universal numerical acceptance threshold is fixed here;
-   the comparison is not to be tuned until a single-muon interface appears to
-   pass.
+   new P0 draws.
+
+   No universal numerical acceptance threshold is imposed by this design
+   freeze. Instead, **before any acceptance-cohort native-vs-reinjected
+   outcomes are inspected**, #43 must freeze an immutable
+   `roundtrip_validation_plan_id` specifying at least: the SourceState cohort
+   and split/pilot policy; deterministic serialization/reinjection tolerances;
+   repetitions or a predeclared sequential sampling/stopping rule; the
+   downstream observables/stages to compare; test statistics or discrepancy
+   metrics and their uncertainty treatment; technical-censoring handling; and
+   the endpoint-specific pass/fail decision rule. If preliminary executions
+   are needed to estimate variance or design the test, they must be declared
+   as a pilot cohort and excluded from the final acceptance cohort. The final
+   rule is frozen after the pilot and before the sealed acceptance comparison.
 
 ## Constraints that this decision does not change
 
