@@ -170,6 +170,14 @@ def cmd_run_foreground(args) -> int:
 
 
 def cmd_start_campaign(args) -> int:
+    # Match cmd_start: a fresh artifact root must be initialized before any
+    # detached child is spawned or queue reconciliation is attempted.
+    try:
+        nr.init_nightly_runner(args.artifact_root, repo_root=REPO_ROOT)
+    except nr.IncompatibleQueueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
     lock_path = nr._lock_path(args.artifact_root)
     existing = nr._read_json_if_exists(lock_path)
     if existing is not None and nr.is_lock_live(existing):
@@ -325,14 +333,37 @@ def cmd_abort(args) -> int:
     child_pid = nr.find_active_child_pid(args.artifact_root, active_run_id)
     terminated = []
     if child_pid is not None and nr.is_pid_alive(child_pid):
-        nr.terminate_pid(child_pid)
+        if not nr.terminate_pid(child_pid):
+            print(
+                f"ERROR: child pid {child_pid} is still alive; supervisor lock preserved",
+                file=sys.stderr,
+            )
+            return 4
         terminated.append(child_pid)
-    if nr.is_pid_alive(supervisor_pid):
-        nr.terminate_pid(supervisor_pid)
-        terminated.append(supervisor_pid)
-    nr.force_release_lock_after_abort(nr._lock_path(args.artifact_root))
 
-    print(json.dumps({"action": "aborted", "terminated_pids": terminated, "block_id": lock_data.get("block_id")}, indent=2))
+    if nr.is_pid_alive(supervisor_pid):
+        if not nr.terminate_pid(supervisor_pid):
+            print(
+                f"ERROR: supervisor pid {supervisor_pid} is still alive; lock preserved",
+                file=sys.stderr,
+            )
+            return 4
+        terminated.append(supervisor_pid)
+
+    still_live = [pid for pid in (child_pid, supervisor_pid) if pid is not None and nr.is_pid_alive(pid)]
+    if still_live:
+        print(
+            f"ERROR: abort verification found live pid(s) {still_live}; lock preserved",
+            file=sys.stderr,
+        )
+        return 4
+
+    nr.force_release_lock_after_abort(nr._lock_path(args.artifact_root))
+    print(json.dumps({
+        "action": "aborted",
+        "terminated_pids": terminated,
+        "block_id": lock_data.get("block_id"),
+    }, indent=2))
     return 0
 
 
