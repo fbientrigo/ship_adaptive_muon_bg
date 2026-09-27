@@ -433,12 +433,33 @@ def run_validate_afterms_shards(args, job_dir):
             "row_count": shard["row_count"],
         })
         
+    missing_files = []
+    for item in shards_checked:
+        if not item["exists"]:
+            missing_files.append(item["npy_file"])
+        if not item["indices_exists"]:
+            missing_files.append(
+                next(
+                    shard["indices_file"]
+                    for shard in manifest.get("shards", [])
+                    if shard["npy_file"] == item["npy_file"]
+                )
+            )
+
     with open(os.path.join(job_dir, "metrics.json"), "w") as f:
         json.dump({
             "manifest_checked": True,
             "shards_checked": shards_checked,
             "total_shards": len(shards_checked),
+            "valid": not missing_files,
+            "missing_files": missing_files,
         }, f, indent=2)
+
+    if missing_files:
+        raise FileNotFoundError(
+            "Shard validation failed; missing declared artifact(s): "
+            + ", ".join(sorted(missing_files))
+        )
 
 
 def run_preprocessing_roundtrip_and_plots(args, job_dir):
