@@ -116,3 +116,18 @@ def test_release_lock_only_removes_own_pid(tmp_path):
     # different pid than the current process.
     nr.release_supervisor_lock(lock_path)
     assert lock_path.exists()
+
+
+
+def test_lock_acquisition_guard_is_exclusive(tmp_path):
+    lock_path = tmp_path / "locks" / "supervisor.lock"
+    guard = nr._acquire_lock_guard(lock_path, timeout=0.1)
+    try:
+        with pytest.raises(nr.SupervisorAlreadyRunningError, match="acquisition is already in progress"):
+            nr._acquire_lock_guard(lock_path, timeout=0.01)
+    finally:
+        guard.rmdir()
+
+
+def test_terminate_pid_reports_already_dead_pid_as_success():
+    assert nr.terminate_pid(_unused_pid(), timeout=0.01) is True
