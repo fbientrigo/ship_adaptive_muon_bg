@@ -1,0 +1,91 @@
+# Agent Instructions
+
+## Current scientific gate
+
+Canonical checkout path: `~/thesis/ship_adaptive_muon_bg`. Authoritative
+integration base: `origin/integration/sprint1-complete` (a working branch may
+temporarily be checked out there). The active P0 gate chain is
+`#43 (freeze canonical post-MS SourceState + round-trip) -> #32 (train U0) ->
+adaptive loop`. The historical `.pkl` coordinate mapping remains unresolved
+and is no longer a gate for the canonical thesis pipeline; #43 defines the
+replacement canonical post-MS interface. #27 is closed as `not planned` — that
+removed a blocker, it did not answer the coordinate question — and no longer
+gates the canonical thesis pipeline or canonical U0 label acquisition. The
+legacy transforms `+2.5916 m` (after-MS-to-FairShip), `+70.845 m` (MuonBack),
+and `-68.500 m` (M&M importer) are historical code paths only and must not be
+combined into or treated as the canonical `SourceState` interface. See
+`docs/decisions/canonical_post_ms_source_state.md`.
+
+## Running D9-5 Gate D nightly GPU training blocks
+
+> **Scope (2026-10-13):** Gate D is feasibility work on the historical reference dataset (`docs/decisions/historical_dataset_scope_correction_v0.md`), not a prerequisite of the FairShip loop. Whether to continue it is the user's call; instructions below are unchanged.
+
+Gate D (the six-run NF_AC production arena, `configs/afterms/d9_5_model_family_arena_v0.json`)
+runs in restartable 8-hour blocks via the D9-5N nightly runner. Any agent picking up
+this work should use the commands below — do not invoke the training CLI
+(`scripts/run_afterms_d9_5_model_family_arena.py fit ...`) directly for production
+Gate D runs; the nightly runner owns process ownership, locking, CPU/GPU policy,
+and exact epoch-boundary resume.
+
+Full workflow, operational notes, and subcommand reference:
+`docs/reviews/afterms_d9_5_nightly_execution_v0.md`.
+
+**Preferred: run the whole remaining queue unattended** — chains consecutive
+8-hour blocks automatically until Gate D is fully drained or a blocking
+failure needs a human, with no manual re-`start` between blocks:
+
+```
+.venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py start-campaign
+```
+
+**Start (or resume) a single 8-hour block** — detached, survives the terminal
+closing; use this only if you deliberately want to stop and re-evaluate after
+one block instead of running the whole remaining queue:
+
+```
+.venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py start
+```
+
+`start` and `start-campaign` refuse to run if the other is already live (one
+holds `locks/supervisor.lock` per block, the other additionally holds
+`locks/campaign.lock` for the whole chain) — `status` reports both.
+
+**Check status** (safe, read-only; use this instead of tailing logs when just
+checking whether a block or campaign is still alive):
+
+```
+.venv\Scripts\python.exe scripts\run_afterms_d9_5_nightly.py status
+```
+
+`status` reports `lock.live` (current block), `campaign_lock.live` (a
+`start-campaign` chain in progress), the per-run queue state, and the current
+run's last completed epoch. A block that has ended cleanly shows `lock.live:
+false` and the current run in `INTERRUPTED_AT_BLOCK_DEADLINE` (normal,
+resumable) or `COMPLETED`.
+
+**Polling cadence**: under `start-campaign`, no manual re-launch is ever
+needed between blocks, so an hourly check is unnecessary busywork — check
+every 4 hours, or longer, and rely on background task notifications rather
+than manual polling loops. Under a single manual `start`, check hourly at
+most while that one block runs (max 8 hours), since it needs a human to
+re-`start` the next block once it ends.
+
+**Stop-here procedure for a single manual block**: once `status` shows
+`lock.live: false` and the current run has advanced to `COMPLETED` or
+`INTERRUPTED_AT_BLOCK_DEADLINE`, it is safe to launch the next `start` (or
+switch to `start-campaign` for the rest) — it resumes automatically from the
+next epoch. Never delete or edit files under
+`artifacts/afterms_d9_5_model_family_arena_v0/nightly_runner/` or
+`artifacts/afterms_d9_5_model_family_arena_v0/runs/` between blocks.
+
+Rules that must not be violated by any agent running this workflow:
+
+- Never read or open the test split, and never start Gate E, while Gate D is
+  in progress.
+- Never modify the frozen scientific config
+  (`configs/afterms/d9_5_model_family_arena_v0.json`) or execution policy to
+  make a block "fit" — a `FAILED_BLOCKED` state must be surfaced to a human,
+  not silently worked around.
+- Never kill processes by name (`taskkill /IM ...`, `Stop-Process -Name ...`).
+  Use `scripts/run_afterms_d9_5_nightly.py abort`, which is PID-scoped to the
+  supervisor's own recorded lock.

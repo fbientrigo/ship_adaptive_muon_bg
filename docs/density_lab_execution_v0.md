@@ -1,5 +1,7 @@
 # Controlled Density Lab — Execution Guide (v0)
 
+> **HISTORICAL / NON-BLOCKING FOR CURRENT PIPELINE** (2026-10-13, `docs/decisions/simplification_log.md` S5). Feasibility work on the historical reference dataset (`historical_dataset_scope_correction_v0.md`); not a prerequisite of the FairShip feedback loop. Unchanged below.
+
 The controlled density lab fits and evaluates density models against the exact
 controlled targets D0-D5. It is a numerical benchmarking harness, **not** a
 SHiP physics or background-rate tool.

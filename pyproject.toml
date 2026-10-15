@@ -20,10 +20,12 @@ flow = [
     "torch",
 ]
 # Density-lab optional stack: Gaussian-mixture baseline (scikit-learn),
-# C2ST metric classifier (scikit-learn) and report plots (matplotlib).
+# C2ST metric classifier (scikit-learn), report plots (matplotlib), and
+# scipy.stats.norm (exact quantile_normal_v0 Jacobian in afterms/preprocessing.py).
 lab = [
     "scikit-learn",
     "matplotlib",
+    "scipy",
 ]
 # Optional experiment tracking adapter (local file store stays canonical).
 tracking = [
@@ -60,4 +62,5 @@ markers = [
     "lab: tests that require the optional scikit-learn/matplotlib stack (.[lab])",
     "tracking: tests that require the optional mlflow stack (.[tracking])",
     "slow: slower tests (small training runs); not performance benchmarks",
+    "local_env: workstation/integration checks requiring local artifacts or platform-specific process semantics; excluded from portable CI",
 ]

@@ -1,0 +1,24 @@
+{
+  "alpha": 4.0,
+  "candidates_file": "candidates_generated.json",
+  "delta": 0.1,
+  "fairship_commit": "f73a305a86468c320665cf41b73582ce7e533181",
+  "fixed_budget": {
+    "pdg_13": 6,
+    "pdg_minus_13": 6
+  },
+  "tilt_id": "UA_d0p1_a04",
+  "transform": {
+    "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+    "status": "PROVISIONAL",
+    "x_to_m": 1.0,
+    "x_unit": "m",
+    "y_to_m": 1.0,
+    "y_unit": "m",
+    "z_offset_m": 2.5916,
+    "z_rule": "affine_declared_z",
+    "z_scale": 1.0,
+    "z_value_m": null
+  },
+  "utility_mode": "UA"
+}

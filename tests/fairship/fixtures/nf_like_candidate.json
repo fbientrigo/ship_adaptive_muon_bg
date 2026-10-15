@@ -1,0 +1,20 @@
+{
+  "records": [{
+    "candidate_id": "nf-like-interface-fixture-neg13-v0",
+    "px": -1.9115455573260207,
+    "py": -0.21221551911188036,
+    "pz": 24.206712058295846,
+    "x": -2.2026100586597708,
+    "y": -0.16479275543203398,
+    "z": 28.905,
+    "pdg_id": -13,
+    "physical_source_weight": null,
+    "fairship_transport_weight": 1.0,
+    "source_provenance": {
+      "source_kind": "nf_like_interface_fixture",
+      "designation": "not_an_actual_nf_checkpoint_sample",
+      "feature_domain_reference": "muonsFullMC_afterMS_sample.npz:row:1",
+      "proposal_density": null
+    }
+  }]
+}

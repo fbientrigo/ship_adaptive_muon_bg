@@ -1,0 +1,47 @@
+{
+  "schema_version": "model_alias_registry_v0",
+  "description": "Versioned lookup tables for presentation-only track/model-family/model-config aliases. Never used to gate resume/checkpoint compatibility -- see src/ship_muon_bg/afterms/model_naming.py and docs/reviews/afterms_model_alias_registry_v0.md.",
+  "pdg_codes": {
+    "13": "PDG13",
+    "-13": "PDGM13"
+  },
+  "pdg_labels": {
+    "13": "PDG +13",
+    "-13": "PDG -13"
+  },
+  "weighting_codes": {
+    "row_empirical_unweighted": "UW",
+    "production_weighted": "W"
+  },
+  "weighting_labels": {
+    "row_empirical_unweighted": "unweighted",
+    "production_weighted": "production-weighted"
+  },
+  "preprocessing_codes": {
+    "identity_standardized_v0": "ID",
+    "cartesian_log1p_pz_v0": "LOGPZ"
+  },
+  "preprocessing_labels": {
+    "identity_standardized_v0": "identity standardized",
+    "cartesian_log1p_pz_v0": "log1p(pz) standardized"
+  },
+  "model_families": {
+    "NF_AC": {
+      "label": "Affine-coupling NF",
+      "source_model_family_values": ["affine_coupling"]
+    },
+    "GAUSS_DIAG": {
+      "label": "Diagonal Gaussian",
+      "source_model_family_values": ["diagonal_gaussian"]
+    },
+    "GAUSS_FULL": {
+      "label": "Full-covariance Gaussian",
+      "source_model_family_values": ["full_gaussian"]
+    },
+    "GMM": {
+      "label": "Gaussian mixture",
+      "source_model_family_values": ["gaussian_mixture"]
+    }
+  },
+  "not_yet_registered_model_families": ["FM", "CNF", "diffusion"]
+}

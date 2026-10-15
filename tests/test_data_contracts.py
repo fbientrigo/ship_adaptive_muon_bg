@@ -152,26 +152,8 @@ def test_loader_roundtrip(tmp_path):
     np.testing.assert_allclose(loaded, array)
 
 
-# 9. No ROOT / FairShip import in core.
-def test_no_root_or_fairship_import_in_core():
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    core_dir = os.path.join(repo_root, "src", "ship_muon_bg")
-    offenders = []
-    for dirpath, _dirs, files in os.walk(core_dir):
-        for name in files:
-            if not name.endswith(".py"):
-                continue
-            full = os.path.join(dirpath, name)
-            with open(full, "r", encoding="utf-8") as handle:
-                for lineno, line in enumerate(handle, start=1):
-                    stripped = line.strip()
-                    if not (stripped.startswith("import ") or stripped.startswith("from ")):
-                        continue
-                    lowered = stripped.lower()
-                    if (
-                        "import root" in lowered
-                        or "fairship" in lowered
-                        or stripped == "import ROOT"
-                    ):
-                        offenders.append(f"{full}:{lineno}: {stripped}")
-    assert not offenders, "core must not import ROOT/FairShip:\n" + "\n".join(offenders)
+# Retired: test_no_root_or_fairship_import_in_core swept the entire
+# src/ship_muon_bg tree, which is incompatible with the sanctioned FairShip
+# adapter boundary at src/ship_muon_bg/adapters/fairship/. Replaced by the
+# narrower, AST-based guard tests in tests/test_architecture_boundaries.py
+# (see docs/architecture/scientific_architecture_v2.md §2 "placement note").

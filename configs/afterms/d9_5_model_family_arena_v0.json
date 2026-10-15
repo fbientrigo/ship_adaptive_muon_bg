@@ -1,0 +1,84 @@
+{
+  "schema_version": "d9_5_model_family_arena_v0",
+  "description": "D9-5 frozen per-family fitting configuration. Every setting a model family needs is declared here explicitly, never as a code literal; changing any value here is a deliberate, reviewed re-freeze, not a silent runtime choice.",
+  "campaign_id": "afterms_d9_5_model_family_arena_v0",
+  "gauss_diag": {
+    "model_config_id": "GAUSS_DIAG_d05",
+    "model_family": "diagonal_gaussian",
+    "dimension": 5,
+    "variance_floor": 1e-06,
+    "fitting_policy": "deterministic_single_fit",
+    "sufficient_statistics_method": "two_pass_streaming_shard_by_shard"
+  },
+  "gauss_full": {
+    "model_config_id": "GAUSS_FULL_d05",
+    "model_family": "full_gaussian",
+    "dimension": 5,
+    "covariance_regularization": 1e-06,
+    "fitting_policy": "deterministic_single_fit",
+    "sufficient_statistics_method": "two_pass_streaming_shard_by_shard"
+  },
+  "gmm": {
+    "model_config_id": "GMM_k04_covFULL_d05",
+    "model_family": "gaussian_mixture",
+    "dimension": 5,
+    "n_components": 4,
+    "covariance_type": "full",
+    "covariance_regularization": 1e-06,
+    "n_init": 1,
+    "max_iter": 200,
+    "convergence_tol": 0.001,
+    "effective_component_weight_threshold": 0.01,
+    "effective_component_weight_threshold_note": "a component with fitted mixture weight below this is reported as unoccupied; diagnostic only, never used to change n_components or covariance_type.",
+    "seeds": [20260720, 20260721, 20260722],
+    "fitting_policy": "sklearn_GaussianMixture_in_core_full_training_scope",
+    "fitting_policy_note": "n=~5.5M rows x d=5 x float64 fits host RAM comfortably per the D9-5 RAM preflight (see data_scope/data_scope_audit.md); no chunked/streaming EM implemented for D9-5."
+  },
+  "nf_ac": {
+    "model_family": "affine_coupling",
+    "seeds": [20260720, 20260721, 20260722],
+    "reuses": "ship_muon_bg.afterms.d9.runner.train_candidate_seed",
+    "scout_report_source": "artifacts/afterms_d9_model_arena_v0/named/run_inventory_named.json",
+    "scout_experiment_id": "AFFINE_COUPLING_CAPACITY_SCOUT_V0",
+    "scout_selection_rule": "argmin(best_validation_metric) over status==completed rows matching this track_id",
+    "config_label": "scout_promoted_nf_config",
+    "config_label_note": "the scout used a single seed (20260720) and 10 epochs; it selected architecture capacity only, never a final champion. D9-5 trains new NF_AC runs from initialization for every seed and never reuses a scout checkpoint.",
+    "execution_policy": {
+      "minimum_epochs": 20,
+      "maximum_epochs": 100,
+      "early_stopping_patience": 25,
+      "justification": "Bounds per mission Sec 11.1 (minimum_epochs>=20, maximum_epochs<=200, patience in [20,30]). The scout's best_validation_epoch was still 8-10 out of a 10-epoch budget on a single shard (~501k rows), i.e. not clearly plateaued; D9-5 trains on the full ~5.5M-row per-track scope (~11x more rows/epoch), so 20 minimum epochs gives comparable total gradient-update exposure to a much longer single-shard run. maximum_epochs=100 and patience=25 (mid of the allowed range) bound worst-case wall time to a scientifically defensible level without claiming the ceiling guarantees convergence -- see Sec 11.1 constraint against that claim. Frozen before the first seed of either track was trained; not revised after observing any seed's curve."
+    },
+    "optimizer": "adam",
+    "learning_rate": 0.001,
+    "batch_size": 256,
+    "weight_decay": 0.0,
+    "gradient_clipping": 5.0,
+    "dtype": "float32",
+    "device_policy": "cuda_if_available_else_cpu_single_process_no_amp",
+    "optimizer_settings_note": "carried over from configs/afterms/d9_training_v0.json's per-candidate defaults for continuity with the D9/D9B baseline; not re-tuned for D9-5."
+  },
+  "evaluation_policy": {
+    "quick_validation_budget": {
+      "n_generated_samples": 2000,
+      "c2st_subsample": 500,
+      "one_d_test_subsample": 2000,
+      "two_d_test_subsample": 500,
+      "one_d_n_boot": 200,
+      "two_d_n_permutations": 200,
+      "c2st_n_boot": 200,
+      "c2st_n_permutations": 200
+    },
+    "final_candidate_budget": {
+      "n_generated_samples": 20000,
+      "c2st_subsample": 5000,
+      "one_d_test_subsample": 20000,
+      "two_d_test_subsample": 5000,
+      "one_d_n_boot": 500,
+      "two_d_n_permutations": 500,
+      "c2st_n_boot": 500,
+      "c2st_n_permutations": 500
+    },
+    "final_budget_frozen_before_test_evaluation": true
+  }
+}

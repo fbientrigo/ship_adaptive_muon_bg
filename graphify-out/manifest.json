@@ -1,0 +1,537 @@
+{
+  ".claude/settings.local.json": {
+    "mtime": 1784328932.289921,
+    "ast_hash": "2827160a42ad660a9b25839096155839",
+    "semantic_hash": ""
+  },
+  "Nflow/__init__.py": {
+    "mtime": 1783611045.3072753,
+    "ast_hash": "316351874a096b930531a2b2c885607f",
+    "semantic_hash": ""
+  },
+  "Nflow/baselines/__init__.py": {
+    "mtime": 1784330230.3885393,
+    "ast_hash": "37b82da863f7d195a820dd409395fb1b",
+    "semantic_hash": ""
+  },
+  "Nflow/baselines/gaussian.py": {
+    "mtime": 1784330230.3903787,
+    "ast_hash": "b01b4adbf682af2f554b011d26d2f720",
+    "semantic_hash": ""
+  },
+  "Nflow/baselines/gmm.py": {
+    "mtime": 1784330230.3908918,
+    "ast_hash": "394da052182c399e87a0a0abe826d1d1",
+    "semantic_hash": ""
+  },
+  "Nflow/interfaces.py": {
+    "mtime": 1784330230.39291,
+    "ast_hash": "56c57bfb3e2c4d92a00f4f3738b3e65a",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/__init__.py": {
+    "mtime": 1783611045.3112614,
+    "ast_hash": "b7756e09060b038ccc7f75fe582a57fc",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/deepflow.py": {
+    "mtime": 1783611045.3152575,
+    "ast_hash": "a1268696c8dcdd43586d956720b83f94",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/utils/__init__.py": {
+    "mtime": 1783611045.3182554,
+    "ast_hash": "315445178af09eb7dab6dc722b41178b",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/utils/config.py": {
+    "mtime": 1783611045.3192546,
+    "ast_hash": "a5ee549fe8e2379eaa1fdca720ff1e98",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/utils/data_handling.py": {
+    "mtime": 1783611045.3212545,
+    "ast_hash": "748168f879716c9cb4218939d0d9daba",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/utils/flow_models.py": {
+    "mtime": 1783611045.3232524,
+    "ast_hash": "077a6ef6d0d335d6923a990885a5f047",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/utils/logging_config.py": {
+    "mtime": 1783611045.3252518,
+    "ast_hash": "b730bb14e2f9a5d9b875735275b31f11",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/utils/plotting.py": {
+    "mtime": 1783611045.3262541,
+    "ast_hash": "f79ed98c0dad399e94d9a96b983e7e46",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/utils/run_management.py": {
+    "mtime": 1783611045.328257,
+    "ast_hash": "8ca6522edb995ac712bad65ae60f4a6e",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/utils/training.py": {
+    "mtime": 1783611045.3292546,
+    "ast_hash": "509420f13d7a71122a50b0384c64c9be",
+    "semantic_hash": ""
+  },
+  "Nflow/registry.py": {
+    "mtime": 1784330230.3939135,
+    "ast_hash": "f789d4568a18b98a0aeb5a98f173dd31",
+    "semantic_hash": ""
+  },
+  "Nflow/torch_models/__init__.py": {
+    "mtime": 1784330230.3959157,
+    "ast_hash": "66ec8d26372b6fb38d6b50a318c4f20c",
+    "semantic_hash": ""
+  },
+  "Nflow/torch_models/affine_coupling.py": {
+    "mtime": 1784330230.3969157,
+    "ast_hash": "9079d59b4ec70a0c609970fa43d33aa6",
+    "semantic_hash": ""
+  },
+  "Nflow/torch_models/trainer.py": {
+    "mtime": 1784330230.398907,
+    "ast_hash": "baa8ee12b643e49b25a065b4cb188879",
+    "semantic_hash": ""
+  },
+  "ProxyTagger/__init__.py": {
+    "mtime": 1783611045.333258,
+    "ast_hash": "d1348c7dbad4b256d5c49afa2143b279",
+    "semantic_hash": ""
+  },
+  "ProxyTagger/baseline.py": {
+    "mtime": 1783611045.3342543,
+    "ast_hash": "b6f21e5f1425dcab05a8373079368c14",
+    "semantic_hash": ""
+  },
+  "ProxyTagger/interfaces.py": {
+    "mtime": 1783611045.3352609,
+    "ast_hash": "2b5002ec19934c62f6f835f1acb14d60",
+    "semantic_hash": ""
+  },
+  "configs/density_lab/capacity_pilot_d5_cpu_v0.json": {
+    "mtime": 1784330230.4050808,
+    "ast_hash": "a490fc76854db03433ef639294763cf7",
+    "semantic_hash": ""
+  },
+  "configs/density_lab/capacity_v0.json": {
+    "mtime": 1784330230.407609,
+    "ast_hash": "888c0d7ccc5cb4823418a8998fd0b117",
+    "semantic_hash": ""
+  },
+  "configs/density_lab/reference_v0.json": {
+    "mtime": 1784330230.4086215,
+    "ast_hash": "d4606a25993b456b34cde760572162d9",
+    "semantic_hash": ""
+  },
+  "configs/density_lab/smoke_v0.json": {
+    "mtime": 1784330230.4096177,
+    "ast_hash": "e1673544ef079e8871471edea96a990c",
+    "semantic_hash": ""
+  },
+  "data/samples/muonsFullMC_afterMS_sample_manifest.json": {
+    "mtime": 1783611045.3712943,
+    "ast_hash": "9f2f9f5a040c7ace57f3b4c8d5cc8cca",
+    "semantic_hash": ""
+  },
+  "data/samples/muons_FullMC_sample_manifest.json": {
+    "mtime": 1783611045.4048126,
+    "ast_hash": "3e3bffb912951a55a06bc589853392d0",
+    "semantic_hash": ""
+  },
+  "data/samples/reports/muonsFullMC_afterMS_full_dataset_report.json": {
+    "mtime": 1783611045.406817,
+    "ast_hash": "13cd8810e599a511f6221404d54b8747",
+    "semantic_hash": ""
+  },
+  "data/samples/reports/muonsFullMC_afterMS_sample_dataset_report.json": {
+    "mtime": 1783611045.407815,
+    "ast_hash": "024f3d5e655d0454360ca9b914f08003",
+    "semantic_hash": ""
+  },
+  "data/samples/reports/muons_FullMC_full_dataset_report.json": {
+    "mtime": 1783611045.4109266,
+    "ast_hash": "d8faedfb1a29bfdd108a2daf3368d17d",
+    "semantic_hash": ""
+  },
+  "data/samples/reports/muons_FullMC_sample_dataset_report.json": {
+    "mtime": 1783611045.41195,
+    "ast_hash": "45e37ec97a7c2e338753b43fa265cc50",
+    "semantic_hash": ""
+  },
+  "scripts/benchmark_density_runtime.py": {
+    "mtime": 1784330230.4268699,
+    "ast_hash": "d51c7dfcea642e18ff57a6a518a9c60b",
+    "semantic_hash": ""
+  },
+  "scripts/build_dataset_report.py": {
+    "mtime": 1783611045.4300418,
+    "ast_hash": "cdadf0dc633080dde6c6e083c3f391e5",
+    "semantic_hash": ""
+  },
+  "scripts/build_density_report.py": {
+    "mtime": 1784330230.427888,
+    "ast_hash": "b93d79c638ad08701f24f0e7d0c691c0",
+    "semantic_hash": ""
+  },
+  "scripts/generate_controlled_target.py": {
+    "mtime": 1784330230.4288857,
+    "ast_hash": "b5fbc8a0921462b81597c018e7b15a42",
+    "semantic_hash": ""
+  },
+  "scripts/make_muon_subset.py": {
+    "mtime": 1783611045.431043,
+    "ast_hash": "2e79a27c0f0a8ac011cfc5dc95040492",
+    "semantic_hash": ""
+  },
+  "scripts/run_density_lab.py": {
+    "mtime": 1784330230.4304018,
+    "ast_hash": "889ec787bf40cfd135457c2efc8d2701",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/__init__.py": {
+    "mtime": 1783611045.4320505,
+    "ast_hash": "2806b31607eda6288585602cc31e5321",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/benchmarks/__init__.py": {
+    "mtime": 1784330230.4325268,
+    "ast_hash": "a513af191f03a48e5b3b4ab33032127e",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/benchmarks/controlled_targets.py": {
+    "mtime": 1784330230.4348457,
+    "ast_hash": "f64319dc3dc6b87d83e693702ecd5482",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/benchmarks/target_regions.py": {
+    "mtime": 1784330230.4359913,
+    "ast_hash": "c9a48cda1c5471e7e7be3e02234cfea5",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/benchmarks/target_transforms.py": {
+    "mtime": 1784330230.4377472,
+    "ast_hash": "8d3eb222cd42acfc868cfa7f6c6d04c0",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/__init__.py": {
+    "mtime": 1784330230.441227,
+    "ast_hash": "265e1da6f747d36767133cefb0a3c6ab",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/errors.py": {
+    "mtime": 1784330230.4442198,
+    "ast_hash": "1192b99b66102ec0ce5becf89e420513",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/feature_views.py": {
+    "mtime": 1784330230.4472437,
+    "ast_hash": "9e90f44c67c2e48ba6c99dc8938eeeab",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/hashing.py": {
+    "mtime": 1783611045.4390411,
+    "ast_hash": "59e54fec8e10e8685b085a593aa1a62f",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/loader.py": {
+    "mtime": 1783611045.4410536,
+    "ast_hash": "1cc3a820a8722fa725d0b401a70fea87",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/normalization.py": {
+    "mtime": 1783611045.4440544,
+    "ast_hash": "2358c569588c0229ac3bc37af5121784",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/report.py": {
+    "mtime": 1783611045.447057,
+    "ast_hash": "e28d328ee6ac8aac9608a8f61afa3505",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/schema.py": {
+    "mtime": 1783611045.4490538,
+    "ast_hash": "ecc0be602665f2c24a166e0f7b7eef6c",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/splitting.py": {
+    "mtime": 1783611045.452055,
+    "ast_hash": "1a985e2fd7ec31b0cc34a18c60d365b2",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/subsampling.py": {
+    "mtime": 1783611045.4530566,
+    "ast_hash": "2f009d3307b867005116e66b9fb1111d",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/data_contracts/validation.py": {
+    "mtime": 1783611045.456179,
+    "ast_hash": "ad20bca1a40ce383a72f850344906e78",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/__init__.py": {
+    "mtime": 1784330230.4502385,
+    "ast_hash": "6e381bdffec0f319ba0db09547c0e5c2",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/artifacts.py": {
+    "mtime": 1784330230.452754,
+    "ast_hash": "7bae33e7d3de5e43860ed7351d0263de",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/campaign.py": {
+    "mtime": 1784330230.456293,
+    "ast_hash": "e4011824bf54e77c1831ecf49b1dd198",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/config.py": {
+    "mtime": 1784330230.45731,
+    "ast_hash": "7930af3fc0ce8fcbfd3b0bdb8a19c76d",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/datasets.py": {
+    "mtime": 1784330230.4593103,
+    "ast_hash": "0786ebe75bf2088f017758cf375e68e9",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/environment.py": {
+    "mtime": 1784330230.4609761,
+    "ast_hash": "d70970dbd78df96875ea64a8e5251e9c",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/evaluator.py": {
+    "mtime": 1784330230.46249,
+    "ast_hash": "e390f0976bf7f43bf6008f84e8abcde4",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/feature_pipeline.py": {
+    "mtime": 1784330230.4642072,
+    "ast_hash": "089f4ed98de5de19a8e57b16e97d2c08",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/gates.py": {
+    "mtime": 1784338254.9452171,
+    "ast_hash": "235299778e9c58cfcd3ba0eeba4c0650",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/metrics.py": {
+    "mtime": 1784330230.4682188,
+    "ast_hash": "4ec265a2c47c65b1d6073f6a11de38d1",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/reporting.py": {
+    "mtime": 1784330230.4702153,
+    "ast_hash": "b5382da5547bb56c73a25719866501a2",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/density_lab/tracking.py": {
+    "mtime": 1784330230.4722176,
+    "ast_hash": "cb65efb632ef1d79eaa5af15da496ecb",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/simulation/__init__.py": {
+    "mtime": 1783611045.4581964,
+    "ast_hash": "542b6b91eaeb47da33a41abd2dea7818",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/simulation/backend.py": {
+    "mtime": 1783611045.4601183,
+    "ast_hash": "16859180423464846123fb1e7c07c8ce",
+    "semantic_hash": ""
+  },
+  "src/ship_muon_bg/simulation/types.py": {
+    "mtime": 1783611045.4623303,
+    "ast_hash": "c1435c01583850c9e4be183019b6d2fd",
+    "semantic_hash": ""
+  },
+  "tests/conftest.py": {
+    "mtime": 1784330230.4748993,
+    "ast_hash": "f35dc02a6670a22beb2624d0a307cfa4",
+    "semantic_hash": ""
+  },
+  "tests/test_affine_coupling_flow.py": {
+    "mtime": 1784330230.475908,
+    "ast_hash": "b9c07a6ea5b958b428f7fb951881c256",
+    "semantic_hash": ""
+  },
+  "tests/test_architecture.py": {
+    "mtime": 1783611045.468703,
+    "ast_hash": "c4b166469e36011d28216fc561f84598",
+    "semantic_hash": ""
+  },
+  "tests/test_controlled_targets.py": {
+    "mtime": 1784330230.4779048,
+    "ast_hash": "9d4999c5d5d87be3df80cd38297ff571",
+    "semantic_hash": ""
+  },
+  "tests/test_controlled_targets_d3_d5.py": {
+    "mtime": 1784330230.47891,
+    "ast_hash": "bc4b43999d86aa40865fd6a430333e52",
+    "semantic_hash": ""
+  },
+  "tests/test_data_contracts.py": {
+    "mtime": 1783611045.470727,
+    "ast_hash": "ec6a121d5e746e6e76a06bfce97fc013",
+    "semantic_hash": ""
+  },
+  "tests/test_density_artifacts.py": {
+    "mtime": 1784330230.4814377,
+    "ast_hash": "aa32dc7dad2ccca173375c1e16b430e2",
+    "semantic_hash": ""
+  },
+  "tests/test_density_baselines.py": {
+    "mtime": 1784330230.4824438,
+    "ast_hash": "19585112334e8807b238c93e68acd26e",
+    "semantic_hash": ""
+  },
+  "tests/test_density_campaign.py": {
+    "mtime": 1784330230.4839563,
+    "ast_hash": "dfe6b7b5d1641106149da1a125551606",
+    "semantic_hash": ""
+  },
+  "tests/test_density_config_gates.py": {
+    "mtime": 1784330230.4869914,
+    "ast_hash": "1c193ba7a09af4331978e45e91656c62",
+    "semantic_hash": ""
+  },
+  "tests/test_density_feature_pipeline.py": {
+    "mtime": 1784330230.4879768,
+    "ast_hash": "b0fdc25317bba0d27cf8182e1e64a3bb",
+    "semantic_hash": ""
+  },
+  "tests/test_density_gates.py": {
+    "mtime": 1784338254.9472075,
+    "ast_hash": "45bb6aee831e31e35d564522827decc4",
+    "semantic_hash": ""
+  },
+  "tests/test_density_metrics.py": {
+    "mtime": 1784330230.492225,
+    "ast_hash": "856717425686ade9910f20a48767130a",
+    "semantic_hash": ""
+  },
+  "tests/test_density_reporting.py": {
+    "mtime": 1784330230.4937458,
+    "ast_hash": "6b9a6089f85be836b7a948438cc186e0",
+    "semantic_hash": ""
+  },
+  "tests/test_density_tracking.py": {
+    "mtime": 1784330230.494961,
+    "ast_hash": "b6dedfe37caa425c33ea0da16ee6e698",
+    "semantic_hash": ""
+  },
+  "tests/test_feature_views.py": {
+    "mtime": 1784330230.4979844,
+    "ast_hash": "ce9272938de82332f0d5ad1380bc7b68",
+    "semantic_hash": ""
+  },
+  "tests/test_samples.py": {
+    "mtime": 1783611045.471718,
+    "ast_hash": "73fef0abd4dec369b159ac357f295265",
+    "semantic_hash": ""
+  },
+  ".github/workflows/ci.yml": {
+    "mtime": 1784330230.3845363,
+    "ast_hash": "4c6704ae940b126e266e7ab0f977387a",
+    "semantic_hash": ""
+  },
+  ".github/workflows/optional_stack.yml": {
+    "mtime": 1784330230.3855486,
+    "ast_hash": "b95c71a8432a8d6b16d64edbe573153b",
+    "semantic_hash": ""
+  },
+  ".serena/project.local.yml": {
+    "mtime": 1782718489.8752437,
+    "ast_hash": "80d87878a5dcaa57ac055afdac265ad1",
+    "semantic_hash": ""
+  },
+  ".serena/project.yml": {
+    "mtime": 1782923864.0308313,
+    "ast_hash": "d8974f9c9a9904f4ee2a727877e831b3",
+    "semantic_hash": ""
+  },
+  "CORE_STATE_SOCHIFI_FAIRSHIP.md": {
+    "mtime": 1784329259.4280496,
+    "ast_hash": "796bedd78ea4423188c6f7514920b797",
+    "semantic_hash": ""
+  },
+  "FairShip/README.md": {
+    "mtime": 1783611045.3022559,
+    "ast_hash": "90a05abd02742e2da5c1f50e0aa7f76c",
+    "semantic_hash": ""
+  },
+  "Nflow/README.md": {
+    "mtime": 1784330230.3875413,
+    "ast_hash": "891f32695c212c6598568292123ae51d",
+    "semantic_hash": ""
+  },
+  "Nflow/legacy/config.yaml": {
+    "mtime": 1783611045.3132756,
+    "ast_hash": "99d789e07bd18af10fa9b170556b7067",
+    "semantic_hash": ""
+  },
+  "ProxyTagger/README.md": {
+    "mtime": 1783611045.3312576,
+    "ast_hash": "8d543e3f3cfb810c639e1da6aa343c98",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1784330230.40106,
+    "ast_hash": "065d09fba06e328565d4570226a4e724",
+    "semantic_hash": ""
+  },
+  "data/samples/README.md": {
+    "mtime": 1783611045.3412662,
+    "ast_hash": "6e219cb55e950484cac1efe8cb3e2176",
+    "semantic_hash": ""
+  },
+  "docs/architecture/ml_skeleton_local_pkl_v0.md": {
+    "mtime": 1783611045.415946,
+    "ast_hash": "01e1032d1b2c5b01948571287acf26e5",
+    "semantic_hash": ""
+  },
+  "docs/architecture/repo_architecture_v1.md": {
+    "mtime": 1783611045.417956,
+    "ast_hash": "f98b885e57eafb03ad538f0cd623fab9",
+    "semantic_hash": ""
+  },
+  "docs/contracts/controlled_targets_d3_d5_v0.md": {
+    "mtime": 1784330230.4111226,
+    "ast_hash": "e0ab9ee2df7bbf1a0232c65059b16381",
+    "semantic_hash": ""
+  },
+  "docs/contracts/controlled_targets_v0.md": {
+    "mtime": 1784330230.4131446,
+    "ast_hash": "30d0c6bcba3f5978526ca4748874fb03",
+    "semantic_hash": ""
+  },
+  "docs/contracts/density_problem_contract_v0.md": {
+    "mtime": 1784330230.4161487,
+    "ast_hash": "5ee1258b0b6a0ab42574dc6191db0bc8",
+    "semantic_hash": ""
+  },
+  "docs/contracts/fairship_adapter_contract_v0.md": {
+    "mtime": 1783611045.4219296,
+    "ast_hash": "faeda1827ca60b3934baa08464a886d6",
+    "semantic_hash": ""
+  },
+  "docs/contracts/feature_view_experiment_contract_v0.md": {
+    "mtime": 1784330230.41814,
+    "ast_hash": "57c313468cd95dbb409d139ba63b922a",
+    "semantic_hash": ""
+  },
+  "docs/density_lab_execution_v0.md": {
+    "mtime": 1784330230.422261,
+    "ast_hash": "f90a3a6ee101b5bdf31f70fd52ead9de",
+    "semantic_hash": ""
+  },
+  "docs/legacy_migration_log.md": {
+    "mtime": 1783611045.4229321,
+    "ast_hash": "2b5e9feedc9da259af99d87107f37d97",
+    "semantic_hash": ""
+  }
+}

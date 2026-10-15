@@ -32,5 +32,8 @@ jobs:
       - name: Install development dependencies
         run: python -m pip install -e ".[dev]"
 
-      - name: Run core tests
-        run: python -m pytest -q
+      # The afterms tree imports optional ML stacks at collection time.
+      # Portable afterms coverage lives in optional_stack.yml, where those
+      # dependencies are installed. Keep this job genuinely NumPy-only.
+      - name: Run NumPy-only core tests
+        run: python -m pytest -q --ignore=tests/afterms

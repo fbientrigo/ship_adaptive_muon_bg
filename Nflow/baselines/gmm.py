@@ -207,6 +207,27 @@ class GaussianMixtureEstimator:
         return {"family": self.family, "parameters_file": params_path.name}
 
     @classmethod
+    def from_fitted_sklearn(cls, gmm, *, dimension: int) -> "GaussianMixtureEstimator":
+        """Wrap an already-fitted ``sklearn.mixture.GaussianMixture`` (e.g. one
+        driven step-by-step via ``warm_start`` to record a per-iteration
+        lower-bound curve) behind this class's ``log_prob``/``sample``/
+        ``save``/``load`` boundary, without re-running EM."""
+
+        model = cls(
+            dimension=dimension,
+            n_components=gmm.n_components,
+            covariance_regularization=gmm.reg_covar,
+            n_init=gmm.n_init,
+            max_iter=gmm.max_iter,
+        )
+        model._weights = np.asarray(gmm.weights_, dtype=np.float64)
+        model._means = np.asarray(gmm.means_, dtype=np.float64)
+        model._covariances = np.asarray(gmm.covariances_, dtype=np.float64)
+        model._converged = bool(gmm.converged_)
+        model._prepare_inference()
+        return model
+
+    @classmethod
     def load(cls, input_dir: Path) -> "GaussianMixtureEstimator":
         input_dir = Path(input_dir)
         config = json.loads((input_dir / "model_config.json").read_text())
