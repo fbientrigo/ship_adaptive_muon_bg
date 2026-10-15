@@ -89,7 +89,9 @@ memory — see AGENT_POLICY §5.
    event timing/context, shower activity, or other upstream particles relevant
    to veto behavior. If single-muon reinjection proves insufficient, the
    interface is promoted to an event/bundle state — the comparison is not
-   patched to make single-muon look sufficient.
+   patched to make single-muon look sufficient. See
+   `source_bundle_architecture_v0.md` for a candidate bundle design (not yet
+   implemented).
 3. Exact minimal `SourceState` schema (beyond the PROVISIONAL candidate list
    above).
 4. Whether lineage survives correctly through `MCTrack`, `UpstreamTaggerPoint`,
@@ -103,24 +105,32 @@ memory — see AGENT_POLICY §5.
    into two layers: (a) a deterministic/mechanical check that the captured
    state is faithfully serialized and reinjected (position/momentum/PDG/
    charge/time/config identity, lineage to downstream `MCTrack`/detector
-   points); (b) a stochastic check comparing the *conditional distribution*
-   `P(Y | S=s, native continuation, config C)` against
-   `P(Y | S=s, reinjection, config C)` over repeated FairShip executions from
-   the same `SourceState` — those repeats are conditional realizations, not
-   new P0 draws.
+   points); (b) a stochastic check. FairShip (pinned `f73a305`) provides only
+   **one native downstream continuation per captured `SourceState`** (no
+   transport checkpoint/fork at `Sigma_postMS`; see #43). The comparison is
+   therefore paired at cohort level: each captured state `s_i ~ P_val`
+   contributes one native outcome and `K_i >= 1` reinjected outcomes under the
+   same config `C`, with the source event as statistical cluster; it compares
+   `P(Y | S, native, C)` with `P(Y | S, reinjection, C)` over `P_val`, not per
+   state. Reinjection repeats are conditional realizations, not new P0 draws.
+   Repeated native continuations at fixed `s` may be claimed only if a
+   replay/reseed mechanism is separately demonstrated.
 
    No universal numerical acceptance threshold is imposed by this design
    freeze. Instead, **before any acceptance-cohort native-vs-reinjected
    outcomes are inspected**, #43 must freeze an immutable
    `roundtrip_validation_plan_id` specifying at least: the SourceState cohort
-   and split/pilot policy; deterministic serialization/reinjection tolerances;
-   repetitions or a predeclared sequential sampling/stopping rule; the
-   downstream observables/stages to compare; test statistics or discrepancy
-   metrics and their uncertainty treatment; technical-censoring handling; and
-   the endpoint-specific pass/fail decision rule. If preliminary executions
-   are needed to estimate variance or design the test, they must be declared
-   as a pilot cohort and excluded from the final acceptance cohort. The final
-   rule is frozen after the pilot and before the sealed acceptance comparison.
+   and split/pilot policy; the capture rule defining `P_val` (a predictable
+   function of pre-`Sigma_postMS` history only, with no selection on
+   downstream output); the cluster unit; deterministic serialization/
+   reinjection tolerances; repetitions or a predeclared sequential
+   sampling/stopping rule; the downstream observables/stages to compare; test
+   statistics or discrepancy metrics and their uncertainty treatment;
+   technical-censoring handling; and the endpoint-specific pass/fail decision
+   rule. If preliminary executions are needed to estimate variance or design
+   the test, they must be declared as a pilot cohort and excluded from the
+   final acceptance cohort. The final rule is frozen after the pilot and
+   before the sealed acceptance comparison.
 
 ## Constraints that this decision does not change
 
