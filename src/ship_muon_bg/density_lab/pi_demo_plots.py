@@ -29,11 +29,11 @@ meanings across figures:
 - "nominal"      -- the untilted reference law / p0 (gray).
 - "exact_target" -- an exact, closed-form or direct-summation quantity
   (purple).
-- "empirical"    -- an alias-sampler empirical draw statistic (teal).
+- "empirical"    -- a row-sampler empirical draw statistic (teal).
 - "nf"           -- a trained normalizing-flow's own generated samples
   (brown, hatched) -- used only in Figure 05, where it is the fourth,
   necessarily distinct role (an NF sample is neither an exact target nor a
-  plain alias-sampler draw).
+  plain row-sampler draw).
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ import numpy as np
 
 from .pi_demo import CSV_FIELDNAMES
 from .utility_tilt import (
-    AliasSampler,
+    draw_rows,
     NominalTable,
     TiltTable,
     empirical_draw_diagnostics,
@@ -215,7 +215,7 @@ def plot_01_tilt_enrichment_vs_alpha(
             if emp_vals:
                 ax.scatter(
                     emp_alphas, emp_vals, facecolors="none", edgecolors=color,
-                    marker=ROLE_STYLE["empirical"]["marker"], s=60, label="{} empirical (alias draw)".format(label),
+                    marker=ROLE_STYLE["empirical"]["marker"], s=60, label="{} empirical (row draw)".format(label),
                 )
 
             for c, d in zip(closed, direct):
@@ -399,7 +399,7 @@ _DIRECT_SAMPLER_SEED = 7
 
 
 def plot_04_direct_sampler_validation(tables_root: Path, out_dir: Path) -> List[str]:
-    """Rank-ordered cumulative declared vs empirical alias-draw mass, PDG 13 only."""
+    """Rank-ordered cumulative declared vs empirical row-draw mass, PDG 13 only."""
 
     plt = _figure()
     tables_root = Path(tables_root)
@@ -436,8 +436,7 @@ def plot_04_direct_sampler_validation(tables_root: Path, out_dir: Path) -> List[
         report_lines = ["{} ({}): target B_toy prevalence (pU_direct) = {:.6f}".format(tilt_id, tag, pU_direct)]
 
         for budget in budgets:
-            sampler = AliasSampler.from_probabilities(pi_tilt_block)
-            drawn = sampler.draw(int(budget), seed=_DIRECT_SAMPLER_SEED)
+            drawn = draw_rows(pi_tilt_block, int(budget), seed=_DIRECT_SAMPLER_SEED)
             counts = np.bincount(rank_of_row[drawn], minlength=pi_tilt_block.shape[0])
             emp_cum = np.cumsum(counts) / float(budget)
             style = budget_styles[budget]
@@ -471,7 +470,7 @@ def plot_04_direct_sampler_validation(tables_root: Path, out_dir: Path) -> List[
         ax.set_ylim(-0.03, 1.05)
 
     fig.suptitle(
-        "Direct alias-sampler validation against the declared pi_tilt table "
+        "Direct row-sampler validation against the declared pi_tilt table "
         "(PDG 13 only -- a sampler-implementation check, not a physics claim; "
         "PDG-independence is not the point of this figure)",
         fontsize=11, wrap=True,

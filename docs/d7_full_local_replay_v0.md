@@ -317,7 +317,7 @@ already preserved by every step above, it builds a nominal direct-sampling
 law `pi_nominal = w_i / sum(w_j)` and, for a 20-configuration grid of
 synthetic utility tilts, a tilted law
 `pi_tilt = w_i * r_i / sum(w_j * r_j)`, draws training rows directly (with
-replacement, via an O(1) Walker-alias sampler) from either law, and trains
+replacement, via `numpy.random.Generator.choice`, `ut.draw_rows`) from either law, and trains
 with **ordinary unweighted NLL** -- the tilt's effect lives entirely in which
 rows get drawn, so the training loss is never multiplied by `w_i`, `r_i`, or
 `w_i * r_i` again. This section extends, and never replaces, the D7 steps
@@ -383,11 +383,11 @@ numbers is a replay recipe, not a completed result.
 7. **Normalize `w_i * r_i`**: automatic (`pi_tilt` in `table_b_tilt.npz`);
    verify `pi_tilt_sum_per_tilt` in `table_b_tilt.manifest.json` reads `1.0`
    (within floating-point tolerance) for every requested tilt.
-8. **Build alias tables**: automatic at training time
-   (`AliasSampler.from_probabilities`, inside `run_direct_sampling_training`);
-   to inspect one standalone, call
-   `ut.AliasSampler.from_probabilities(table_b.pi_tilt[<block>])` and read
-   `.table_hash()`.
+8. **Draw rows**: automatic at training time
+   (`ut.draw_rows(pi, n, seed=...)`, inside `run_direct_sampling_training`);
+   `ut.pi_hash(pi)` is the recorded `sampler_table_hash` of the law used.
+   (Before 2026-10-15 this step used a Walker-alias sampler; same law,
+   different draw sequence, so pre-change runs are not bitwise re-drawable.)
 9. **Run a one-epoch smoke on one PDG**:
    ```bash
    python scripts/run_utility_tilt_campaign.py \
@@ -437,7 +437,7 @@ scientific claim about either configuration.
 
 - **Full local tables use the same code.** Every function above
   (`fit_toy_thresholds`, `build_nominal_table`, `build_tilt_table`,
-  `AliasSampler`, `run_direct_sampling_training`) is scale-agnostic; only
+  `draw_rows`, `run_direct_sampling_training`) is scale-agnostic; only
   `--dataset`, `--max-rows`, and `--artifact-root` differ between the
   fixture and a full local run.
 - **Fixture results do not establish full-data scientific performance.**
@@ -473,7 +473,7 @@ mild `delta=0.9`, `alpha in {4, 8, 16}` and strong `delta=0.1`, `alpha=1`, for
 both U-A and U-P. No new alpha/delta value is introduced. `NOMINAL_PHYSICAL`
 shares every step with the tilted arms (dataset build, preprocessing, model
 init, optimizer, draw budget, evaluation path) -- only which probability
-vector feeds the Walker-alias sampler differs
+vector feeds the row sampler differs
 (`run_direct_sampling_training`'s `is_nominal` branch).
 
 `scripts/run_utility_tilt_campaign.py --train-tilt-ids <ids> --arena-report`

@@ -1,11 +1,11 @@
 """Tests for the D9 direct-sampling utility-tilt pipeline
 (``ship_muon_bg.density_lab.utility_tilt``): the mathematical contract
 (``pi_nominal``/``pi_tilt``, the 20-config tilt grid), weighted-threshold
-fitting, the two reference tables, the O(1) Walker-alias sampler, and the
+fitting, the two reference tables, the numpy row sampler, and the
 direct-sampling training path (ordinary unweighted NLL, no double
 weighting).
 
-Table/math/alias tests need only NumPy. Training tests use the
+Table/math/sampler tests need only NumPy. Training tests use the
 ``affine_coupling`` family and are marked ``flow`` (auto-skipped without the
 optional torch stack, see ``tests/conftest.py``).
 """
@@ -292,61 +292,47 @@ def test_build_and_validate_pdg_tables_all_twenty_configs_agree():
         assert check["agrees_within_tolerance"], tilt_id
 
 
-# --- 4. Alias sampler --------------------------------------------------------------
+# --- 4. Row sampler (numpy) ---------------------------------------------------
 
 
-def test_alias_sampler_deterministic_seed_reproduces_same_draws():
+def test_draw_rows_same_seed_same_draws_other_seed_differs():
     pi = np.array([0.5, 0.3, 0.2])
-    sampler = ut.AliasSampler.from_probabilities(pi)
-    a = sampler.draw(1000, seed=42)
-    b = sampler.draw(1000, seed=42)
-    assert np.array_equal(a, b)
-    c = sampler.draw(1000, seed=43)
-    assert not np.array_equal(a, c)
+    a = ut.draw_rows(pi, 1000, seed=42)
+    assert np.array_equal(a, ut.draw_rows(pi, 1000, seed=42))
+    assert not np.array_equal(a, ut.draw_rows(pi, 1000, seed=43))
+    assert a.min() >= 0 and a.max() < 3
 
 
-def test_alias_sampler_draws_are_within_valid_index_range():
-    pi = np.array([0.1, 0.2, 0.3, 0.4])
-    sampler = ut.AliasSampler.from_probabilities(pi)
-    draws = sampler.draw(5000, seed=0)
-    assert draws.min() >= 0
-    assert draws.max() < 4
+def test_draw_rows_rejects_invalid_pi():
+    for bad in (np.array([0.5, 0.6]), np.array([1.2, -0.2]), np.array([np.nan, 1.0])):
+        with pytest.raises(ValueError):
+            ut.draw_rows(bad, 10, seed=0)
 
 
-def test_alias_sampler_o1_table_structure_exists():
-    pi = np.array([0.25, 0.25, 0.25, 0.25])
-    sampler = ut.AliasSampler.from_probabilities(pi)
-    assert sampler.probability_table.shape == (4,)
-    assert sampler.alias_table.shape == (4,)
-    assert sampler.n == 4
-    assert isinstance(sampler.table_hash(), str) and len(sampler.table_hash()) == 64
-
-
-def test_alias_sampler_rejects_probabilities_not_summing_to_one():
-    with pytest.raises(ut.UtilityTiltError):
-        ut.AliasSampler.from_probabilities(np.array([0.5, 0.6]))
-
-
-def test_alias_sampler_empirical_frequencies_agree_with_known_categorical_law():
+def test_draw_rows_frequencies_agree_with_known_categorical_law():
     rng = np.random.default_rng(7)
     raw = rng.uniform(0.1, 5.0, size=12)
     pi = raw / raw.sum()
-    sampler = ut.AliasSampler.from_probabilities(pi)
-    drawn = sampler.draw(300000, seed=99)
-    empirical = np.bincount(drawn, minlength=12) / 300000.0
+    empirical = np.bincount(ut.draw_rows(pi, 300000, seed=99), minlength=12) / 300000.0
     assert np.max(np.abs(empirical - pi)) < 0.01
 
 
-def test_alias_sampler_empirical_b_toy_occupancy_agrees_with_theoretical():
+def test_pi_hash_tracks_the_law():
+    pi = np.array([0.25, 0.25, 0.5])
+    assert len(ut.pi_hash(pi)) == 64
+    assert ut.pi_hash(pi) == ut.pi_hash(pi.copy())
+    assert ut.pi_hash(pi) != ut.pi_hash(np.array([0.5, 0.25, 0.25]))
+
+
+def test_row_sampler_empirical_b_toy_occupancy_agrees_with_theoretical():
     result = ut.build_and_validate_pdg_tables(FIXTURE, 13, seed=11, max_rows=800, tilt_ids=["UA_d0p9_a01"])
     table_a = result["table_a"]
     config = ut.TILT_CONFIG_BY_ID["UA_d0p9_a01"]
     pi = ut.tilt_pi_vector(table_a, config)
     theoretical = ut.theoretical_tilted_prevalence(result["p0_b_toy"], config.r_positive(), config.r_negative())
-    validation = ut.validate_alias_sampler_against_table(pi, n_draws=200000, seed=5)
-    assert validation["sampler_table_hash"]
-    sampler = ut.AliasSampler.from_probabilities(pi)
-    drawn = sampler.draw(200000, seed=5)
+    validation = ut.validate_sampler_against_table(pi, n_draws=200000, seed=5)
+    assert validation["sampler_table_hash"] == ut.pi_hash(pi)
+    drawn = ut.draw_rows(pi, 200000, seed=5)
     empirical = ut.empirical_draw_diagnostics(drawn, b_toy=table_a.B_toy)
     assert abs(empirical["empirical_b_toy_fraction"] - theoretical) < 0.01
 
@@ -513,15 +499,14 @@ def test_nominal_physical_variant_id_is_not_a_tilt_config():
     assert ut.NOMINAL_PHYSICAL_VARIANT_ID not in ut.TILT_CONFIG_BY_ID
 
 
-def test_alias_sampler_on_pi_nominal_directly_reproduces_pi_nominal():
+def test_row_sampler_on_pi_nominal_directly_reproduces_pi_nominal():
     """Requirement 1: nominal direct sampling reproduces ``pi_nominal`` (math-only, no torch)."""
 
     dataset = _real_dataset(max_rows=800)
     table_a = ut.build_nominal_table(dataset)
-    validation = ut.validate_alias_sampler_against_table(table_a.pi_nominal, n_draws=200000, seed=3)
+    validation = ut.validate_sampler_against_table(table_a.pi_nominal, n_draws=200000, seed=3)
     assert validation["within_tolerance"]
-    sampler = ut.AliasSampler.from_probabilities(table_a.pi_nominal, source_hash=table_a.table_hash())
-    drawn = sampler.draw(200000, seed=3)
+    drawn = ut.draw_rows(table_a.pi_nominal, 200000, seed=3)
     empirical_freq = np.bincount(drawn, minlength=table_a.pi_nominal.shape[0]) / 200000.0
     assert np.max(np.abs(empirical_freq - table_a.pi_nominal)) < 0.01
 
@@ -599,7 +584,7 @@ def test_nominal_and_tilted_arms_share_preprocessing_and_budget_contracts(tmp_pa
     assert nominal_record["metrics"]["draw_budget"] == tilt_record["metrics"]["draw_budget"]
     assert nominal_record["metrics"]["init_seed"] == tilt_record["metrics"]["init_seed"]
     assert nominal_record["metrics"]["generated_sample_count"] == tilt_record["metrics"]["generated_sample_count"]
-    # The only intentional difference: which sampling table fed the alias draw.
+    # The only intentional difference: which sampling law fed the row draw.
     assert nominal_record["metrics"]["sampler_table_hash"] != tilt_record["metrics"]["sampler_table_hash"]
 
 

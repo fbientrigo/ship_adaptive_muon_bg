@@ -30,7 +30,7 @@ import numpy as np
 from . import environment
 from .artifacts import _default
 from .utility_tilt import (
-    AliasSampler,
+    draw_rows,
     NominalTable,
     TiltConfig,
     TiltTable,
@@ -60,7 +60,7 @@ NF_ARENA_CAVEAT = (
     "sizeable fraction of the signal) and does not consistently track the tilt's "
     "declared direction -- this is a stated NF-training-budget limitation, not "
     "evidence of a sampler or mathematics bug (those are validated separately and "
-    "exactly via the closed-form/direct-summation/alias-sampler path)."
+    "exactly via the closed-form/direct-summation/row-sampler path)."
 )
 
 # Frozen CSV schema. A downstream plotting module depends on this exact
@@ -119,8 +119,7 @@ def compute_summary_row(
     pU_direct = float(np.sum(pi_tilt_block * table_a.B_toy))
     enrichment = (pU_direct / p0) if p0 != 0.0 else float("nan")
 
-    alias_sampler = AliasSampler.from_probabilities(pi_tilt_block)
-    drawn_indices = alias_sampler.draw(int(draw_budget), seed=int(sampler_seed))
+    drawn_indices = draw_rows(pi_tilt_block, int(draw_budget), seed=int(sampler_seed))
     draw_diag = empirical_draw_diagnostics(drawn_indices, b_toy=table_a.B_toy)
     empirical_pU = draw_diag["empirical_b_toy_fraction"]
 

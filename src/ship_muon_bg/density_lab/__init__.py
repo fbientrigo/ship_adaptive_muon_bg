@@ -69,7 +69,8 @@ from .utility_tilt import (
     FOUR_CLOUD_TILT_IDS,
     TILT_CONFIG_BY_ID,
     UTILITY_TILT_TARGET_ID,
-    AliasSampler,
+    draw_rows,
+    pi_hash,
     NominalTable,
     TiltConfig,
     TiltTable,
@@ -95,7 +96,7 @@ from .utility_tilt import (
     theoretical_concentration_diagnostics,
     theoretical_tilted_prevalence,
     tilt_pi_vector,
-    validate_alias_sampler_against_table,
+    validate_sampler_against_table,
 )
 
 __all__ = [
@@ -155,7 +156,8 @@ __all__ = [
     "FOUR_CLOUD_TILT_IDS",
     "TILT_CONFIG_BY_ID",
     "UTILITY_TILT_TARGET_ID",
-    "AliasSampler",
+    "draw_rows",
+    "pi_hash",
     "NominalTable",
     "TiltConfig",
     "TiltTable",
@@ -181,5 +183,5 @@ __all__ = [
     "theoretical_concentration_diagnostics",
     "theoretical_tilted_prevalence",
     "tilt_pi_vector",
-    "validate_alias_sampler_against_table",
+    "validate_sampler_against_table",
 ]

@@ -6,8 +6,8 @@ This module implements the mathematical contract of
 ``pi_nominal = w_i / sum(w_j)`` and, for 20 utility-tilt configurations, a
 tilted law ``pi_tilt = w_i * r_i / sum(w_j * r_j)`` where ``r_i`` is a
 *synthetic* utility multiplier -- never itself called a physical weight.
-Training draws indices directly (with replacement) from ``pi_tilt`` via an
-O(1) Walker-alias sampler and trains with **ordinary unweighted NLL**: the
+Training draws indices directly (with replacement) from ``pi_tilt`` via
+``numpy.random.Generator.choice`` (:func:`draw_rows`) and trains with **ordinary unweighted NLL**: the
 tilt's effect is already encoded in which rows get drawn, so the loss must
 never be multiplied by ``w_i``, ``r_i``, or ``w_i * r_i`` again.
 
@@ -368,77 +368,25 @@ def pi_tilt(weights: np.ndarray, r_utility: np.ndarray) -> np.ndarray:
     return w_mc_times_r / total
 
 
-# --- O(1) Walker-alias categorical sampler -----------------------------------
+# --- row sampler: NumPy categorical draw -------------------------------------
 
 
-class AliasSampler:
-    """O(1)-per-draw categorical sampler (Walker's alias method).
+def draw_rows(pi: np.ndarray, n_draws: int, *, seed: int) -> np.ndarray:
+    """Draw ``n_draws`` row indices with replacement, row ``i`` with probability ``pi[i]``.
 
-    O(N) one-time preprocessing (:meth:`from_probabilities`); each draw after
-    that is one uniform-int lookup plus one Bernoulli coin flip, independent
-    of N. Never silently falls back to uniform sampling: a probability
-    vector that is negative, non-finite, or does not sum to 1 (outside
-    floating-point tolerance) raises :class:`UtilityTiltError` at
-    construction time rather than degrading quietly.
+    ``Generator.choice`` inverts the cumulative sum of ``pi`` with one uniform
+    per draw. It raises ``ValueError`` for negative/NaN ``pi``, ``sum(pi) != 1``
+    or ``n_draws < 0``. Same ``seed`` -> same draws.
     """
 
-    def __init__(self, probability_table: np.ndarray, alias_table: np.ndarray, *, n: int, source_hash: Optional[str] = None):
-        self.probability_table = np.asarray(probability_table, dtype=np.float64)
-        self.alias_table = np.asarray(alias_table, dtype=np.int64)
-        self.n = int(n)
-        self._source_hash = source_hash
+    pi = np.asarray(pi, dtype=np.float64)
+    return np.random.default_rng(seed).choice(pi.shape[0], size=int(n_draws), p=pi)
 
-    @classmethod
-    def from_probabilities(cls, probabilities: Sequence[float], *, source_hash: Optional[str] = None) -> "AliasSampler":
-        probabilities = np.asarray(probabilities, dtype=np.float64)
-        if probabilities.ndim != 1 or probabilities.shape[0] == 0:
-            raise UtilityTiltError("probabilities must be a non-empty 1-D array")
-        if not np.isfinite(probabilities).all() or np.any(probabilities < 0.0):
-            raise UtilityTiltError("probabilities must be finite and non-negative")
-        total = float(probabilities.sum())
-        if not np.isclose(total, 1.0, atol=1e-6):
-            raise UtilityTiltError("probabilities must sum to 1.0 (got {})".format(total))
 
-        n = int(probabilities.shape[0])
-        scaled = probabilities.astype(np.float64) * n
-        alias = np.zeros(n, dtype=np.int64)
-        prob_table = np.ones(n, dtype=np.float64)
+def pi_hash(pi: np.ndarray) -> str:
+    """sha256 of the exact ``pi`` vector the rows were drawn from."""
 
-        small = [i for i in range(n) if scaled[i] < 1.0]
-        large = [i for i in range(n) if scaled[i] >= 1.0]
-        while small and large:
-            s = small.pop()
-            l = large.pop()
-            prob_table[s] = scaled[s]
-            alias[s] = l
-            scaled[l] = scaled[l] - (1.0 - scaled[s])
-            if scaled[l] < 1.0:
-                small.append(l)
-            else:
-                large.append(l)
-        for l in large:
-            prob_table[l] = 1.0
-        for s in small:
-            prob_table[s] = 1.0
-        return cls(prob_table, alias, n=n, source_hash=source_hash)
-
-    def table_hash(self) -> str:
-        hasher = hashlib.sha256()
-        hasher.update(self.probability_table.tobytes())
-        hasher.update(self.alias_table.tobytes())
-        if self._source_hash:
-            hasher.update(self._source_hash.encode("utf-8"))
-        return hasher.hexdigest()
-
-    def draw(self, n_draws: int, *, seed: int) -> np.ndarray:
-        """Deterministic-seed batch draw with replacement; O(n_draws) total, O(1) per draw."""
-
-        if n_draws < 0:
-            raise UtilityTiltError("n_draws must be >= 0")
-        rng = np.random.default_rng(seed)
-        idx = rng.integers(0, self.n, size=int(n_draws))
-        coin = rng.random(int(n_draws))
-        return np.where(coin < self.probability_table[idx], idx, self.alias_table[idx]).astype(np.int64)
+    return hashlib.sha256(np.ascontiguousarray(pi, dtype=np.float64).tobytes()).hexdigest()
 
 
 # --- concentration diagnostics (diagnostic only; never gating) --------------
@@ -926,7 +874,7 @@ def run_direct_sampling_training(
     :data:`TILT_CONFIG_BY_ID` (draw from ``pi_tilt``); both branches share
     every other step (dataset build, preprocessing, model init, optimizer,
     draw budget, evaluation path) so the nominal and tilted arms can never
-    diverge except in which sampling table feeds the alias sampler. Mirrors
+    diverge except in which sampling table feeds the row sampler. Mirrors
     ``empirical.run_empirical_single``'s resume/skip and technical status
     contract. The training loss receives no second ``w``/``r``/``w*r``
     factor: ``estimator.fit`` is called with ``sample_weight=None`` on the
@@ -973,10 +921,8 @@ def run_direct_sampling_training(
     try:
         table_a = build_nominal_table(dataset)
         pi = table_a.pi_nominal if is_nominal else tilt_pi_vector(table_a, tilt_config)
-        alias_sampler = AliasSampler.from_probabilities(pi, source_hash=table_a.table_hash())
-
         draw_budget = int(n_draws) if n_draws is not None else int(dataset.train.n_rows)
-        drawn_indices = alias_sampler.draw(draw_budget, seed=sampler_seed)
+        drawn_indices = draw_rows(pi, draw_budget, seed=sampler_seed)
 
         view = _build_feature_view(feature_view)
         pipeline = FittedFeaturePipeline.fit(dataset.train.raw, view)
@@ -1037,7 +983,7 @@ def run_direct_sampling_training(
                 {"tilt_id": NOMINAL_PHYSICAL_VARIANT_ID, "mode": None, "delta": None, "alpha": None}
                 if is_nominal else tilt_config.to_dict()
             ),
-            "sampler_table_hash": alias_sampler.table_hash(),
+            "sampler_table_hash": pi_hash(pi),
             "source_table_hash": table_a.table_hash(),
             "init_seed": run_spec.seed,
             "sampler_seed": int(sampler_seed),
@@ -1083,7 +1029,7 @@ def run_direct_sampling_training(
             "dataset_manifest_hash": dataset.config_hash(),
             "feature_pipeline_hash": pipeline.config_hash(),
             "model_config_hash": run_spec.model.config_hash(),
-            "sampler_table_hash": alias_sampler.table_hash(),
+            "sampler_table_hash": pi_hash(pi),
             "source_table_hash": table_a.table_hash(),
             "checkpoint_hash": save_manifest.get("checkpoint_hash"),
             "source_file_dataset_hash": dataset.source_file_dataset_hash,
@@ -1139,7 +1085,7 @@ def build_and_validate_pdg_tables(
     """Build Table A + Table B (selected or all 20 tilts) for one PDG track and validate them.
 
     Validation checks (all diagnostic assertions, never a training gate):
-    ``sum(pi_nominal) == 1``; ``sum(pi_tilt) == 1`` per tilt; alias-sampler
+    ``sum(pi_nominal) == 1``; ``sum(pi_tilt) == 1`` per tilt; row-sampler
     empirical frequencies agree with the target table within Monte Carlo
     tolerance; direct summation of ``pi_tilt`` over ``B_toy`` agrees with the
     binary closed-form ``p_U(B_toy)``.
@@ -1175,11 +1121,10 @@ def build_and_validate_pdg_tables(
     return {"dataset": dataset, "table_a": table_a, "table_b": table_b, "checks": checks, "p0_b_toy": p0}
 
 
-def validate_alias_sampler_against_table(pi: np.ndarray, *, n_draws: int, seed: int, atol: float = 0.02) -> Dict[str, Any]:
-    """Draw from an alias sampler built on ``pi`` and compare empirical vs. target mass, aggregated by decile bucket."""
+def validate_sampler_against_table(pi: np.ndarray, *, n_draws: int, seed: int, atol: float = 0.02) -> Dict[str, Any]:
+    """Draw rows from ``pi`` and compare empirical vs. target mass of the 10 most probable rows."""
 
-    sampler = AliasSampler.from_probabilities(pi)
-    drawn = sampler.draw(n_draws, seed=seed)
+    drawn = draw_rows(pi, n_draws, seed=seed)
     empirical_counts = np.bincount(drawn, minlength=pi.shape[0]).astype(np.float64)
     empirical_freq = empirical_counts / float(n_draws)
     order = np.argsort(pi)[::-1]
@@ -1193,7 +1138,7 @@ def validate_alias_sampler_against_table(pi: np.ndarray, *, n_draws: int, seed: 
         "empirical_top_mass": empirical_top_mass,
         "abs_diff": abs(target_top_mass - empirical_top_mass),
         "within_tolerance": abs(target_top_mass - empirical_top_mass) <= atol,
-        "sampler_table_hash": sampler.table_hash(),
+        "sampler_table_hash": pi_hash(pi),
     }
 
 

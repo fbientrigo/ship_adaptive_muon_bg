@@ -213,7 +213,7 @@ def test_plot_04_deterministic_draws_across_repeated_calls(tmp_path):
     Full PNG byte-identity is not asserted here: matplotlib's text-rendering
     float rounding is not guaranteed byte-stable across two independent
     render passes in this environment, so instead we verify the thing that
-    actually matters for reproducibility -- the AliasSampler draw arrays fed
+    actually matters for reproducibility -- the row-sampler draw arrays fed
     into the plot are identical given the same fixed seed (_DIRECT_SAMPLER_SEED).
     """
     pytest.importorskip("matplotlib")
@@ -226,8 +226,8 @@ def test_plot_04_deterministic_draws_across_repeated_calls(tmp_path):
     for tilt_id, _ in plots._TILT_PAIR_04:
         block_mask = table_b.block(tilt_id)
         pi_tilt_block = np.asarray(table_b.pi_tilt, dtype=np.float64)[block_mask]
-        drawn_1 = ut.AliasSampler.from_probabilities(pi_tilt_block).draw(500, seed=plots._DIRECT_SAMPLER_SEED)
-        drawn_2 = ut.AliasSampler.from_probabilities(pi_tilt_block).draw(500, seed=plots._DIRECT_SAMPLER_SEED)
+        drawn_1 = ut.draw_rows(pi_tilt_block, 500, seed=plots._DIRECT_SAMPLER_SEED)
+        drawn_2 = ut.draw_rows(pi_tilt_block, 500, seed=plots._DIRECT_SAMPLER_SEED)
         assert np.array_equal(drawn_1, drawn_2)
 
     # Also confirm the two calls to the plotting function themselves succeed
