@@ -1,5 +1,7 @@
 # `fairship_adapter` Contract (v0)
 
+> **PARTLY SUPERSEDED** (2026-10-13, `docs/decisions/simplification_log.md` S6). The adapter *boundary* is now the implemented `EvaluationRequest`/`EvaluationBundle` (`docs/architecture/fairship_evaluation_adapter_v1.md`). Its failure taxonomy and test expectations are still cited by `scientific_architecture_v2.md`, so nothing below is removed.
+
 Status: **specification only — not implemented.**
 
 This document specifies the *future* `fairship_adapter`. It defines the

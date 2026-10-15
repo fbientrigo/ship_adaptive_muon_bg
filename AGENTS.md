@@ -18,6 +18,8 @@ combined into or treated as the canonical `SourceState` interface. See
 
 ## Running D9-5 Gate D nightly GPU training blocks
 
+> **Scope (2026-10-13):** Gate D is feasibility work on the historical reference dataset (`docs/decisions/historical_dataset_scope_correction_v0.md`), not a prerequisite of the FairShip loop. Whether to continue it is the user's call; instructions below are unchanged.
+
 Gate D (the six-run NF_AC production arena, `configs/afterms/d9_5_model_family_arena_v0.json`)
 runs in restartable 8-hour blocks via the D9-5N nightly runner. Any agent picking up
 this work should use the commands below — do not invoke the training CLI

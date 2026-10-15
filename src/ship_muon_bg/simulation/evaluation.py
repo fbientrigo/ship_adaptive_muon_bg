@@ -43,7 +43,8 @@ Backend-independent: imports neither ROOT, FairShip, nor
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
+from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol, Sequence, Tuple, runtime_checkable
 
@@ -650,6 +651,30 @@ def execution_shortfall(
         for subject_id, count in sorted(counts.items())
         if count < request.replications_per_subject
     }
+
+
+def bundle_records(bundle: EvaluationBundle) -> dict:
+    """Lossless JSON-safe dump of every record kind in ``bundle`` (flat tables, ids as join keys).
+
+    Unlike a hand-written manifest this drops nothing: decisions and candidates
+    survive, so persisted output can be re-aggregated without re-running.
+    """
+
+    def plain(value: Any) -> Any:
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, Mapping):
+            return {key: plain(item) for key, item in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [plain(item) for item in value]
+        if is_dataclass(value):  # not asdict(): it deep-copies, and MappingProxyType provenance cannot be copied
+            return {f.name: plain(getattr(value, f.name)) for f in fields(value)}
+        return value
+
+    out = {"request_id": bundle.request_id, "backend_name": bundle.backend_name, "is_physical": bundle.is_physical}
+    for name in ("executions", "realizations", "candidates", "observations", "decisions"):
+        out[name] = [plain(item) for item in getattr(bundle, name)]
+    return out
 
 
 def assert_requests_compatible(requests: Sequence[EvaluationRequest]) -> None:
