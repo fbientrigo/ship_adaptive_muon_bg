@@ -163,6 +163,12 @@ class CoordinateTransformConfig:
         }
 
 
+#: The one declared after-MS -> current-FairShip handshake used by every injection so far (PROVISIONAL, #43 open).
+LEGACY_AFTERMS_TRANSFORM = CoordinateTransformConfig(
+    name="afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+    status="PROVISIONAL", z_rule="affine_declared_z", z_offset_m=2.5916,
+)
+
 @dataclass
 class TTreeConnectorResult:
     output_directory: Path

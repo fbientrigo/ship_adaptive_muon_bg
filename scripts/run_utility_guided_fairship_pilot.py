@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ship_muon_bg.adapters.fairship import CandidateInjectionRecord, CoordinateTransformConfig, FairShipTTreeConnector
+from ship_muon_bg.adapters.fairship import LEGACY_AFTERMS_TRANSFORM, CandidateInjectionRecord, FairShipTTreeConnector
 from ship_muon_bg.adapters.current_main_mudis import CurrentMainMuonDISRunner
 from ship_muon_bg.entities.subject import TagSubject
 from ship_muon_bg.simulation.evaluation import EvaluationRequest
@@ -22,10 +22,7 @@ TILT_ID = "UA_d0p1_a04"
 DELTA, ALPHA, UTILITY_MODE = 0.1, 4.0, "UA"
 N_PER_PDG = 6
 Z_METADATA_M = 28.905
-TRANSFORM = CoordinateTransformConfig(
-    name="afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
-    status="PROVISIONAL", z_rule="affine_declared_z", z_offset_m=2.5916,
-)
+TRANSFORM = LEGACY_AFTERMS_TRANSFORM
 FIELDS = [
     "candidate_id", "pdg_id", "tilt_id", "delta", "alpha", "nf_run_id", "checkpoint_path",
     "checkpoint_sha256", "model_config_hash", "training_dataset_hash", "utility_mode", "sampling_seed",
