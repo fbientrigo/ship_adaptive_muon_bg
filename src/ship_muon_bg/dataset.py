@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -91,14 +91,12 @@ def load_records(datasets: Iterable[Path]) -> tuple[list[FSSimExecution], list[R
 
 
 def snapshot(datasets: Sequence[Path], stage_definition_id: str, out_root: Path, *, policy: Mapping[str, Any],
-             split_seed: int, validation_fraction: float = 0.3, subject_filter: Optional[set[str]] = None) -> Path:
+             split_seed: int, validation_fraction: float = 0.3) -> Path:
     """Freeze one training snapshot under ``<out_root>/<snapshot_id>/``.  ``policy`` must name the U version and the
     sampling policy that produced the states; it is part of the id.  The split is by source state (all executions of a
     state fall on the same side), decided by a hash of (seed, subject_id): deterministic, order-free."""
     datasets = [Path(d).resolve() for d in datasets]
     ex, cand, dec = load_records(datasets)
-    if subject_filter is not None:
-        ex = [e for e in ex if e.subject_id in subject_filter]
     if stage_definition_id not in {d.stage_definition_id for d in dec}:  # never fall back to another (e.g. newer) definition
         raise ValueError(f"stage {stage_definition_id} is not in the evidence")
     agg = aggregate_state_stage_evaluations(executions=ex, candidates=cand, decisions=dec, stage_definition_ids=[stage_definition_id])
@@ -111,8 +109,7 @@ def snapshot(datasets: Sequence[Path], stage_definition_id: str, out_root: Path,
     spec = {"datasets": [{"path": str(d), "manifest_sha256": sha256(d / "manifest.json")} for d in datasets],
             "stage_definition_id": stage_definition_id, "estimator_definition_id": estimator, "fs_sim_configuration_id": config,
             "options_digest": agg.rows[0].options_digest if agg.rows else None, "policy": dict(policy),
-            "split": {"group": "subject_id", "seed": split_seed, "validation_fraction": validation_fraction},
-            "subject_filter_sha256": content_hash({"s": sorted(subject_filter)}) if subject_filter is not None else None}
+            "split": {"group": "subject_id", "seed": split_seed, "validation_fraction": validation_fraction}}
     sid = "snap-" + content_hash(spec)[:16]
     target = out_root / sid
     if target.exists():

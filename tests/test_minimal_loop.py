@@ -51,3 +51,18 @@ def test_concentration_reports_mass_and_effective_rows():
     c = ml.concentration(ml.eligibility(a, u0, volume), u0)
     assert c["reference_uniform_eligible"] == {"mass_u0_1": 0.5, "effective_rows": pytest.approx(2.0), "rows_for_90pct_mass": 2}
     assert c["tilt_u0"]["mass_u0_1"] == pytest.approx(1 / (1 + ml.DELTA ** ml.ALPHA))
+
+
+def test_draws_csv_round_trip_keeps_numeric_types(tmp_path):
+    import csv, importlib.util, pathlib
+    spec = importlib.util.spec_from_file_location("rml", pathlib.Path(__file__).parents[1] / "scripts" / "run_minimal_loop.py")
+    rml = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rml)
+    a, u0, volume = toy()
+    rows = [{**r, "status": "ELIGIBLE", "initial_volume": "cave", "p_gev": 1.5} for r in ml.draw(ml.eligibility(a, u0, volume), u0, 3, 1)]
+    with (tmp_path / "d.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    assert rml.read_draws(tmp_path / "d.csv") == rows  # a string "0.0" would silently empty the U0 strata
+    assert rml.upper95(0) is None and abs(rml.upper95(20) - 0.1391) < 1e-4
