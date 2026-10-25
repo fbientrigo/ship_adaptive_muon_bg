@@ -1,0 +1,32 @@
+{
+ "datasets": [
+  {
+   "manifest_sha256": "9c3bcc45b145e5943c41ac62c86f2d6be5dbf5882943dadfe388fdfe003ec521",
+   "path": "/home/fabian/thesis/scratch/minimal-loop-v0/data/reference_uniform_eligible"
+  }
+ ],
+ "estimator_definition_id": "eta_hat_positive_over_valid_v0@sha256:f391a3c62b60ffd627f892b43d522546e343360e50b9a873671e83f96bbcbe5e",
+ "fs_sim_configuration_id": "pr1432_400c0fb_TRY_2026",
+ "options_digest": "c4857827b3365131fba084058cdc961991c38d045d37a9e43ce9de3ecfe3e145",
+ "policy": {
+  "sampling": {
+   "arm": "reference_uniform_eligible",
+   "draws_sha256": "ea4e45da7d47fe2d94364c07312a81346d90697cd56199194aa61f7fd65f5678",
+   "seed": 20261025
+  },
+  "u": {
+   "alpha": 4.0,
+   "delta": 0.1,
+   "u0_definition": "straight-ray SBT crossing (pool_scores.json)",
+   "u0_scores_sha256": "9aeb5e47d3508a49dc4c3db01965e2a9ebe9c98f0d73bfae57f68a574f065180"
+  }
+ },
+ "rows_sha256": "65da18040ef72a58480540537dac8c5667d2b1deec991c804642884c0e89e202",
+ "snapshot_id": "snap-be451908201b5fbc",
+ "split": {
+  "group": "subject_id",
+  "seed": 20261025,
+  "validation_fraction": 0.3
+ },
+ "stage_definition_id": "pr1432_filter_any_v0@sha256:6fbd02f7ae1ab71020205170f4a303ffa51064184f8d1a00dcb318c05da2f706"
+}

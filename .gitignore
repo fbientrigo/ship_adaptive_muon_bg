@@ -14,6 +14,7 @@ artifacts/*
 artifacts/fairship_connector_v0/*
 !artifacts/fairship_connector_v0/README.md
 !artifacts/fairship_connector_v0/summary.json
+!artifacts/minimal_loop_v0/
 !artifacts/utility_guided_fairship_pilot_v0/
 artifacts/utility_guided_fairship_pilot_v0/*
 !artifacts/utility_guided_fairship_pilot_v0/README.md

@@ -1,0 +1,173 @@
+{
+ "scope": "PR #1432 filter stage only; not Y^(k), not reconstruction, not B. Exploratory smoke, no power claim.",
+ "reference_is": "uniform over eligible rows (empirical), not the nominal physical measure",
+ "arms": {
+  "reference_uniform_eligible": {
+   "executions": 20,
+   "distinct_states": 20,
+   "max_multiplicity": 1,
+   "technical_failure": 0,
+   "not_evaluated": 1,
+   "valid": 19,
+   "filter_pass_executions": 1,
+   "states_with_a_pass": 1,
+   "states_with_a_valid_execution": 19,
+   "wall_hours": 0.275,
+   "pass_per_wall_hour": 3.64,
+   "pass_per_valid_execution": 0.053,
+   "upper95_pass_rate_if_zero": null,
+   "by_u0": {
+    "u0_0": {
+     "valid": 19,
+     "pass": 1,
+     "upper95_if_zero": null
+    },
+    "u0_1": {
+     "valid": 0,
+     "pass": 0,
+     "upper95_if_zero": null
+    }
+   },
+   "snapshot": "scratch/minimal-loop-v0/data/snapshots/snap-be451908201b5fbc",
+   "coverage_deciles_of_eligible_pool": {
+    "p_gev": [
+     1,
+     1,
+     2,
+     1,
+     5,
+     4,
+     1,
+     0,
+     4,
+     1
+    ],
+    "pt_gev": [
+     1,
+     3,
+     0,
+     0,
+     4,
+     4,
+     2,
+     1,
+     4,
+     1
+    ],
+    "x_m": [
+     3,
+     0,
+     2,
+     4,
+     1,
+     2,
+     0,
+     1,
+     4,
+     3
+    ],
+    "y_m": [
+     2,
+     2,
+     3,
+     3,
+     1,
+     1,
+     1,
+     4,
+     3,
+     0
+    ]
+   }
+  },
+  "tilt_u0": {
+   "executions": 20,
+   "distinct_states": 12,
+   "max_multiplicity": 4,
+   "technical_failure": 0,
+   "not_evaluated": 4,
+   "valid": 16,
+   "filter_pass_executions": 6,
+   "states_with_a_pass": 2,
+   "states_with_a_valid_execution": 10,
+   "wall_hours": 0.276,
+   "pass_per_wall_hour": 21.75,
+   "pass_per_valid_execution": 0.375,
+   "upper95_pass_rate_if_zero": null,
+   "by_u0": {
+    "u0_0": {
+     "valid": 7,
+     "pass": 0,
+     "upper95_if_zero": 0.3481636551311609
+    },
+    "u0_1": {
+     "valid": 9,
+     "pass": 6,
+     "upper95_if_zero": null
+    }
+   },
+   "snapshot": "scratch/minimal-loop-v0/data/snapshots/snap-74f38b03b8ebb222",
+   "coverage_deciles_of_eligible_pool": {
+    "p_gev": [
+     4,
+     2,
+     4,
+     0,
+     0,
+     1,
+     1,
+     0,
+     2,
+     6
+    ],
+    "pt_gev": [
+     5,
+     1,
+     1,
+     4,
+     0,
+     0,
+     0,
+     1,
+     2,
+     6
+    ],
+    "x_m": [
+     1,
+     0,
+     0,
+     4,
+     3,
+     11,
+     0,
+     0,
+     0,
+     1
+    ],
+    "y_m": [
+     1,
+     0,
+     1,
+     1,
+     8,
+     0,
+     1,
+     0,
+     1,
+     7
+    ]
+   }
+  }
+ },
+ "missed_region": {
+  "reference_u0_0": {
+   "valid": 19,
+   "pass": 1,
+   "upper95_if_zero": null
+  },
+  "tilt_over_reference_prob_u0_0": 0.3969312794779316,
+  "within_tilt_weight_ratio_u0_0_over_u0_1": 0.00010000000000000002,
+  "tilt_mass_on_u0_0": 0.3968709665745891,
+  "reference_mass_on_u0_0": 0.9998480520269857
+ }
+}

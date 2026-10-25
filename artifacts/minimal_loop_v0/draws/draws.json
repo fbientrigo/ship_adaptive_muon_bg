@@ -1,0 +1,132 @@
+{
+ "scores": "scratch/minimal-loop-v0/score/pool_scores.npz",
+ "scores_sha256": "9aeb5e47d3508a49dc4c3db01965e2a9ebe9c98f0d73bfae57f68a574f065180",
+ "scores_meta": {
+  "u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering",
+  "pool": "/home/fabian/thesis/ship_adaptive_muon_bg/data/samples/muonsFullMC_afterMS_sample.npz",
+  "pool_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+  "geofile": "/home/fabian/thesis/scratch/fairship-update-1012/pr1432_inputs/runs/25740/geo_connector.root",
+  "geofile_sha256": "83ba54e9cd99059174187c1a098e286535f1dd5d1d282f47787983ce97b66ed0",
+  "fairship_dir": "/home/fabian/thesis/worktrees/FairShip-pr1432-400c0fb",
+  "fairship_commit": "400c0fb4ae31fd09f4cb8decc98c600c8441e0c1",
+  "transform": {
+   "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+   "status": "PROVISIONAL",
+   "x_unit": "m",
+   "y_unit": "m",
+   "x_to_m": 1.0,
+   "y_to_m": 1.0,
+   "z_rule": "affine_declared_z",
+   "z_value_m": null,
+   "z_scale": 1.0,
+   "z_offset_m": 2.5916
+  },
+  "n_rows": 40000,
+  "n_scored": 39998,
+  "n_u0_1": 14,
+  "scores_sha256": "9aeb5e47d3508a49dc4c3db01965e2a9ebe9c98f0d73bfae57f68a574f065180"
+ },
+ "seed": 20261025,
+ "n_per_arm": 20,
+ "delta": 0.1,
+ "alpha": 4.0,
+ "eligible_volumes": [
+  "cave",
+  "Cavern"
+ ],
+ "gate_status": "PROVISIONAL",
+ "eligibility_counts": {
+  "ELIGIBLE": 32906,
+  "INELIGIBLE_IN_SHIELD_MAGNET": 7092,
+  "INVALID_ROW": 2
+ },
+ "ineligible_volume_counts": {
+  "Magn7_MagRetR": 3581,
+  "Magn7_MagRetL": 3442,
+  "Magn7_MagBotRight": 13,
+  "Magn7_MagTopRight": 16,
+  "Magn7_MagBotLeft": 15,
+  "Magn7_MagTopLeft": 18,
+  "Magn7_MiddleMagL": 2,
+  "Magn7_MiddleMagR": 5
+ },
+ "invalid_or_unscored_rows": {
+  "22837": "INVALID_ROW",
+  "26902": "INVALID_ROW"
+ },
+ "u0_1_rows": {
+  "6049": "INELIGIBLE_IN_SHIELD_MAGNET",
+  "8217": "INELIGIBLE_IN_SHIELD_MAGNET",
+  "8637": "INELIGIBLE_IN_SHIELD_MAGNET",
+  "10672": "INELIGIBLE_IN_SHIELD_MAGNET",
+  "14900": "INELIGIBLE_IN_SHIELD_MAGNET",
+  "22373": "INELIGIBLE_IN_SHIELD_MAGNET",
+  "25740": "INELIGIBLE_IN_SHIELD_MAGNET",
+  "29823": "ELIGIBLE",
+  "31238": "ELIGIBLE",
+  "31588": "ELIGIBLE",
+  "32029": "INELIGIBLE_IN_SHIELD_MAGNET",
+  "32661": "ELIGIBLE",
+  "35078": "INELIGIBLE_IN_SHIELD_MAGNET",
+  "36915": "ELIGIBLE"
+ },
+ "concentration": {
+  "reference_uniform_eligible": {
+   "mass_u0_1": 0.00015194797301404,
+   "effective_rows": 32906.0,
+   "rows_for_90pct_mass": 29616
+  },
+  "tilt_u0": {
+   "mass_u0_1": 0.6031290334254111,
+   "effective_rows": 13.744247203045541,
+   "rows_for_90pct_mass": 24616
+  }
+ },
+ "drawn": {
+  "reference_uniform_eligible": {
+   "executions": 20,
+   "distinct_rows": 20,
+   "multiplicity": {
+    "18183": 1,
+    "23409": 1,
+    "17929": 1,
+    "34090": 1,
+    "17546": 1,
+    "857": 1,
+    "34578": 1,
+    "10420": 1,
+    "18020": 1,
+    "36799": 1,
+    "3553": 1,
+    "34721": 1,
+    "7276": 1,
+    "35264": 1,
+    "35722": 1,
+    "29697": 1,
+    "19482": 1,
+    "16830": 1,
+    "19352": 1,
+    "6532": 1
+   }
+  },
+  "tilt_u0": {
+   "executions": 20,
+   "distinct_rows": 12,
+   "multiplicity": {
+    "32661": 4,
+    "31238": 3,
+    "36915": 2,
+    "29823": 2,
+    "31588": 2,
+    "22379": 1,
+    "1715": 1,
+    "22707": 1,
+    "16237": 1,
+    "33670": 1,
+    "14503": 1,
+    "16151": 1
+   }
+  }
+ },
+ "draws_sha256": "ea4e45da7d47fe2d94364c07312a81346d90697cd56199194aa61f7fd65f5678"
+}

@@ -264,8 +264,12 @@ def report(args) -> None:
             "coverage_deciles_of_eligible_pool": {k: np.histogram(np.clip(f(drawn), edges[k][0], edges[k][-1]), edges[k])[0].tolist()
                                                   for k, f in feats.items()},
         }
-    rep["missed_region"] = ("reference-arm passes with U0=0 = useful outcomes in the region the tilt down-weights by "
-                            f"delta^alpha = {ml.DELTA ** ml.ALPHA:g}: {rep['arms']['reference_uniform_eligible']['by_u0']['u0_0']}")
+    ref, tilt = (ml.arm_probabilities(arm, status, u0) for arm in ml.ARMS)
+    u0_0 = (status == "ELIGIBLE") & (u0 == 0)
+    rep["missed_region"] = {"reference_u0_0": rep["arms"]["reference_uniform_eligible"]["by_u0"]["u0_0"],
+                            "tilt_over_reference_prob_u0_0": float(tilt[u0_0][0] / ref[u0_0][0]),  # normalised, per row
+                            "within_tilt_weight_ratio_u0_0_over_u0_1": ml.DELTA ** ml.ALPHA,
+                            "tilt_mass_on_u0_0": float(tilt[u0_0].sum()), "reference_mass_on_u0_0": float(ref[u0_0].sum())}
     (args.data / "report.json").write_text(json.dumps(rep, indent=1) + "\n")
     print(json.dumps(rep, indent=1))
 

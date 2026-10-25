@@ -6,7 +6,9 @@ This repository is a fork of `mferril/NFlow`, used as a clean starting point for
 
 ## Status
 
-Early thesis-development repository.
+Early thesis-development repository. Working today: data contracts, Density Lab (D0-D5), after-MS NF pipeline
+(`afterms/`), canonical entities + `EvaluationBundle`, PR #1432 stage-outcome adapter, and one minimal real-FairShip
+loop iteration (see *Minimal loop*). Not yet: trained proxy, NF-generated states in the loop, selection/veto, `B`.
 
 The current goal is not to publish final physics results, but to build a reproducible software artifact that can evolve from toy studies to CERN/FairShip workflows.
 
@@ -300,40 +302,24 @@ with:
 source repo | source file | destination file | change | reason | validation
 ```
 
-## First Milestone
+## Minimal loop (what exists)
 
-The first target is a reproducible toy loop:
-
-```text
-load toy data
-train proxy
-train/sample flow
-propose candidates
-run toy simulator
-evaluate cost and useful-candidate yield
-write campaign summary
-```
-
-Expected command:
+One iteration of `pool -> U0 -> tilt -> FairShip -> outcomes -> Parquet -> snapshot -> report`, on real FairShip
+(PR #1432 `400c0fb`, `TRY_2026`) up to the **filter stage** only: not `Y^(k)`, not reconstruction/selection, not `B`.
+Code: `src/ship_muon_bg/minimal_loop.py` (gate, U0 tilt, draws), `src/ship_muon_bg/dataset.py` (Parquet export,
+snapshots), `scripts/run_minimal_loop.py` (CLI). Evidence and limits: `artifacts/minimal_loop_v0/README.md`.
 
 ```bash
-python scripts/run_toy_loop.py --config configs/campaigns/toy_adaptive_v0.yaml
-pytest
+# FairShip env (pixi): U0 + TGeo initial volume per pool row, pinned geometry
+python scripts/run_minimal_loop.py score --fairship <PR1432 worktree> --geo <geo_connector.root> --out S
+python scripts/run_minimal_loop.py draw  --scores S/pool_scores.npz --out D --n 20 --seed 20261025
+python scripts/run_minimal_loop.py run   --fairship <PR1432 worktree> --draws D/draws.csv --runs R   # resumable
+# core venv
+python scripts/run_minimal_loop.py export --draws D/draws.csv --runs R --data P   # P/<arm>/*.parquet + manifest.json
+python scripts/run_minimal_loop.py report --draws D/draws.csv --runs R --data P   # P/report.json + P/snapshots/
 ```
 
-Expected outputs:
-
-```text
-artifacts/
-  toy_campaign/
-    config_resolved.yaml
-    dataset_hash.json
-    proxy_metrics.json
-    flow_diagnostics.json
-    proposed_candidates.parquet
-    simulator_results.parquet
-    campaign_summary.md
-```
+The earlier toy-loop milestone (`scripts/run_toy_loop.py`) was never implemented and is retired.
 
 ## CERN / LXPLUS Direction
 

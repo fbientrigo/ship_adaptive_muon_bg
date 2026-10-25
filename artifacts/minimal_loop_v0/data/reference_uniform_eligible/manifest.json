@@ -1,0 +1,287 @@
+{
+ "bundles": [
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-000/bundle.json",
+   "request_id": "reference_uniform_eligible-000",
+   "sha256": "80f1c91637ee9ba1a6d567c8b5bdea647af7dc2ab14b709822c64ddf1ff5f9ac"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-001/bundle.json",
+   "request_id": "reference_uniform_eligible-001",
+   "sha256": "bdab07461312e78e39b41ac9581b29990cc40135974341f23912b9a80a2f63ad"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-002/bundle.json",
+   "request_id": "reference_uniform_eligible-002",
+   "sha256": "1c4099ab80250f7559da07251b0c5eb3a7098c2d32d700439352906b9389b04c"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-003/bundle.json",
+   "request_id": "reference_uniform_eligible-003",
+   "sha256": "4f1d25a489a59031e5f7c8238b75422c2a84438e3821db3760ba14a61a5245de"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-004/bundle.json",
+   "request_id": "reference_uniform_eligible-004",
+   "sha256": "0c1c4226a1df1a831b1cb06754cabd917901adfc6c8868cda313902732e87fee"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-005/bundle.json",
+   "request_id": "reference_uniform_eligible-005",
+   "sha256": "ad24fa2b03a5cd3d38f86a1d001fade500969df21e04ef9d3c0bcb48d02e2641"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-006/bundle.json",
+   "request_id": "reference_uniform_eligible-006",
+   "sha256": "0671d5fe2ef1d15d6e5352337f0859e4407f644db5d09843ed3e7534a505e62c"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-007/bundle.json",
+   "request_id": "reference_uniform_eligible-007",
+   "sha256": "f0347081048a08d45ecf496492df2be712f9f9233aa771280483fe503fcea5d4"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-008/bundle.json",
+   "request_id": "reference_uniform_eligible-008",
+   "sha256": "6abce2cef1e420628de5a62751d9afe1782ca7361885ceffd1d7806ab9f80d17"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-009/bundle.json",
+   "request_id": "reference_uniform_eligible-009",
+   "sha256": "f17868a1fc1f5aaf0d4627523db005ffbbca1c804a1de09f6710bf563d424e3c"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-010/bundle.json",
+   "request_id": "reference_uniform_eligible-010",
+   "sha256": "cc224c8ea6b5638a8d51f9feed21f52755991151eea884837fcbd4b92ffcb09d"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-011/bundle.json",
+   "request_id": "reference_uniform_eligible-011",
+   "sha256": "646b69e94df98595097568ef9625a4e426d65b901589b1aeb866fe97989428b3"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-012/bundle.json",
+   "request_id": "reference_uniform_eligible-012",
+   "sha256": "ba6dd06e15c66d93fa991da5013c37b7961b60adc91d18a151b005e4783bade9"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-013/bundle.json",
+   "request_id": "reference_uniform_eligible-013",
+   "sha256": "af9d41d78500b5040071938ceac78aac5e961ab575dfc355adffd84a175206e6"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-014/bundle.json",
+   "request_id": "reference_uniform_eligible-014",
+   "sha256": "3b9e223069c8e898d64cfb9997625b88a2d1efeb0706701aa20176c7df89185d"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-015/bundle.json",
+   "request_id": "reference_uniform_eligible-015",
+   "sha256": "368554dfee36672276089e51074a46c0a1fc5a6454d22fdb2e59f8951cdf716c"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-016/bundle.json",
+   "request_id": "reference_uniform_eligible-016",
+   "sha256": "6caa7e5ffae525b6e073428febef6d38fb3e16d9280a83ed976287970686080e"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-017/bundle.json",
+   "request_id": "reference_uniform_eligible-017",
+   "sha256": "9b6911790f6da422637efad2cac9d12e352ea76dfe28a9d731385f3a23e7e141"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-018/bundle.json",
+   "request_id": "reference_uniform_eligible-018",
+   "sha256": "0113d7c5e3a94e117b7a29c143a3f0fc3f9a86e101bb4b300f1f7b0db67b6b85"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/runs/reference_uniform_eligible-019/bundle.json",
+   "request_id": "reference_uniform_eligible-019",
+   "sha256": "bca6f23b881a651a9624df0e340b2fe371eb2305c696cd5edfcdc2c2d1d44dbc"
+  }
+ ],
+ "is_physical": true,
+ "metadata": {
+  "arm": "reference_uniform_eligible",
+  "cost_parquet_sha256": "a3191bf43ae071f7c3f930cf2a98c85543992cdbadffff9fd2e5c5972c859131",
+  "draws": "scratch/minimal-loop-v0/draws/draws.csv",
+  "draws_meta": {
+   "alpha": 4.0,
+   "concentration": {
+    "reference_uniform_eligible": {
+     "effective_rows": 32906.0,
+     "mass_u0_1": 0.00015194797301404,
+     "rows_for_90pct_mass": 29616
+    },
+    "tilt_u0": {
+     "effective_rows": 13.744247203045541,
+     "mass_u0_1": 0.6031290334254111,
+     "rows_for_90pct_mass": 24616
+    }
+   },
+   "delta": 0.1,
+   "drawn": {
+    "reference_uniform_eligible": {
+     "distinct_rows": 20,
+     "executions": 20,
+     "multiplicity": {
+      "10420": 1,
+      "16830": 1,
+      "17546": 1,
+      "17929": 1,
+      "18020": 1,
+      "18183": 1,
+      "19352": 1,
+      "19482": 1,
+      "23409": 1,
+      "29697": 1,
+      "34090": 1,
+      "34578": 1,
+      "34721": 1,
+      "35264": 1,
+      "3553": 1,
+      "35722": 1,
+      "36799": 1,
+      "6532": 1,
+      "7276": 1,
+      "857": 1
+     }
+    },
+    "tilt_u0": {
+     "distinct_rows": 12,
+     "executions": 20,
+     "multiplicity": {
+      "14503": 1,
+      "16151": 1,
+      "16237": 1,
+      "1715": 1,
+      "22379": 1,
+      "22707": 1,
+      "29823": 2,
+      "31238": 3,
+      "31588": 2,
+      "32661": 4,
+      "33670": 1,
+      "36915": 2
+     }
+    }
+   },
+   "draws_sha256": "ea4e45da7d47fe2d94364c07312a81346d90697cd56199194aa61f7fd65f5678",
+   "eligibility_counts": {
+    "ELIGIBLE": 32906,
+    "INELIGIBLE_IN_SHIELD_MAGNET": 7092,
+    "INVALID_ROW": 2
+   },
+   "eligible_volumes": [
+    "cave",
+    "Cavern"
+   ],
+   "gate_status": "PROVISIONAL",
+   "ineligible_volume_counts": {
+    "Magn7_MagBotLeft": 15,
+    "Magn7_MagBotRight": 13,
+    "Magn7_MagRetL": 3442,
+    "Magn7_MagRetR": 3581,
+    "Magn7_MagTopLeft": 18,
+    "Magn7_MagTopRight": 16,
+    "Magn7_MiddleMagL": 2,
+    "Magn7_MiddleMagR": 5
+   },
+   "invalid_or_unscored_rows": {
+    "22837": "INVALID_ROW",
+    "26902": "INVALID_ROW"
+   },
+   "n_per_arm": 20,
+   "scores": "scratch/minimal-loop-v0/score/pool_scores.npz",
+   "scores_meta": {
+    "fairship_commit": "400c0fb4ae31fd09f4cb8decc98c600c8441e0c1",
+    "fairship_dir": "/home/fabian/thesis/worktrees/FairShip-pr1432-400c0fb",
+    "geofile": "/home/fabian/thesis/scratch/fairship-update-1012/pr1432_inputs/runs/25740/geo_connector.root",
+    "geofile_sha256": "83ba54e9cd99059174187c1a098e286535f1dd5d1d282f47787983ce97b66ed0",
+    "n_rows": 40000,
+    "n_scored": 39998,
+    "n_u0_1": 14,
+    "pool": "/home/fabian/thesis/ship_adaptive_muon_bg/data/samples/muonsFullMC_afterMS_sample.npz",
+    "pool_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+    "scores_sha256": "9aeb5e47d3508a49dc4c3db01965e2a9ebe9c98f0d73bfae57f68a574f065180",
+    "transform": {
+     "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+     "status": "PROVISIONAL",
+     "x_to_m": 1.0,
+     "x_unit": "m",
+     "y_to_m": 1.0,
+     "y_unit": "m",
+     "z_offset_m": 2.5916,
+     "z_rule": "affine_declared_z",
+     "z_scale": 1.0,
+     "z_value_m": null
+    },
+    "u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering"
+   },
+   "scores_sha256": "9aeb5e47d3508a49dc4c3db01965e2a9ebe9c98f0d73bfae57f68a574f065180",
+   "seed": 20261025,
+   "u0_1_rows": {
+    "10672": "INELIGIBLE_IN_SHIELD_MAGNET",
+    "14900": "INELIGIBLE_IN_SHIELD_MAGNET",
+    "22373": "INELIGIBLE_IN_SHIELD_MAGNET",
+    "25740": "INELIGIBLE_IN_SHIELD_MAGNET",
+    "29823": "ELIGIBLE",
+    "31238": "ELIGIBLE",
+    "31588": "ELIGIBLE",
+    "32029": "INELIGIBLE_IN_SHIELD_MAGNET",
+    "32661": "ELIGIBLE",
+    "35078": "INELIGIBLE_IN_SHIELD_MAGNET",
+    "36915": "ELIGIBLE",
+    "6049": "INELIGIBLE_IN_SHIELD_MAGNET",
+    "8217": "INELIGIBLE_IN_SHIELD_MAGNET",
+    "8637": "INELIGIBLE_IN_SHIELD_MAGNET"
+   }
+  },
+  "draws_parquet_sha256": "7dcff597f50d210f06e527d6619822beb4e18d2efb44938615e1f19dd280f5a6",
+  "draws_sha256": "ea4e45da7d47fe2d94364c07312a81346d90697cd56199194aa61f7fd65f5678"
+ },
+ "schema": "minimal_loop_dataset_v0",
+ "tables": {
+  "candidates": {
+   "rows": 0,
+   "sha256": "94bb92bcdc359c5509339a0f4de79cbc141160ad5e0e8088cf0a15cb7785e3fa"
+  },
+  "decisions": {
+   "rows": 370,
+   "sha256": "f5382e451d10c5967097da628ec26eec55368a266ae6a957208c5caa862eb282"
+  },
+  "executions": {
+   "rows": 20,
+   "sha256": "ea2243e924a958abed8daae22ce01bc881a8a308d56f4c4500b1c6582a0d697d"
+  },
+  "observations": {
+   "rows": 512,
+   "sha256": "789b76a40ae2802787fa2022490dfeafc8c44d189fb048c9b364717402a2f024"
+  },
+  "realizations": {
+   "rows": 290,
+   "sha256": "9595ad63d6c6ab549c15453120791ffb84b77b0cefaacf90380b17f8a2753836"
+  }
+ }
+}
