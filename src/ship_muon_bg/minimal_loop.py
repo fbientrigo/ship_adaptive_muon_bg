@@ -63,7 +63,7 @@ def draw(status: np.ndarray, u0: np.ndarray, n_per_arm: int, seed: int) -> list[
     """With-replacement draws per arm.  Each draw gets its own simulation seed; a repeated row is a repeated
     execution of one state, not a new independent draw from the reference measure."""
     rng = np.random.default_rng(seed)
-    sim_seeds = rng.choice(np.arange(1, 899_999_999), size=n_per_arm * len(ARMS), replace=False)  # PR #1432 seed range
+    sim_seeds = rng.choice(899_999_999, size=n_per_arm * len(ARMS), replace=False) + 1  # PR #1432 range, not materialised
     rows = []
     for arm in ARMS:
         pi = arm_probabilities(arm, status, u0)

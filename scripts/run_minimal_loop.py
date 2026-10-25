@@ -68,8 +68,25 @@ def score(args) -> None:
     print(json.dumps(meta, indent=1))
 
 
+def checked_scores(path: Path) -> dict:
+    """The score manifest, after checking that the scores, the pool and the transform are the ones it records."""
+    meta = json.loads(Path(path).with_suffix(".json").read_text())
+    if sha256(path) != meta["scores_sha256"] or sha256(ml.POOL_NPZ) != meta["pool_sha256"] or meta["transform"] != TRANSFORM.manifest():
+        raise SystemExit(f"{path}: scores, pool or transform differ from {Path(path).with_suffix('.json')}")
+    return meta
+
+
+def checked_draws(path: Path) -> tuple[list[dict], dict]:
+    meta = json.loads(path.with_suffix(".json").read_text())
+    if sha256(path) != meta["draws_sha256"]:
+        raise SystemExit(f"{path} differs from the hash in {path.with_suffix('.json')}")
+    checked_scores(Path(meta["scores"]))
+    return read_draws(path), meta
+
+
 def draw(args) -> None:
     a = ml.load_pool()
+    scores_meta = checked_scores(args.scores)
     s = np.load(args.scores, allow_pickle=False)
     u0, volume = s["u0"], s["initial_volume"]
     status = ml.eligibility(a, u0, volume)
@@ -83,7 +100,7 @@ def draw(args) -> None:
         w.writeheader()
         w.writerows(rows)
     per_arm = {arm: Counter(r["row_index"] for r in rows if r["arm"] == arm) for arm in ml.ARMS}
-    meta = {"scores": str(args.scores), "scores_sha256": sha256(args.scores), "seed": args.seed, "n_per_arm": args.n,
+    meta = {"scores": str(args.scores), "scores_sha256": sha256(args.scores), "scores_meta": scores_meta, "seed": args.seed, "n_per_arm": args.n,
             "delta": ml.DELTA, "alpha": ml.ALPHA, "eligible_volumes": list(ml.ELIGIBLE_VOLUMES), "gate_status": "PROVISIONAL",
             "eligibility_counts": dict(Counter(status.tolist())),
             "ineligible_volume_counts": dict(Counter(volume[status == "INELIGIBLE_IN_SHIELD_MAGNET"].tolist())),
@@ -113,14 +130,27 @@ def run(args) -> None:
     from ship_muon_bg.entities.subject import TagSubject
     from ship_muon_bg.simulation.evaluation import EvaluationRequest, bundle_records
 
+    draws, draws_meta = checked_draws(args.draws)
+    if _git_head(args.fairship) != draws_meta["scores_meta"]["fairship_commit"]:
+        raise SystemExit(f"{args.fairship} is not the checkout the eligibility gate and U0 were scored with")
     a = ml.load_pool()
     runner = PR1432MuonDISRunner(args.fairship, timeout=args.timeout)
     options = {"n_dis_per_material": args.n_dis, "filter_option": args.filter_option, "shield": "TRY_2026", "strawDesign": 10,
                "last_step": args.last_step}
-    for d in read_draws(args.draws):
+    for d in draws:
         out = args.runs / d["draw_id"]
+        identity = {"draw": d, "options": options, "pool_sha256": draws_meta["scores_meta"]["pool_sha256"]}
         if (out / "bundle.json").exists():
+            if json.loads((out / "draw.json").read_text()) != identity:
+                raise SystemExit(f"{out} holds a run of a different draw/options; use a fresh --runs directory")
             continue
+        if out.exists():  # interrupted attempt: keep its artifacts aside, retry in a fresh directory
+            n = 1
+            while out.with_name(f"{out.name}.attempt-{n}").exists():
+                n += 1
+            out.rename(out.with_name(f"{out.name}.attempt-{n}"))
+        out.mkdir(parents=True)
+        (out / "draw.json").write_text(json.dumps(identity) + "\n")
         if d["status"] != "ELIGIBLE":
             raise SystemExit(f"{d['draw_id']}: row {d['row_index']} is {d['status']}; draws.csv was not produced by the gate")
         request = EvaluationRequest(d["draw_id"], (TagSubject(f"row-{d['row_index']}", "post_shield_muon", STATE_DEFINITION),), CONFIG,
@@ -150,8 +180,14 @@ def export(args) -> None:
     import pyarrow.parquet as pq
     from ship_muon_bg import dataset as ds
 
-    draws = read_draws(args.draws)
-    meta = {"draws": str(args.draws), "draws_sha256": sha256(args.draws), "draws_meta": json.loads(args.draws.with_suffix(".json").read_text())}
+    draws, draws_meta = checked_draws(args.draws)
+    meta = {"draws": str(args.draws), "draws_sha256": sha256(args.draws), "draws_meta": draws_meta}
+    for d in draws:  # every bundle must be the run of exactly this draw
+        run_dir = args.runs / d["draw_id"]
+        b = json.loads((run_dir / "bundle.json").read_text()) if (run_dir / "bundle.json").exists() else None
+        if b is not None and (json.loads((run_dir / "draw.json").read_text())["draw"] != d or b["request_id"] != d["draw_id"]
+                              or [(e["subject_id"], e["seed"]) for e in b["executions"]] != [(f"row-{d['row_index']}", d["sim_seed"])]):
+            raise SystemExit(f"{run_dir}: bundle does not belong to draw {d['draw_id']}")
     for arm in ml.ARMS:
         rows = [d for d in draws if d["arm"] == arm]
         missing = [d["draw_id"] for d in rows if not (args.runs / d["draw_id"] / "bundle.json").exists()]
@@ -177,7 +213,7 @@ def report(args) -> None:
     from ship_muon_bg import dataset as ds
     from ship_muon_bg.adapters.pr1432_mudis import stage_ids
 
-    draws_meta = json.loads(args.draws.with_suffix(".json").read_text())
+    _, draws_meta = checked_draws(args.draws)
     scores = Path(draws_meta["scores"])
     a, u0 = ml.load_pool(), np.load(scores)["u0"]
     status = ml.eligibility(a, u0, np.load(scores)["initial_volume"])

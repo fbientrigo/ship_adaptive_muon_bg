@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import fields
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -24,10 +25,13 @@ import pyarrow.parquet as pq
 
 from ship_muon_bg.entities.decision import DecisionEvaluationStatus, StageDecision
 from ship_muon_bg.entities.identifiers import content_hash, definition_id
-from ship_muon_bg.entities.lineage import ExecutionStatus, FSSimExecution, ReconstructedCandidate
+from ship_muon_bg.entities.lineage import ExecutionStatus, FSSimExecution, InteractionRealization, ReconstructedCandidate
+from ship_muon_bg.entities.observation import ObservationEnvelope
 from ship_muon_bg.tagging.aggregation import aggregate_state_stage_evaluations
 
 KINDS = ("executions", "realizations", "candidates", "observations", "decisions")
+_TYPES = {"executions": FSSimExecution, "realizations": InteractionRealization, "candidates": ReconstructedCandidate,
+          "observations": ObservationEnvelope, "decisions": StageDecision}
 
 
 def sha256(path: Path) -> str:
@@ -60,7 +64,8 @@ def export(bundle_files: Sequence[Path], out: Path, metadata: Mapping[str, Any])
         if len({r[id_col] for r in rows}) != len(rows):
             raise ValueError(f"duplicate {id_col} in {kind}")
         path = out / f"{kind}.parquet"
-        pq.write_table(pa.Table.from_pylist(rows) if rows else pa.table({"request_id": pa.array([], pa.string())}), path)
+        empty = pa.table({c: pa.array([], pa.string()) for c in ("request_id", "bundle_file", *(f.name for f in fields(_TYPES[kind])))})
+        pq.write_table(pa.Table.from_pylist(rows) if rows else empty, path)  # an empty table keeps its columns
         files[kind] = {"rows": len(rows), "sha256": sha256(path)}
     manifest = {"schema": "minimal_loop_dataset_v0", "is_physical": physical.pop() if physical else None,
                 "tables": files, "bundles": sources, "metadata": dict(metadata)}
@@ -97,7 +102,8 @@ def snapshot(datasets: Sequence[Path], stage_definition_id: str, out_root: Path,
     state fall on the same side), decided by a hash of (seed, subject_id): deterministic, order-free."""
     datasets = [Path(d).resolve() for d in datasets]
     ex, cand, dec = load_records(datasets)
-    if stage_definition_id not in {d.stage_definition_id for d in dec}:  # never fall back to another (e.g. newer) definition
+    # never fall back to another (e.g. newer) definition; only an all-failure evidence set may lack the stage
+    if stage_definition_id not in {d.stage_definition_id for d in dec} and any(e.execution_status is ExecutionStatus.SUCCEEDED for e in ex):
         raise ValueError(f"stage {stage_definition_id} is not in the evidence")
     agg = aggregate_state_stage_evaluations(executions=ex, candidates=cand, decisions=dec, stage_definition_ids=[stage_definition_id])
     config = agg.require_single_configuration()  # incompatible configurations are never pooled

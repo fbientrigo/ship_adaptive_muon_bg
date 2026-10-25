@@ -67,3 +67,14 @@ def test_snapshot_refuses_absent_stage_and_tampered_tables(tmp_path):
     (tmp_path / "d" / "decisions.parquet").write_bytes(b"x")
     with pytest.raises(ValueError, match="manifest"):
         ds.load_records([tmp_path / "d"])
+
+
+def test_all_failure_evidence_exports_and_snapshots_as_unknown(tmp_path):
+    b = build_bundle(H.request(seed=5, subject="row-9"), H.facts(seed=5, failure={"prepare": "injection failed"}))
+    p = tmp_path / "b" / "bundle.json"
+    p.parent.mkdir()
+    p.write_text(json.dumps(bundle_records(b)))
+    ds.export([p], tmp_path / "d", {})
+    assert duckdb.sql(f"select count(*) from '{tmp_path}/d/decisions.parquet' where stage_definition_id = 'x'").fetchone() == (0,)
+    snap = ds.snapshot([tmp_path / "d"], FILTER, tmp_path / "s", policy=POLICY, split_seed=1)
+    assert duckdb.sql(f"select executions, valid, technical_failure, eta_hat from '{snap}/rows.parquet'").fetchall() == [(1, 0, 1, None)]
