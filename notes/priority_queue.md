@@ -17,6 +17,10 @@ Long-term learnings go to `~/thesis/vault`; this file tracks current work.
 - 2026-10-15 (round 3): stage-outcomes and weight-provenance work committed and merged; canonical checkout now on `main`;
   feature work lives in worktrees (max 2-3). Worktree `artifacts/` (ignored, real FairShip outputs) copied into the
   canonical `artifacts/` before a worktree is removed. AGENT_POLICY amended (decision-based approval, grill-me).
+- 2026-10-20: demo is pruned first (item 11), merged into `main` after (learner: fewer interrelations). Until then
+  `worktrees/ship-pi-demo-v0` stays (main's pilot reads NF checkpoints from it, `run_utility_guided_fairship_pilot.py:52`).
+  `worktrees/tmp-merge-pi-demo` (staged test merge main+demo `7d20389`, no commit) is kept on purpose while we work;
+  the learner allows it to exceed the worktree limit temporarily.
 
 ## Queue
 
@@ -34,4 +38,5 @@ Long-term learnings go to `~/thesis/vault`; this file tracks current work.
 | 11 | ORDENAR | Demo branch `demo/pi-utility-guided-v0`: keep the essentials only = transparent, configurable enrichment (tilt `h=[delta+(1-delta)U]^alpha`) + NF campaigns. `AliasSampler` replaced by `numpy.random.Generator.choice` on the demo branch (`7d20389`, 2026-10-15; same law, pre-change runs not bitwise re-drawable). Then `/ponytail:ponytail ultra` pass on rare-aware estimators and other parts (seniors prefer fewer lines, stdlib, already-installed libs) | after 10 |
 | 12 | NOTES | Presentation in preparation: keep the PI-demo material (README, figures, manifests) in its own `notes/` subfolder, it will be presented soon | with 11 |
 | 13 | EXPLORE | alpha/delta variations: data produced by the tilt and how the NF follows it, checked against the enrichment model in `notes/enrichment_tradeoff.md` | backlog (FIFO) |
+| 14 | DESIGN | One NF for both charges (charge as condition, or a charge symmetry) instead of 2 separate NF. Prior work: `origin/experiment/d9-conditional-utility-tilt-v0` (contains the 3 conditional-charge branches; fixture study, 3 seeds, 59 tests pass). OPEN there: no conditional-vs-separate comparison, no evidence-backed charge-reflection map. First reproduce those benchmarks cleanly and in detail, then design and test | backlog (FIFO, after 13) |
 | 9 | LIMPIAR | The 19 `local_env` afterms tests need `artifacts/afterms_d8_evaluation_v0/` and the Windows nightly-runner host (`.venv/Scripts/python.exe`); excluded from CI by design | backlog (low) |
