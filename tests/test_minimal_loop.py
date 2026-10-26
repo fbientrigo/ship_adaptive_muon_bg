@@ -69,8 +69,9 @@ def test_draws_csv_round_trip_keeps_numeric_types(tmp_path):
 
 
 def test_fit_u_counts_states_not_executions():
-    u = ml.fit_u({"a": 0, "b": 0, "c": 3}, {"a": False, "b": False, "c": True})
-    assert u["G0_none"] == {"valid_states": 2, "positive_states": 0, "u": 0.25} and u["G3_tracker"]["u"] == 2 / 3
+    u = ml.fit_u({"a": 0, "b": 0, "c": 3, "d": 3}, {"a": 0.0, "b": 0.0, "c": 1.0, "d": 0.5})
+    assert u["G0_none"] == {"valid_states": 2, "positive_states": 0, "sum_state_eta": 0.0, "u": 0.25}
+    assert u["G3_tracker"]["u"] == 2.5 / 4  # 4/4 runs of one state count as one state with rate 1, not as 4
     assert u["G1_upstream"]["u"] == 0.5  # no evidence -> prior, never zero
 
 
@@ -80,6 +81,11 @@ def test_allocate_floor_then_proportional_capped_by_availability():
     assert sum(alloc.values()) == 30 and alloc["G2_sbt"] == 0 and alloc["G3_tracker"] <= 17
     assert min(alloc["G0_none"], alloc["G1_upstream"]) >= 5 and alloc["G3_tracker"] > alloc["G1_upstream"] > alloc["G0_none"]
     assert sum(ml.allocate(u, {"G0_none": 2, "G1_upstream": 1, "G2_sbt": 0, "G3_tracker": 0}, 30, 5).values()) == 3
+    u1 = {"G0_none": 1 / 21, "G1_upstream": 2 / 9, "G2_sbt": 1 / 3, "G3_tracker": 0.75}  # iteration-1 U1
+    assert ml.allocate(u1, {"G0_none": 23068, "G1_upstream": 8226, "G2_sbt": 0, "G3_tracker": 17}, 30, 5) == \
+        {"G0_none": 6, "G1_upstream": 8, "G2_sbt": 0, "G3_tracker": 16}  # largest remainder of the original shares
+    with pytest.raises(ValueError):
+        ml.allocate(u, {k: 10 for k in u}, 2, 5)
 
 
 def test_draw_strata_without_replacement_and_excluding_known_states():

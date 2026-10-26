@@ -96,13 +96,15 @@ def geo_class(u0: np.ndarray, ray_upstream: np.ndarray, ray_tracker: np.ndarray)
     return np.where(ray_tracker, 3, np.where(u0 == 1, 2, np.where(ray_upstream, 1, 0)))
 
 
-def fit_u(state_class: dict[str, int], state_positive: dict[str, bool]) -> dict[str, dict]:
-    """U per class = (positive states + 1) / (valid states + 2): Laplace rate over distinct *states*, never executions."""
+def fit_u(state_class: dict[str, int], state_eta: dict[str, float]) -> dict[str, dict]:
+    """U per class = (sum of per-state pass rates + 1) / (states + 2).  The unit is the distinct *state* (each counts
+    once however often it ran) and the endpoint is a pass *per run*, so U matches the one-run-per-state allocation."""
     out = {}
     for k, name in enumerate(CLASSES):
         ids = [s for s, c in state_class.items() if c == k]
-        pos = sum(state_positive[s] for s in ids)
-        out[name] = {"valid_states": len(ids), "positive_states": pos, "u": (pos + 1) / (len(ids) + 2)}
+        eta = sum(state_eta[s] for s in ids)
+        out[name] = {"valid_states": len(ids), "positive_states": sum(state_eta[s] > 0 for s in ids), "sum_state_eta": eta,
+                     "u": (eta + 1) / (len(ids) + 2)}
     return out
 
 
@@ -110,18 +112,21 @@ def allocate(u: dict[str, float], available: dict[str, int], n: int, floor: int)
     """``floor`` runs per non-empty class (exploration, keeps every region measured), the rest proportional to U
     (expected positives per run; costs are equal per run), capped by availability, largest-remainder rounding."""
     alloc = {k: min(floor, available[k]) for k in u}
-    left = n - sum(alloc.values())
-    while left > 0:
-        open_ = {k: u[k] for k in u if alloc[k] < available[k]}
+    if sum(alloc.values()) > n:
+        raise ValueError(f"floors need {sum(alloc.values())} runs, budget is {n}")
+    while (left := n - sum(alloc.values())) > 0:
+        open_ = [k for k in u if alloc[k] < available[k]]
         if not open_:
             break
-        share = {k: left * v / sum(open_.values()) for k, v in open_.items()}
-        take = {k: min(int(share[k]), available[k] - alloc[k]) for k in open_}
-        if not sum(take.values()):  # all shares < 1: give one run to the largest remainder
-            take = {max(share, key=lambda k: share[k] - int(share[k])): 1}
-        for k, t in take.items():
-            alloc[k] += t
-        left = n - sum(alloc.values())
+        share = {k: left * u[k] / sum(u[j] for j in open_) for k in open_}
+        base = {k: min(int(share[k]), available[k] - alloc[k]) for k in open_}
+        for k in open_:
+            alloc[k] += base[k]
+        if any(base[k] < int(share[k]) for k in open_):
+            continue  # a class hit its cap: redistribute what is left among the others
+        for k in sorted(open_, key=lambda k: share[k] - int(share[k]), reverse=True)[:n - sum(alloc.values())]:
+            if alloc[k] < available[k]:
+                alloc[k] += 1
     return alloc
 
 

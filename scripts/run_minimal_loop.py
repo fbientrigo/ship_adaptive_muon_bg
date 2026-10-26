@@ -280,8 +280,8 @@ def report(args) -> None:
     print(json.dumps(rep, indent=1))
 
 
-def state_outcomes(snapshots: list[Path]) -> tuple[dict[str, bool], list[str]]:
-    """Distinct states with >= 1 valid execution -> any positive.  Pools a state's executions across snapshots of one
+def state_outcomes(snapshots: list[Path]) -> tuple[dict[str, float], list[str], list]:
+    """Distinct states with >= 1 valid execution -> per-run pass rate (positive / valid executions).  Pools a state's executions across snapshots of one
     stage/configuration only; refuses snapshots that disagree on stage, estimator or configuration."""
     import duckdb
 
@@ -294,7 +294,7 @@ def state_outcomes(snapshots: list[Path]) -> tuple[dict[str, bool], list[str]]:
             raise SystemExit(f"{s}/rows.parquet does not match its snapshot.json")
     files = ", ".join(f"'{Path(s) / 'rows.parquet'}'" for s in snapshots)
     rows = duckdb.sql(f"select subject_id, sum(valid), sum(positive) from read_parquet([{files}]) group by 1").fetchall()
-    return {sid: pos > 0 for sid, valid, pos in rows if valid > 0}, [x["snapshot_id"] for x in specs]
+    return {sid: pos / valid for sid, valid, pos in rows if valid > 0}, [x["snapshot_id"] for x in specs], list(keys.pop())
 
 
 def classes(scores: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -308,18 +308,22 @@ def update_u(args) -> None:
     """EXPERIMENT (U definition) on a FEATURE path: U is fitted only from frozen snapshots and written as a versioned file."""
     checked_scores(args.scores)
     cls, _, _ = classes(args.scores)
-    outcome, snap_ids = state_outcomes(args.snapshots)
+    outcome, snap_ids, compat = state_outcomes(args.snapshots)
     state_class = {sid: int(cls[int(sid.removeprefix("row-"))]) for sid in outcome}
     u = ml.fit_u(state_class, outcome)
     spec = {"u_definition": "Laplace rate of filter-PASS states per straight-ray class " + "/".join(ml.CLASSES), "classes": u,
-            "fit_snapshots": snap_ids, "fit_states": sorted(outcome), "scores_sha256": sha256(args.scores)}
+            "fit_snapshots": snap_ids, "fit_states": sorted(outcome), "scores_sha256": sha256(args.scores),
+            "stage_estimator_configuration": compat}
     spec["u_id"] = "u-" + hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:12]
     if args.evaluate:  # out-of-sample check of an earlier U on states it was not fitted on
         prev = json.loads(args.evaluate.read_text())
+        if prev["scores_sha256"] != spec["scores_sha256"] or prev.get("stage_estimator_configuration", compat) != compat:
+            raise SystemExit(f"{args.evaluate} was fitted on other scores or another stage/estimator/configuration")
         fresh = {s for s in outcome if s not in set(prev["fit_states"])}
         spec["evaluation_of_previous"] = {"u_id": prev["u_id"], "fresh_states": len(fresh), "by_class": {
             name: {"predicted_u": prev["classes"][name]["u"],
-                   "observed": f"{sum(outcome[s] for s in fresh if state_class[s] == k)}/{sum(state_class[s] == k for s in fresh)}"}
+                   "observed_sum_eta": sum(outcome[s] for s in fresh if state_class[s] == k),
+                   "fresh_states": sum(state_class[s] == k for s in fresh)}
             for k, name in enumerate(ml.CLASSES)}}
     args.out.write_text(json.dumps(spec, indent=1) + "\n")
     print(json.dumps(spec, indent=1))
@@ -334,6 +338,8 @@ def draw_strata(args) -> None:
     cls, eligible, a = classes(args.scores)
     s = np.load(args.scores)
     u = json.loads(args.u.read_text())
+    if u["scores_sha256"] != sha256(args.scores):
+        raise SystemExit(f"{args.u} was fitted with other scores (classes would not match)")
     exclude = {int(r.removeprefix("row-")) for d in args.exclude_data
                for r, in duckdb.sql(f"select distinct subject_id from '{d}/executions.parquet'").fetchall()}
     available = {name: int(sum(1 for i in np.where(eligible & (cls == k))[0] if int(i) not in exclude)) for k, name in enumerate(ml.CLASSES)}
