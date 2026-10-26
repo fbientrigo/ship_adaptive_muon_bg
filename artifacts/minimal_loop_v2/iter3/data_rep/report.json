@@ -1,0 +1,84 @@
+{
+ "scope": "PR #1432 filter stage only; not Y^(k), not reconstruction, not B. Exploratory smoke, no power claim.",
+ "reference_is": "uniform over eligible rows (empirical), not the nominal physical measure",
+ "arms": {
+  "seed_repeat": {
+   "executions": 36,
+   "distinct_states": 12,
+   "max_multiplicity": 3,
+   "technical_failure": 0,
+   "not_evaluated": 0,
+   "valid": 36,
+   "filter_pass_executions": 16,
+   "states_with_a_pass": 8,
+   "states_with_a_valid_execution": 12,
+   "wall_hours": 0.507,
+   "pass_per_wall_hour": 31.55,
+   "pass_per_valid_execution": 0.444,
+   "upper95_pass_rate_if_zero": null,
+   "by_u0": {
+    "u0_0": {
+     "valid": 36,
+     "pass": 16,
+     "upper95_if_zero": null
+    },
+    "u0_1": {
+     "valid": 0,
+     "pass": 0,
+     "upper95_if_zero": null
+    }
+   },
+   "snapshot": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/data_rep/snapshots/snap-7605ad307c6048c7",
+   "coverage_deciles_of_eligible_pool": {
+    "p_gev": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     3,
+     30
+    ],
+    "pt_gev": [
+     0,
+     0,
+     3,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     30
+    ],
+    "x_m": [
+     0,
+     0,
+     0,
+     0,
+     9,
+     27,
+     0,
+     0,
+     0,
+     0
+    ],
+    "y_m": [
+     3,
+     0,
+     0,
+     9,
+     6,
+     15,
+     0,
+     3,
+     0,
+     0
+    ]
+   }
+  }
+ }
+}

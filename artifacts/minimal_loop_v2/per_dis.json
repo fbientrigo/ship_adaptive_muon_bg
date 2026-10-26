@@ -1,0 +1,647 @@
+{
+ "executions": 146,
+ "filter_any_equals_any_per_dis": true,
+ "by_dis_per_material": {
+  "10": {
+   "runs": 131,
+   "mean_dis": 27.709923664122137,
+   "inject_s": 34.266759343530616,
+   "chain_s": 16.073750551406096,
+   "total_s": 50.36287110859087
+  },
+  "100": {
+   "runs": 15,
+   "mean_dis": 260.0,
+   "inject_s": 34.376419816104075,
+   "chain_s": 17.01252401036521,
+   "total_s": 51.41942887914677
+  }
+ },
+ "cost_by_dis_in_run": {
+  "10": {
+   "runs": 33,
+   "inject_s": 35.1,
+   "chain_s": 16.1,
+   "total_s": 51.2
+  },
+  "30": {
+   "runs": 78,
+   "inject_s": 34.0,
+   "chain_s": 16.0,
+   "total_s": 50.1
+  },
+  "40": {
+   "runs": 10,
+   "inject_s": 34.0,
+   "chain_s": 16.1,
+   "total_s": 50.2
+  },
+  "50": {
+   "runs": 4,
+   "inject_s": 34.1,
+   "chain_s": 16.1,
+   "total_s": 50.3
+  },
+  "60": {
+   "runs": 6,
+   "inject_s": 33.9,
+   "chain_s": 16.1,
+   "total_s": 50.0
+  },
+  "100": {
+   "runs": 5,
+   "inject_s": 33.9,
+   "chain_s": 16.6,
+   "total_s": 50.6
+  },
+  "300": {
+   "runs": 8,
+   "inject_s": 34.3,
+   "chain_s": 17.0,
+   "total_s": 51.3
+  },
+  "400": {
+   "runs": 1,
+   "inject_s": 35.0,
+   "chain_s": 17.8,
+   "total_s": 52.8
+  },
+  "600": {
+   "runs": 1,
+   "inject_s": 36.9,
+   "chain_s": 18.4,
+   "total_s": 55.3
+  }
+ },
+ "by_class": {
+  "G0_none": {
+   "states": 38,
+   "runs": 38,
+   "dis": 830,
+   "dis_pass": 0,
+   "per_dis_rate": 0.0,
+   "cp95": [
+    0.0,
+    0.004434571200117168
+   ],
+   "homogeneity_chi2": 0.0,
+   "dof": 37,
+   "p": null,
+   "per_state": {
+    "row-10420": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-10631": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-11869": {
+     "runs": 1,
+     "dis": 100,
+     "pass": 0
+    },
+    "row-12609": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-14503": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-16151": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-16237": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-16474": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-16830": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-16840": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-1715": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-17546": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-17929": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-18016": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-18183": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-19352": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-19482": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-19513": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-19925": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-21051": {
+     "runs": 1,
+     "dis": 100,
+     "pass": 0
+    },
+    "row-24031": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-24439": {
+     "runs": 1,
+     "dis": 100,
+     "pass": 0
+    },
+    "row-26831": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-29697": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-33670": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-33803": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-34090": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-34578": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-35073": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-3553": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-36398": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-36799": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-39278": {
+     "runs": 1,
+     "dis": 100,
+     "pass": 0
+    },
+    "row-39582": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-5503": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-6532": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    },
+    "row-6709": {
+     "runs": 1,
+     "dis": 100,
+     "pass": 0
+    },
+    "row-7276": {
+     "runs": 1,
+     "dis": 10,
+     "pass": 0
+    }
+   }
+  },
+  "G1_upstream": {
+   "states": 43,
+   "runs": 55,
+   "dis": 3540,
+   "dis_pass": 7,
+   "per_dis_rate": 0.0019774011299435027,
+   "cp95": [
+    0.0007953758193094173,
+    0.004069931746777
+   ],
+   "homogeneity_chi2": 30.92857142857143,
+   "dof": 42,
+   "p": 0.8961028567569002,
+   "per_state": {
+    "row-10102": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-10704": {
+     "runs": 1,
+     "dis": 300,
+     "pass": 2
+    },
+    "row-11528": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-13665": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-1411": {
+     "runs": 1,
+     "dis": 300,
+     "pass": 0
+    },
+    "row-16908": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-17931": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-18020": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 1
+    },
+    "row-18812": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-19236": {
+     "runs": 1,
+     "dis": 300,
+     "pass": 0
+    },
+    "row-19954": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-20699": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-2158": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-22379": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-22707": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-23409": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-23764": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-24222": {
+     "runs": 1,
+     "dis": 300,
+     "pass": 0
+    },
+    "row-25279": {
+     "runs": 1,
+     "dis": 300,
+     "pass": 0
+    },
+    "row-26082": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-27655": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-287": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-28761": {
+     "runs": 1,
+     "dis": 300,
+     "pass": 1
+    },
+    "row-28902": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-30425": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 1
+    },
+    "row-30773": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-32063": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-32324": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-35264": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-35270": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-35358": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-35638": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-35722": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-36586": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-38362": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-398": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-4843": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 1
+    },
+    "row-5144": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-6288": {
+     "runs": 1,
+     "dis": 300,
+     "pass": 0
+    },
+    "row-7488": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-8076": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 1
+    },
+    "row-857": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 0
+    },
+    "row-9957": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    }
+   }
+  },
+  "G2_sbt": {
+   "states": 1,
+   "runs": 3,
+   "dis": 150,
+   "dis_pass": 0,
+   "per_dis_rate": 0.0,
+   "cp95": [
+    0.0,
+    0.02429259716610854
+   ],
+   "homogeneity_chi2": 0.0,
+   "dof": 0,
+   "p": null,
+   "per_state": {
+    "row-31238": {
+     "runs": 3,
+     "dis": 150,
+     "pass": 0
+    }
+   }
+  },
+  "G3_tracker": {
+   "states": 19,
+   "runs": 50,
+   "dis": 3010,
+   "dis_pass": 136,
+   "per_dis_rate": 0.045182724252491695,
+   "cp95": [
+    0.038041910526153834,
+    0.053223418398051496
+   ],
+   "homogeneity_chi2": 22.283769682115274,
+   "dof": 18,
+   "p": 0.21963000491943424,
+   "per_state": {
+    "row-12851": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 3
+    },
+    "row-14235": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 1
+    },
+    "row-19445": {
+     "runs": 1,
+     "dis": 50,
+     "pass": 4
+    },
+    "row-20987": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 0
+    },
+    "row-21705": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 6
+    },
+    "row-28702": {
+     "runs": 1,
+     "dis": 40,
+     "pass": 1
+    },
+    "row-29823": {
+     "runs": 3,
+     "dis": 720,
+     "pass": 46
+    },
+    "row-31938": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 5
+    },
+    "row-32661": {
+     "runs": 4,
+     "dis": 240,
+     "pass": 9
+    },
+    "row-33048": {
+     "runs": 2,
+     "dis": 330,
+     "pass": 14
+    },
+    "row-33946": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 3
+    },
+    "row-3409": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 3
+    },
+    "row-34615": {
+     "runs": 2,
+     "dis": 440,
+     "pass": 26
+    },
+    "row-34629": {
+     "runs": 4,
+     "dis": 160,
+     "pass": 6
+    },
+    "row-36227": {
+     "runs": 4,
+     "dis": 120,
+     "pass": 5
+    },
+    "row-36249": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 1
+    },
+    "row-37566": {
+     "runs": 4,
+     "dis": 160,
+     "pass": 0
+    },
+    "row-38700": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 1
+    },
+    "row-5110": {
+     "runs": 1,
+     "dis": 30,
+     "pass": 2
+    }
+   }
+  }
+ }
+}

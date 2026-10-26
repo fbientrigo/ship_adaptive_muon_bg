@@ -1,0 +1,118 @@
+{
+ "bundles": [
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter4/runs/G0_none-000/bundle.json",
+   "request_id": "G0_none-000",
+   "sha256": "df8527214e0495a1e7c1884d16e84d77a9f3d927dff1c9047179941c52a6bd4e"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter4/runs/G0_none-001/bundle.json",
+   "request_id": "G0_none-001",
+   "sha256": "92ac33d9107bc93a1ed8d488d27662eeaa4dbb8c6335b56f1aa1571a436070dc"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter4/runs/G0_none-002/bundle.json",
+   "request_id": "G0_none-002",
+   "sha256": "c6fdc1a61eaca0646dace9c37925ec77dfa13c8a7187535478b1df0a5da0a06a"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter4/runs/G0_none-003/bundle.json",
+   "request_id": "G0_none-003",
+   "sha256": "931d479d654ec38524b1ffbb97428cbc37e5563b028fe17625a6c8cbbb9d60ba"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter4/runs/G0_none-004/bundle.json",
+   "request_id": "G0_none-004",
+   "sha256": "6ebec44b2a5ae84b2f8630c08280b47d276041d231d65df367186d5f656e23bb"
+  }
+ ],
+ "is_physical": true,
+ "metadata": {
+  "arm": "G0_none",
+  "cost_parquet_sha256": "01910ee8a8a8f6ba85ed862d88dcd6a38bd46424ba1dc58c84a990ac37c3c6ef",
+  "draws": "/home/fabian/thesis/scratch/minimal-loop-v0/iter4/draws_new/draws.csv",
+  "draws_meta": {
+   "allocation": {
+    "G0_none": 5,
+    "G1_upstream": 7,
+    "G2_sbt": 0,
+    "G3_tracker": 0
+   },
+   "available": {
+    "G0_none": 23054,
+    "G1_upstream": 8197,
+    "G2_sbt": 0,
+    "G3_tracker": 0
+   },
+   "design": "stratified by straight-ray class, without replacement; h column = U of the class",
+   "draws_sha256": "88b8b1ed82fae893ff857e869086794608f442ad9b2a662dcfb033b8cd648c34",
+   "excluded_already_evaluated": 92,
+   "floor": 4,
+   "min_p_gev": 2.0,
+   "n": 12,
+   "scores": "/home/fabian/thesis/scratch/minimal-loop-v0/iter2/score/pool_scores.npz",
+   "scores_meta": {
+    "fairship_commit": "400c0fb4ae31fd09f4cb8decc98c600c8441e0c1",
+    "fairship_dir": "/home/fabian/thesis/worktrees/FairShip-pr1432-400c0fb",
+    "geofile": "/home/fabian/thesis/scratch/fairship-update-1012/pr1432_inputs/runs/25740/geo_connector.root",
+    "geofile_sha256": "83ba54e9cd99059174187c1a098e286535f1dd5d1d282f47787983ce97b66ed0",
+    "n_rows": 40000,
+    "n_scored": 39998,
+    "n_u0_1": 14,
+    "pool": "/home/fabian/thesis/ship_adaptive_muon_bg/data/samples/muonsFullMC_afterMS_sample.npz",
+    "pool_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+    "ray_flags": "ray_upstream: ray enters an Upstream* (UBT) volume; ray_tracker: ray enters Tr1..Tr4",
+    "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+    "transform": {
+     "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+     "status": "PROVISIONAL",
+     "x_to_m": 1.0,
+     "x_unit": "m",
+     "y_to_m": 1.0,
+     "y_unit": "m",
+     "z_offset_m": 2.5916,
+     "z_rule": "affine_declared_z",
+     "z_scale": 1.0,
+     "z_value_m": null
+    },
+    "u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering"
+   },
+   "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+   "seed": 20261029,
+   "u_policy": {
+    "u_id": "u-cbea592c9146",
+    "u_sha256": "cf8b58bdd89bb6dc71d9a5dbca18da851193bf68615ae29e238cba45e6125b9a"
+   }
+  },
+  "draws_parquet_sha256": "5f586bc77b984bd4a1b02e17c256c670721e92a3ba815b8e877453d6a72facad",
+  "draws_sha256": "88b8b1ed82fae893ff857e869086794608f442ad9b2a662dcfb033b8cd648c34"
+ },
+ "schema": "minimal_loop_dataset_v0",
+ "tables": {
+  "candidates": {
+   "rows": 0,
+   "sha256": "94bb92bcdc359c5509339a0f4de79cbc141160ad5e0e8088cf0a15cb7785e3fa"
+  },
+  "decisions": {
+   "rows": 520,
+   "sha256": "4c8f3d2ffa195d2fae85d9f710b69758f2ef24aecae48b237dc18031016747af"
+  },
+  "executions": {
+   "rows": 5,
+   "sha256": "aad87a357b8e2c410628ef79a2fd3cfd947425a58a2f8778f6724e164e070710"
+  },
+  "observations": {
+   "rows": 550,
+   "sha256": "2b1cc6f33b5bfb245e81fa885331e81e54da9ca02663dab1ea39e4a02ae5604c"
+  },
+  "realizations": {
+   "rows": 500,
+   "sha256": "0ac32cefc8afdbb2ba4fd4384ce6cef8ce3ac5d533dc4beeb01985735f1c9722"
+  }
+ }
+}

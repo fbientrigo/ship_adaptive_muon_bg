@@ -1,0 +1,214 @@
+{
+ "bundles": [
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-000/bundle.json",
+   "request_id": "G1_upstream-000",
+   "sha256": "470e400812f5260df1436285bd684909b106ba01fbd6df6cad33544b986d7486"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-001/bundle.json",
+   "request_id": "G1_upstream-001",
+   "sha256": "b22c5bd2eb9304b6c77ff62a3b899ffaad8836a7fb5020f66c34e2b7f6a2a539"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-002/bundle.json",
+   "request_id": "G1_upstream-002",
+   "sha256": "1734b2d16d9cc60562e9a44674e12743b1a464ce625143d9ab82582d5bd6a449"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-003/bundle.json",
+   "request_id": "G1_upstream-003",
+   "sha256": "7d886b074873ef366ba52c179ab65b710f14dc43c26d6045e3843f7c909f7575"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-004/bundle.json",
+   "request_id": "G1_upstream-004",
+   "sha256": "55e8b54216c749c90ed0d41db0507f58346aed9929261e584a46fab8321df147"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-005/bundle.json",
+   "request_id": "G1_upstream-005",
+   "sha256": "305c95a134e297062dd2e0593294796f033c408db6992f57c9a4a5d945179064"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-006/bundle.json",
+   "request_id": "G1_upstream-006",
+   "sha256": "820faa96b57b3f30794aac1b537d06880fe0e6978d2902c1dbb35e24bdffb93a"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-007/bundle.json",
+   "request_id": "G1_upstream-007",
+   "sha256": "e71c65d6aaa5355e0f6647e7d5a974f2403a7f88085fafb80c92801f3104f2c4"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-008/bundle.json",
+   "request_id": "G1_upstream-008",
+   "sha256": "014010cb6ae7badb8fa865c0d36e5a9e10d3c7920b389ba1813cf3ba99ca706d"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-009/bundle.json",
+   "request_id": "G1_upstream-009",
+   "sha256": "e7f10647e0cc37dcb3a2a2bc335ce39864bc78876f48aca7f21c7077fb6931ef"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-010/bundle.json",
+   "request_id": "G1_upstream-010",
+   "sha256": "4abcaaa231dfd8234d2adbb511252b51c1553411b9c1a545bf0aa49e3d527ede"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-011/bundle.json",
+   "request_id": "G1_upstream-011",
+   "sha256": "ec63d7bb923c8ca58114b4ff34e1df47e84786b2faacdf48be0a390eb4d9ff94"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-012/bundle.json",
+   "request_id": "G1_upstream-012",
+   "sha256": "2e6b36794d60397f5d6e0d6c4d2a203093615b472ff7e8dc94a62c5c67b2d08c"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-013/bundle.json",
+   "request_id": "G1_upstream-013",
+   "sha256": "0a795dd29d72f06221362014b1047d787661f4bdf7e0f70e1d61a6434c17144b"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-014/bundle.json",
+   "request_id": "G1_upstream-014",
+   "sha256": "1b65ed6472074de14e6d0f2a466235551b8428f9afcd92bef51f45850a46e46f"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-015/bundle.json",
+   "request_id": "G1_upstream-015",
+   "sha256": "effb41a9a32d2387c43539246aabbbb54c3375c0b0d810196d7606b844902724"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-016/bundle.json",
+   "request_id": "G1_upstream-016",
+   "sha256": "756a744b14637d4ef7eff592f0698149ca6d93b41e488d318aca860418db3415"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-017/bundle.json",
+   "request_id": "G1_upstream-017",
+   "sha256": "67c9d835fbb972697f2dca672bc994ae06ebc90020ae6d55c9a6df3a388eac87"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-018/bundle.json",
+   "request_id": "G1_upstream-018",
+   "sha256": "8b7443b03ca17eaf19ed305d81117096b6fe81e22591475fbb2afb3c2d7a0896"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-019/bundle.json",
+   "request_id": "G1_upstream-019",
+   "sha256": "1bf16adf51347448e553723d0c0b87785e122ffb3369a9a070b3112b0911531e"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G1_upstream-020/bundle.json",
+   "request_id": "G1_upstream-020",
+   "sha256": "87a983a04a651f117124273e02b80c4f2b1f8b9412d3d0edf4f1f797eb89e233"
+  }
+ ],
+ "is_physical": true,
+ "metadata": {
+  "arm": "G1_upstream",
+  "cost_parquet_sha256": "d4ba2e54829f308baf96a1fc635e30f3a6eacd0d1577860433704a370326522c",
+  "draws": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/draws_new/draws.csv",
+  "draws_meta": {
+   "allocation": {
+    "G0_none": 9,
+    "G1_upstream": 21,
+    "G2_sbt": 0,
+    "G3_tracker": 0
+   },
+   "available": {
+    "G0_none": 23063,
+    "G1_upstream": 8218,
+    "G2_sbt": 0,
+    "G3_tracker": 0
+   },
+   "design": "stratified by straight-ray class, without replacement; h column = U of the class",
+   "draws_sha256": "5f4fe87c247aa5c37c3cfe8340545db972199f7076d531767a1af93b99274fe8",
+   "excluded_already_evaluated": 62,
+   "floor": 5,
+   "min_p_gev": 2.0,
+   "n": 30,
+   "scores": "/home/fabian/thesis/scratch/minimal-loop-v0/iter2/score/pool_scores.npz",
+   "scores_meta": {
+    "fairship_commit": "400c0fb4ae31fd09f4cb8decc98c600c8441e0c1",
+    "fairship_dir": "/home/fabian/thesis/worktrees/FairShip-pr1432-400c0fb",
+    "geofile": "/home/fabian/thesis/scratch/fairship-update-1012/pr1432_inputs/runs/25740/geo_connector.root",
+    "geofile_sha256": "83ba54e9cd99059174187c1a098e286535f1dd5d1d282f47787983ce97b66ed0",
+    "n_rows": 40000,
+    "n_scored": 39998,
+    "n_u0_1": 14,
+    "pool": "/home/fabian/thesis/ship_adaptive_muon_bg/data/samples/muonsFullMC_afterMS_sample.npz",
+    "pool_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+    "ray_flags": "ray_upstream: ray enters an Upstream* (UBT) volume; ray_tracker: ray enters Tr1..Tr4",
+    "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+    "transform": {
+     "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+     "status": "PROVISIONAL",
+     "x_to_m": 1.0,
+     "x_unit": "m",
+     "y_to_m": 1.0,
+     "y_unit": "m",
+     "z_offset_m": 2.5916,
+     "z_rule": "affine_declared_z",
+     "z_scale": 1.0,
+     "z_value_m": null
+    },
+    "u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering"
+   },
+   "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+   "seed": 20261027,
+   "u_policy": {
+    "u_id": "u-2778ad8c2fca",
+    "u_sha256": "9fe4509853e344d44ef5ba264ba8b9e3b8c834c3bac955e1eb091872e429638c"
+   }
+  },
+  "draws_parquet_sha256": "c285c6ba4692cc993e12cc4fee941d5f32e15be4089ab880b03ef8f6b96b7b1c",
+  "draws_sha256": "5f4fe87c247aa5c37c3cfe8340545db972199f7076d531767a1af93b99274fe8"
+ },
+ "schema": "minimal_loop_dataset_v0",
+ "tables": {
+  "candidates": {
+   "rows": 0,
+   "sha256": "94bb92bcdc359c5509339a0f4de79cbc141160ad5e0e8088cf0a15cb7785e3fa"
+  },
+  "decisions": {
+   "rows": 714,
+   "sha256": "f36a35d4c60e59c6b527d8d2250810b9ba9be6921884a4393c38cbdbbb05b21d"
+  },
+  "executions": {
+   "rows": 21,
+   "sha256": "ea6c0247ccef8fd04fe25e2f9e0ad90ddb5d6c8dceb774325d02338601c7dd14"
+  },
+  "observations": {
+   "rows": 966,
+   "sha256": "6ddd667563d53e40ca5ec822bdf38cc978209f23660fbd03dd7c9b62a1af1d80"
+  },
+  "realizations": {
+   "rows": 630,
+   "sha256": "1e47ca4eed7b77cb84130d6c850852b721948c3e61762fdbb7fa0f9663dcc319"
+  }
+ }
+}

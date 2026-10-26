@@ -1,0 +1,15 @@
+G0_none-000 24439 succeeded 100 DIS 51s
+G0_none-001 39278 succeeded 100 DIS 51s
+G0_none-002 6709 succeeded 100 DIS 51s
+G0_none-003 21051 succeeded 100 DIS 50s
+G0_none-004 11869 succeeded 100 DIS 50s
+G1_upstream-000 6288 succeeded 300 DIS 51s
+G1_upstream-001 24222 succeeded 300 DIS 51s
+G1_upstream-002 1411 succeeded 300 DIS 51s
+G1_upstream-003 19236 succeeded 300 DIS 51s
+G1_upstream-004 28761 succeeded 300 DIS 51s
+G1_upstream-005 25279 succeeded 300 DIS 51s
+G1_upstream-006 10704 succeeded 300 DIS 52s
+repeat-G3_tracker-pass-29823-0 29823 succeeded 600 DIS 55s
+repeat-G3_tracker-pass-34615-0 34615 succeeded 400 DIS 53s
+repeat-G3_tracker-fail-33048-0 33048 succeeded 300 DIS 52s

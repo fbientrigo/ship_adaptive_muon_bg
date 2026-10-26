@@ -1,0 +1,30 @@
+{
+ "datasets": [
+  {
+   "manifest_sha256": "ddd5728d8fe9749569c1306d9a449d018dbea68b941523f31d4f65613884d99b",
+   "path": "/home/fabian/thesis/scratch/minimal-loop-v0/iter4/data_new/G0_none"
+  }
+ ],
+ "estimator_definition_id": "eta_hat_positive_over_valid_v0@sha256:f391a3c62b60ffd627f892b43d522546e343360e50b9a873671e83f96bbcbe5e",
+ "fs_sim_configuration_id": "pr1432_400c0fb_TRY_2026",
+ "options_digest": "015a4bcba9423c1c0359faecfa678b149fbc01a61c8cd7f5226d55b4f3ccbda7",
+ "policy": {
+  "sampling": {
+   "arm": "G0_none",
+   "draws_sha256": "88b8b1ed82fae893ff857e869086794608f442ad9b2a662dcfb033b8cd648c34",
+   "seed": 20261029
+  },
+  "u": {
+   "u_id": "u-cbea592c9146",
+   "u_sha256": "cf8b58bdd89bb6dc71d9a5dbca18da851193bf68615ae29e238cba45e6125b9a"
+  }
+ },
+ "rows_sha256": "0ec3de53dcaa4b5b1a96d1718d8e291db1178278c7490061daf248e3a41def51",
+ "snapshot_id": "snap-6bb5112428ea28f9",
+ "split": {
+  "group": "subject_id",
+  "seed": 20261025,
+  "validation_fraction": 0.3
+ },
+ "stage_definition_id": "pr1432_filter_any_v0@sha256:4676df3e375e3a9067e9b69a6c42a41448d817c32d9bdd9f3dca7284c508f1e9"
+}

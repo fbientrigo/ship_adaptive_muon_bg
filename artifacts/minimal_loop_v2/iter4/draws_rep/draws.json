@@ -1,0 +1,77 @@
+{
+ "scores": "/home/fabian/thesis/scratch/minimal-loop-v0/iter2/score/pool_scores.npz",
+ "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+ "scores_meta": {
+  "u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering",
+  "ray_flags": "ray_upstream: ray enters an Upstream* (UBT) volume; ray_tracker: ray enters Tr1..Tr4",
+  "pool": "/home/fabian/thesis/ship_adaptive_muon_bg/data/samples/muonsFullMC_afterMS_sample.npz",
+  "pool_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+  "geofile": "/home/fabian/thesis/scratch/fairship-update-1012/pr1432_inputs/runs/25740/geo_connector.root",
+  "geofile_sha256": "83ba54e9cd99059174187c1a098e286535f1dd5d1d282f47787983ce97b66ed0",
+  "fairship_dir": "/home/fabian/thesis/worktrees/FairShip-pr1432-400c0fb",
+  "fairship_commit": "400c0fb4ae31fd09f4cb8decc98c600c8441e0c1",
+  "transform": {
+   "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+   "status": "PROVISIONAL",
+   "x_unit": "m",
+   "y_unit": "m",
+   "x_to_m": 1.0,
+   "y_to_m": 1.0,
+   "z_rule": "affine_declared_z",
+   "z_value_m": null,
+   "z_scale": 1.0,
+   "z_offset_m": 2.5916
+  },
+  "n_rows": 40000,
+  "n_scored": 39998,
+  "n_u0_1": 14,
+  "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc"
+ },
+ "seed": 20261030,
+ "design": "k repeats per state, states drawn without replacement per (class, previous outcome); h column = previous per-run pass rate",
+ "previous_outcome_snapshots": [
+  "snap-4cd813d9331c3f6b",
+  "snap-24bb4fd52134edc4",
+  "snap-74f38b03b8ebb222",
+  "snap-82fef7155e00c597",
+  "snap-7605ad307c6048c7",
+  "snap-b1239e37f2cdb410",
+  "snap-be451908201b5fbc",
+  "snap-ebad8d1832159458"
+ ],
+ "stage_estimator_configuration": [
+  "pr1432_filter_any_v0@sha256:6fbd02f7ae1ab71020205170f4a303ffa51064184f8d1a00dcb318c05da2f706",
+  "eta_hat_positive_over_valid_v0@sha256:f391a3c62b60ffd627f892b43d522546e343360e50b9a873671e83f96bbcbe5e",
+  "pr1432_400c0fb_TRY_2026",
+  "c4857827b3365131fba084058cdc961991c38d045d37a9e43ce9de3ecfe3e145"
+ ],
+ "k": 1,
+ "groups": {
+  "G0_none:fail": {
+   "candidates": 33,
+   "drawn": 0
+  },
+  "G1_upstream:fail": {
+   "candidates": 32,
+   "drawn": 0
+  },
+  "G1_upstream:pass": {
+   "candidates": 1,
+   "drawn": 0
+  },
+  "G2_sbt:fail": {
+   "candidates": 1,
+   "drawn": 0
+  },
+  "G3_tracker:fail": {
+   "candidates": 3,
+   "drawn": 1
+  },
+  "G3_tracker:pass": {
+   "candidates": 10,
+   "drawn": 2
+  }
+ },
+ "seeds_excluded": 136,
+ "draws_sha256": "5bdb624a1c8c32e4098a0277ae18296f45a6757e9db3abf7a374977faad7817c"
+}

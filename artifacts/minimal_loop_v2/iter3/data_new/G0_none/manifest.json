@@ -1,0 +1,142 @@
+{
+ "bundles": [
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G0_none-000/bundle.json",
+   "request_id": "G0_none-000",
+   "sha256": "cf69406b25c196d4bdde4a0ded9c3412679559a8db2deeb0cd157896c7d88231"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G0_none-001/bundle.json",
+   "request_id": "G0_none-001",
+   "sha256": "48f0a6b39369aa2a2b58aba153198e6ddc7069603db7a7106a2aca68cccb6eaf"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G0_none-002/bundle.json",
+   "request_id": "G0_none-002",
+   "sha256": "705e7b5b0190dc139ab6bb412f20913bca5c20d6e84b2559a2ff5f7fb24b603d"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G0_none-003/bundle.json",
+   "request_id": "G0_none-003",
+   "sha256": "fba1e8f80177f77182de16d8be694ec75e93020a821ec4ad3a0eba3ec53418b6"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G0_none-004/bundle.json",
+   "request_id": "G0_none-004",
+   "sha256": "d442ec3e3b8f83b73cc34650fccb094101278c6747edde3ce3a679fb894168c9"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G0_none-005/bundle.json",
+   "request_id": "G0_none-005",
+   "sha256": "7c4ed9213a69df9dc7c13a4e75bd89fde82013a0dc28eb3b0eaab91c9d23ad3d"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G0_none-006/bundle.json",
+   "request_id": "G0_none-006",
+   "sha256": "3cdebcf73e0c558dbdb0c3464a80dfb7b9f2242229672f0bc17f96802d1c17fb"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G0_none-007/bundle.json",
+   "request_id": "G0_none-007",
+   "sha256": "1abb68f84cf11af6dc061bfd68fb0c02ee639a4909aa13d87fcdec262e27547d"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/G0_none-008/bundle.json",
+   "request_id": "G0_none-008",
+   "sha256": "7c5ee04b406f3dd43af0fd84de6042afd779024619df3c45f66fccac0960c70d"
+  }
+ ],
+ "is_physical": true,
+ "metadata": {
+  "arm": "G0_none",
+  "cost_parquet_sha256": "9187d04a647048f019f387ac72cff76e4936301491fe43dff64ebd1898284fd6",
+  "draws": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/draws_new/draws.csv",
+  "draws_meta": {
+   "allocation": {
+    "G0_none": 9,
+    "G1_upstream": 21,
+    "G2_sbt": 0,
+    "G3_tracker": 0
+   },
+   "available": {
+    "G0_none": 23063,
+    "G1_upstream": 8218,
+    "G2_sbt": 0,
+    "G3_tracker": 0
+   },
+   "design": "stratified by straight-ray class, without replacement; h column = U of the class",
+   "draws_sha256": "5f4fe87c247aa5c37c3cfe8340545db972199f7076d531767a1af93b99274fe8",
+   "excluded_already_evaluated": 62,
+   "floor": 5,
+   "min_p_gev": 2.0,
+   "n": 30,
+   "scores": "/home/fabian/thesis/scratch/minimal-loop-v0/iter2/score/pool_scores.npz",
+   "scores_meta": {
+    "fairship_commit": "400c0fb4ae31fd09f4cb8decc98c600c8441e0c1",
+    "fairship_dir": "/home/fabian/thesis/worktrees/FairShip-pr1432-400c0fb",
+    "geofile": "/home/fabian/thesis/scratch/fairship-update-1012/pr1432_inputs/runs/25740/geo_connector.root",
+    "geofile_sha256": "83ba54e9cd99059174187c1a098e286535f1dd5d1d282f47787983ce97b66ed0",
+    "n_rows": 40000,
+    "n_scored": 39998,
+    "n_u0_1": 14,
+    "pool": "/home/fabian/thesis/ship_adaptive_muon_bg/data/samples/muonsFullMC_afterMS_sample.npz",
+    "pool_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+    "ray_flags": "ray_upstream: ray enters an Upstream* (UBT) volume; ray_tracker: ray enters Tr1..Tr4",
+    "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+    "transform": {
+     "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+     "status": "PROVISIONAL",
+     "x_to_m": 1.0,
+     "x_unit": "m",
+     "y_to_m": 1.0,
+     "y_unit": "m",
+     "z_offset_m": 2.5916,
+     "z_rule": "affine_declared_z",
+     "z_scale": 1.0,
+     "z_value_m": null
+    },
+    "u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering"
+   },
+   "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+   "seed": 20261027,
+   "u_policy": {
+    "u_id": "u-2778ad8c2fca",
+    "u_sha256": "9fe4509853e344d44ef5ba264ba8b9e3b8c834c3bac955e1eb091872e429638c"
+   }
+  },
+  "draws_parquet_sha256": "461e01fbc4b0565d857ad64fc8a31d30021e5206f2d1e737d9eaa5af6be92db7",
+  "draws_sha256": "5f4fe87c247aa5c37c3cfe8340545db972199f7076d531767a1af93b99274fe8"
+ },
+ "schema": "minimal_loop_dataset_v0",
+ "tables": {
+  "candidates": {
+   "rows": 0,
+   "sha256": "94bb92bcdc359c5509339a0f4de79cbc141160ad5e0e8088cf0a15cb7785e3fa"
+  },
+  "decisions": {
+   "rows": 126,
+   "sha256": "e63e67d2e49ac14f656e64703116482e78493e90ade0dd5d19ce82ab833f5ed6"
+  },
+  "executions": {
+   "rows": 9,
+   "sha256": "4558b63cf9294511a44f92ee7add0ec72a852267ad4eeb5ccffc10f0563f7658"
+  },
+  "observations": {
+   "rows": 180,
+   "sha256": "293dce56754d5b4bee2847a517c5aba3e5d77391338bf4a0dd03a50c5db6f047"
+  },
+  "realizations": {
+   "rows": 90,
+   "sha256": "ff00e76411723e893a287a1353a8d65f979f32f0f1dc3551597af07694c0e519"
+  }
+ }
+}

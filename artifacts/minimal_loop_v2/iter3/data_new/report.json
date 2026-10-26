@@ -1,0 +1,162 @@
+{
+ "scope": "PR #1432 filter stage only; not Y^(k), not reconstruction, not B. Exploratory smoke, no power claim.",
+ "reference_is": "uniform over eligible rows (empirical), not the nominal physical measure",
+ "arms": {
+  "G0_none": {
+   "executions": 9,
+   "distinct_states": 9,
+   "max_multiplicity": 1,
+   "technical_failure": 0,
+   "not_evaluated": 0,
+   "valid": 9,
+   "filter_pass_executions": 0,
+   "states_with_a_pass": 0,
+   "states_with_a_valid_execution": 9,
+   "wall_hours": 0.139,
+   "pass_per_wall_hour": 0.0,
+   "pass_per_valid_execution": 0.0,
+   "upper95_pass_rate_if_zero": 0.2831288355631135,
+   "by_u0": {
+    "u0_0": {
+     "valid": 9,
+     "pass": 0,
+     "upper95_if_zero": 0.2831288355631135
+    },
+    "u0_1": {
+     "valid": 0,
+     "pass": 0,
+     "upper95_if_zero": null
+    }
+   },
+   "snapshot": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/data_new/snapshots/snap-ebad8d1832159458",
+   "coverage_deciles_of_eligible_pool": {
+    "p_gev": [
+     0,
+     0,
+     2,
+     1,
+     1,
+     1,
+     1,
+     0,
+     1,
+     2
+    ],
+    "pt_gev": [
+     0,
+     1,
+     1,
+     0,
+     1,
+     3,
+     0,
+     0,
+     2,
+     1
+    ],
+    "x_m": [
+     2,
+     0,
+     3,
+     1,
+     0,
+     0,
+     2,
+     1,
+     0,
+     0
+    ],
+    "y_m": [
+     0,
+     2,
+     0,
+     0,
+     2,
+     1,
+     1,
+     2,
+     0,
+     1
+    ]
+   }
+  },
+  "G1_upstream": {
+   "executions": 21,
+   "distinct_states": 21,
+   "max_multiplicity": 1,
+   "technical_failure": 0,
+   "not_evaluated": 0,
+   "valid": 21,
+   "filter_pass_executions": 1,
+   "states_with_a_pass": 1,
+   "states_with_a_valid_execution": 21,
+   "wall_hours": 0.29,
+   "pass_per_wall_hour": 3.45,
+   "pass_per_valid_execution": 0.048,
+   "upper95_pass_rate_if_zero": null,
+   "by_u0": {
+    "u0_0": {
+     "valid": 21,
+     "pass": 1,
+     "upper95_if_zero": null
+    },
+    "u0_1": {
+     "valid": 0,
+     "pass": 0,
+     "upper95_if_zero": null
+    }
+   },
+   "snapshot": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/data_new/snapshots/snap-4cd813d9331c3f6b",
+   "coverage_deciles_of_eligible_pool": {
+    "p_gev": [
+     1,
+     2,
+     2,
+     3,
+     0,
+     2,
+     1,
+     1,
+     3,
+     6
+    ],
+    "pt_gev": [
+     5,
+     2,
+     1,
+     2,
+     1,
+     1,
+     1,
+     1,
+     1,
+     6
+    ],
+    "x_m": [
+     0,
+     0,
+     0,
+     2,
+     8,
+     8,
+     3,
+     0,
+     0,
+     0
+    ],
+    "y_m": [
+     2,
+     4,
+     4,
+     2,
+     0,
+     1,
+     4,
+     1,
+     2,
+     1
+    ]
+   }
+  }
+ }
+}

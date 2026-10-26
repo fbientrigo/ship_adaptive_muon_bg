@@ -1,0 +1,325 @@
+{
+ "bundles": [
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-fail-4843-0/bundle.json",
+   "request_id": "repeat-G1_upstream-fail-4843-0",
+   "sha256": "2892c9ef724deefa4ac30d6b07b060ec5561413745bff4dc7f4c55c8a51f90d7"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-fail-4843-1/bundle.json",
+   "request_id": "repeat-G1_upstream-fail-4843-1",
+   "sha256": "554cb15f4f3b7b1441e334c6a72a62b50dc551e2ba50ab05d3e9d456194e715f"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-fail-4843-2/bundle.json",
+   "request_id": "repeat-G1_upstream-fail-4843-2",
+   "sha256": "4e879a14e0f44e4a57ae4063c9ac21689735c980a5af29362a9365a38b00b6d7"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-fail-857-0/bundle.json",
+   "request_id": "repeat-G1_upstream-fail-857-0",
+   "sha256": "9fb98abf90c4915ac83456f97226e5662a8ff716b43821bb2ec48cc11b32091d"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-fail-857-1/bundle.json",
+   "request_id": "repeat-G1_upstream-fail-857-1",
+   "sha256": "932352334604572604c965b6ccf768976776d4ec93c5b2e068b22f8727c6e425"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-fail-857-2/bundle.json",
+   "request_id": "repeat-G1_upstream-fail-857-2",
+   "sha256": "4ae2b9beed0d73d4e3a7b330f8f3e14fb10ba05502eceecf0744d0f45cbbd4d5"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-pass-18020-0/bundle.json",
+   "request_id": "repeat-G1_upstream-pass-18020-0",
+   "sha256": "d505fd327cb0d90b42b3b8aab2b78caa661e28c63d09ef27f6bd6e1183fcbdc1"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-pass-18020-1/bundle.json",
+   "request_id": "repeat-G1_upstream-pass-18020-1",
+   "sha256": "89ff0db18a840ca83d83f8190136151b348f27898a978b99c0f66a21dd13265e"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-pass-18020-2/bundle.json",
+   "request_id": "repeat-G1_upstream-pass-18020-2",
+   "sha256": "7ac46bae2354e3dd9a0a413fd0b87cf6bd56f3d134d1e3ffa204a299bfb9b541"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-pass-30425-0/bundle.json",
+   "request_id": "repeat-G1_upstream-pass-30425-0",
+   "sha256": "29be433b970e78cab53f59efd0b4aec379e07a8d679b1e2775c76f32d93becb1"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-pass-30425-1/bundle.json",
+   "request_id": "repeat-G1_upstream-pass-30425-1",
+   "sha256": "354f45e6af45af7eaaea71b0f172221727fb1a87fd1bb916e3983a34f72122e4"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G1_upstream-pass-30425-2/bundle.json",
+   "request_id": "repeat-G1_upstream-pass-30425-2",
+   "sha256": "aece2fcf47a2fa2efbbc6e6394b7d3c1e2ac0f36a4edf2172cf379e690b9a055"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-21705-0/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-21705-0",
+   "sha256": "56906dbe76e924cb9baa94a6ecf0cfc35207b4995621ef70f4a88ff26591bc13"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-21705-1/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-21705-1",
+   "sha256": "658e74695382f0dff236e36324645795105ce26840f61b5fabc0588031204377"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-21705-2/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-21705-2",
+   "sha256": "e507f075c3faa6ee96a1521e9ebf5eea5baccf7e610c1541a3ae4a915f9d6eb6"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-31938-0/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-31938-0",
+   "sha256": "1a884231fbcc9e99891c3ac65cdbcf5b303915ade5f89ffd54e1617112404cc0"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-31938-1/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-31938-1",
+   "sha256": "5398d711d039b800a0ba19a932b3e4d0a8ddf9a0bc38505722d00df4d21c0563"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-31938-2/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-31938-2",
+   "sha256": "f415afe6dd6e8d436ae51b04885d97b5d39ed8055861226bc319f01bc8b001be"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-3409-0/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-3409-0",
+   "sha256": "5291bda6e545049a67a12c0dfdb5d2f1e23e3c3cd0076f96470bbf0fe067475f"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-3409-1/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-3409-1",
+   "sha256": "9a5a6518759b31085ae9dfc99e4b111d90876f149a3cdb733ccfc4359f38bb05"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-3409-2/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-3409-2",
+   "sha256": "e84153f2d17463dd8e26eaf077165e15ed9a495b38e6404a8aad38d185abf5db"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-37566-0/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-37566-0",
+   "sha256": "e05678f8fe4db0a6a3e2136e40320cac755cadad03183004375c3bf879b862db"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-37566-1/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-37566-1",
+   "sha256": "fa7fcb468b2e79878f8e2c6436f3e6986dc027316171da3ff470ba13a674cd8e"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-fail-37566-2/bundle.json",
+   "request_id": "repeat-G3_tracker-fail-37566-2",
+   "sha256": "c80862faf9c02dabf56ff29945b1de02977207e7051c95be9bd97c0438f7011b"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-12851-0/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-12851-0",
+   "sha256": "cf635bfa2f1ededc1a369bbcda13085a627bd1d733afb84c8dece8d304e4ccc1"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-12851-1/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-12851-1",
+   "sha256": "0490cbf8d34eca474f355ff5147b6f325dc1777fd7f38bb0bed8558e2c2e5272"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-12851-2/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-12851-2",
+   "sha256": "741bbbfa77f1198904031398778a055515bbd50de0a967b22f9cfe6a1bdfa1cd"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-33946-0/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-33946-0",
+   "sha256": "1972166286bd55880a3a146dd82fc6ac156b85bb96eb2bdca15d3b1b1f7dc66f"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-33946-1/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-33946-1",
+   "sha256": "515e63dc660304623d01a24d0c9f8437b8a2e46212d1e3a2c4fed309386fc49c"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-33946-2/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-33946-2",
+   "sha256": "1ce6e7959f3c409e0d7d02842c8f430fcfd43ab0c6b8c34ee472e4005d5d948f"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-34629-0/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-34629-0",
+   "sha256": "15e32e2ce1deb531f4ef3c2e2154ced0bb699c6328d7d0debe11df063760341a"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-34629-1/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-34629-1",
+   "sha256": "0a7ae39d84ad2ee68e19b67c67fcbd985c017ce59b5e96c48025583f2e2bcc07"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-34629-2/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-34629-2",
+   "sha256": "1dd50aac11998bb36af024a5aaaf2433bc932d0dd63ea97e02128b8f7d21dbae"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-36227-0/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-36227-0",
+   "sha256": "61505d045a77e797646a2e42e21c7bcd45d93728b72ca9007c61bf46e62e611d"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-36227-1/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-36227-1",
+   "sha256": "38db0f7886a73fd008256eacd1e2e2cb118a01b05877f78b9e2b646c9f864f40"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/runs/repeat-G3_tracker-pass-36227-2/bundle.json",
+   "request_id": "repeat-G3_tracker-pass-36227-2",
+   "sha256": "de2d6056304e72cddf9c906c5b9664625e3737bac2a3a2f33f3058e9a8796b64"
+  }
+ ],
+ "is_physical": true,
+ "metadata": {
+  "arm": "seed_repeat",
+  "cost_parquet_sha256": "ca20bcfb4248ff33ff08287e41ebffaef21fc9fe6ae070119540d410f3a22c88",
+  "draws": "/home/fabian/thesis/scratch/minimal-loop-v0/iter3/draws_rep/draws.csv",
+  "draws_meta": {
+   "design": "k repeats per state, states drawn without replacement per (class, previous outcome); h column = previous per-run pass rate",
+   "draws_sha256": "1f472d4608dfa9e2db1af1aa59debb10b8bdeb7387552b781b0e01ecb827b625",
+   "groups": {
+    "G0_none:fail": {
+     "candidates": 24,
+     "drawn": 0
+    },
+    "G1_upstream:fail": {
+     "candidates": 13,
+     "drawn": 2
+    },
+    "G1_upstream:pass": {
+     "candidates": 2,
+     "drawn": 2
+    },
+    "G2_sbt:fail": {
+     "candidates": 1,
+     "drawn": 0
+    },
+    "G3_tracker:fail": {
+     "candidates": 6,
+     "drawn": 4
+    },
+    "G3_tracker:pass": {
+     "candidates": 13,
+     "drawn": 4
+    }
+   },
+   "k": 3,
+   "previous_outcome_snapshots": [
+    "snap-24bb4fd52134edc4",
+    "snap-74f38b03b8ebb222",
+    "snap-82fef7155e00c597",
+    "snap-b1239e37f2cdb410",
+    "snap-be451908201b5fbc"
+   ],
+   "scores": "/home/fabian/thesis/scratch/minimal-loop-v0/iter2/score/pool_scores.npz",
+   "scores_meta": {
+    "fairship_commit": "400c0fb4ae31fd09f4cb8decc98c600c8441e0c1",
+    "fairship_dir": "/home/fabian/thesis/worktrees/FairShip-pr1432-400c0fb",
+    "geofile": "/home/fabian/thesis/scratch/fairship-update-1012/pr1432_inputs/runs/25740/geo_connector.root",
+    "geofile_sha256": "83ba54e9cd99059174187c1a098e286535f1dd5d1d282f47787983ce97b66ed0",
+    "n_rows": 40000,
+    "n_scored": 39998,
+    "n_u0_1": 14,
+    "pool": "/home/fabian/thesis/ship_adaptive_muon_bg/data/samples/muonsFullMC_afterMS_sample.npz",
+    "pool_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+    "ray_flags": "ray_upstream: ray enters an Upstream* (UBT) volume; ray_tracker: ray enters Tr1..Tr4",
+    "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+    "transform": {
+     "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+     "status": "PROVISIONAL",
+     "x_to_m": 1.0,
+     "x_unit": "m",
+     "y_to_m": 1.0,
+     "y_unit": "m",
+     "z_offset_m": 2.5916,
+     "z_rule": "affine_declared_z",
+     "z_scale": 1.0,
+     "z_value_m": null
+    },
+    "u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering"
+   },
+   "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+   "seed": 20261028,
+   "seeds_excluded": 70,
+   "stage_estimator_configuration": [
+    "pr1432_filter_any_v0@sha256:6fbd02f7ae1ab71020205170f4a303ffa51064184f8d1a00dcb318c05da2f706",
+    "eta_hat_positive_over_valid_v0@sha256:f391a3c62b60ffd627f892b43d522546e343360e50b9a873671e83f96bbcbe5e",
+    "pr1432_400c0fb_TRY_2026",
+    "c4857827b3365131fba084058cdc961991c38d045d37a9e43ce9de3ecfe3e145"
+   ]
+  },
+  "draws_parquet_sha256": "3fe625ea7b6d2fd3d1d19075cab94fe4f1986fb5dca8304e268da02b9c908d70",
+  "draws_sha256": "1f472d4608dfa9e2db1af1aa59debb10b8bdeb7387552b781b0e01ecb827b625"
+ },
+ "schema": "minimal_loop_dataset_v0",
+ "tables": {
+  "candidates": {
+   "rows": 0,
+   "sha256": "94bb92bcdc359c5509339a0f4de79cbc141160ad5e0e8088cf0a15cb7785e3fa"
+  },
+  "decisions": {
+   "rows": 1284,
+   "sha256": "67af5bb5b8e5d02ee479be3df0dbb399ba549b78b5fea3e8fda7db614681cfc1"
+  },
+  "executions": {
+   "rows": 36,
+   "sha256": "2a3cfd04097b3ad8433749b393c7efd94847853ce07346a79bc3318212c3d176"
+  },
+  "observations": {
+   "rows": 1734,
+   "sha256": "d826251b5a03a1d1c76ff4656aaaec1b7e825ef0218e868bc4b425fe6ca2e73d"
+  },
+  "realizations": {
+   "rows": 1140,
+   "sha256": "ec750a07dbb0cc48a7e4cc2a603a64f36406c8354c00843a67b503fa0bf394bd"
+  }
+ }
+}
