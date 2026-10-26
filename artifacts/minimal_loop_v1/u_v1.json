@@ -1,0 +1,62 @@
+{
+ "u_definition": "Laplace rate of filter-PASS states per straight-ray class G0_none/G1_upstream/G2_sbt/G3_tracker",
+ "classes": {
+  "G0_none": {
+   "valid_states": 19,
+   "positive_states": 0,
+   "u": 0.047619047619047616
+  },
+  "G1_upstream": {
+   "valid_states": 7,
+   "positive_states": 1,
+   "u": 0.2222222222222222
+  },
+  "G2_sbt": {
+   "valid_states": 1,
+   "positive_states": 0,
+   "u": 0.3333333333333333
+  },
+  "G3_tracker": {
+   "valid_states": 2,
+   "positive_states": 2,
+   "u": 0.75
+  }
+ },
+ "fit_snapshots": [
+  "snap-be451908201b5fbc",
+  "snap-74f38b03b8ebb222"
+ ],
+ "fit_states": [
+  "row-10420",
+  "row-14503",
+  "row-16151",
+  "row-16237",
+  "row-16830",
+  "row-1715",
+  "row-17546",
+  "row-17929",
+  "row-18020",
+  "row-18183",
+  "row-19352",
+  "row-19482",
+  "row-22379",
+  "row-22707",
+  "row-23409",
+  "row-29697",
+  "row-29823",
+  "row-31238",
+  "row-32661",
+  "row-33670",
+  "row-34090",
+  "row-34578",
+  "row-35264",
+  "row-3553",
+  "row-35722",
+  "row-36799",
+  "row-6532",
+  "row-7276",
+  "row-857"
+ ],
+ "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+ "u_id": "u-b83071ed9d15"
+}

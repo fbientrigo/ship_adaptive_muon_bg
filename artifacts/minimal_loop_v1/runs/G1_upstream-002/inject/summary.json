@@ -1,0 +1,45 @@
+{
+  "converted_ntuple": "/home/fabian/thesis/scratch/minimal-loop-v0/iter2/runs/G1_upstream-002/inject/converted_ntuple.root",
+  "importer_returncode": 0,
+  "ok": true,
+  "output_directory": "/home/fabian/thesis/scratch/minimal-loop-v0/iter2/runs/G1_upstream-002/inject",
+  "output_root": "/home/fabian/thesis/scratch/minimal-loop-v0/iter2/runs/G1_upstream-002/inject/sim_connector.root",
+  "simulation_returncode": 0,
+  "technical_failures": [],
+  "verification": {
+    "branches": [
+      "MCEventHeader.",
+      "CaloScoringPlanePoint",
+      "MCTrack",
+      "TimeDetPoint",
+      "UpstreamTaggerPoint",
+      "strawtubesPoint",
+      "vetoPoint"
+    ],
+    "coordinate_physics_verified": false,
+    "coordinate_transform_status": "PROVISIONAL",
+    "entries": 1,
+    "first_mctrack": {
+      "pdg_id": -13,
+      "px": -3.5214600563049316,
+      "py": -0.48458677530288696,
+      "pz": 50.64826202392578,
+      "x": -180.80117797851562,
+      "y": -20.611522674560547,
+      "z": 3149.659912109375
+    },
+    "intended": {
+      "pdg_id": -13,
+      "px": -3.5214600693133673,
+      "py": -0.48458676420636276,
+      "pz": 50.64826363541045,
+      "x": -180.80117594618704,
+      "y": -20.611522420707427,
+      "z": 3149.66
+    },
+    "mechanical_injection_verified": true,
+    "root_version": "6.40.02",
+    "status": "verified",
+    "tree": "cbmsim"
+  }
+}

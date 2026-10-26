@@ -1,0 +1,30 @@
+{
+ "datasets": [
+  {
+   "manifest_sha256": "bceec1bc055dd57546f47a5f4b5f218bc9b6e661ef093c5378132c16b4f0dbef",
+   "path": "/home/fabian/thesis/scratch/minimal-loop-v0/iter2/data/G3_tracker"
+  }
+ ],
+ "estimator_definition_id": "eta_hat_positive_over_valid_v0@sha256:f391a3c62b60ffd627f892b43d522546e343360e50b9a873671e83f96bbcbe5e",
+ "fs_sim_configuration_id": "pr1432_400c0fb_TRY_2026",
+ "options_digest": "c4857827b3365131fba084058cdc961991c38d045d37a9e43ce9de3ecfe3e145",
+ "policy": {
+  "sampling": {
+   "arm": "G3_tracker",
+   "draws_sha256": "072b37e525ae2eaa8458b29edb1bf7a932680350329cb64a8944f20f91c03baa",
+   "seed": 20261026
+  },
+  "u": {
+   "u_id": "u-b83071ed9d15",
+   "u_sha256": "9b628d478b48b521bbb854e4ec158da3868a2847785adbbfd1445214316109d9"
+  }
+ },
+ "rows_sha256": "73bd90f2dfbfa59ed315a621185335bb880922fa3c7f9caeb9b53c6405390e6e",
+ "snapshot_id": "snap-82fef7155e00c597",
+ "split": {
+  "group": "subject_id",
+  "seed": 20261025,
+  "validation_fraction": 0.3
+ },
+ "stage_definition_id": "pr1432_filter_any_v0@sha256:6fbd02f7ae1ab71020205170f4a303ffa51064184f8d1a00dcb318c05da2f706"
+}

@@ -1,0 +1,136 @@
+{
+ "bundles": [
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G1_upstream-000/bundle.json",
+   "request_id": "G1_upstream-000",
+   "sha256": "aa66aeae43963ba9ca0e3e934b4482e7921fe576d073322130942abce27b5e2c"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G1_upstream-001/bundle.json",
+   "request_id": "G1_upstream-001",
+   "sha256": "9aa53627517b011af9de9d8e16a7d056b60a8e96952ad6b26a306d1bc5badb97"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G1_upstream-002/bundle.json",
+   "request_id": "G1_upstream-002",
+   "sha256": "8a7d91465d850b724cd5871a5cbef9bf3626c94554003d8c4e12a42a2f4b97f2"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G1_upstream-003/bundle.json",
+   "request_id": "G1_upstream-003",
+   "sha256": "9dd5e8c6d36f0ecadcca4b1fc95baa1bf3718e4f96d4ebc4d7acf13a4f895e23"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G1_upstream-004/bundle.json",
+   "request_id": "G1_upstream-004",
+   "sha256": "0204258bdd11b50a7f4854175c0cdaa928ddeee791c2996d6fac7004a39552fb"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G1_upstream-005/bundle.json",
+   "request_id": "G1_upstream-005",
+   "sha256": "010830c8f50ac9939784031b31f600b25c8b01e5559dd72e03aea1f3e8b28205"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G1_upstream-006/bundle.json",
+   "request_id": "G1_upstream-006",
+   "sha256": "61c48425025e0ca723f68c5fc67d114979e3e472471736bcb940355aa8889718"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G1_upstream-007/bundle.json",
+   "request_id": "G1_upstream-007",
+   "sha256": "38008078ae721f216aaed1e9cccace641f95c16e764f54360fe12817cefb8083"
+  }
+ ],
+ "is_physical": true,
+ "metadata": {
+  "arm": "G1_upstream",
+  "cost_parquet_sha256": "77cb431563963562f441f88c5f35c1980051ee818e420ff2d7510336de533431",
+  "draws": "scratch/minimal-loop-v0/iter2/draws/draws.csv",
+  "draws_meta": {
+   "allocation": {
+    "G0_none": 5,
+    "G1_upstream": 8,
+    "G2_sbt": 0,
+    "G3_tracker": 17
+   },
+   "available": {
+    "G0_none": 23068,
+    "G1_upstream": 8226,
+    "G2_sbt": 0,
+    "G3_tracker": 17
+   },
+   "design": "stratified by straight-ray class, without replacement; h column = U of the class",
+   "draws_sha256": "072b37e525ae2eaa8458b29edb1bf7a932680350329cb64a8944f20f91c03baa",
+   "excluded_already_evaluated": 32,
+   "floor": 5,
+   "min_p_gev": 2.0,
+   "n": 30,
+   "scores": "scratch/minimal-loop-v0/iter2/score/pool_scores.npz",
+   "scores_meta": {
+    "fairship_commit": "400c0fb4ae31fd09f4cb8decc98c600c8441e0c1",
+    "fairship_dir": "/home/fabian/thesis/worktrees/FairShip-pr1432-400c0fb",
+    "geofile": "/home/fabian/thesis/scratch/fairship-update-1012/pr1432_inputs/runs/25740/geo_connector.root",
+    "geofile_sha256": "83ba54e9cd99059174187c1a098e286535f1dd5d1d282f47787983ce97b66ed0",
+    "n_rows": 40000,
+    "n_scored": 39998,
+    "n_u0_1": 14,
+    "pool": "/home/fabian/thesis/ship_adaptive_muon_bg/data/samples/muonsFullMC_afterMS_sample.npz",
+    "pool_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+    "ray_flags": "ray_upstream: ray enters an Upstream* (UBT) volume; ray_tracker: ray enters Tr1..Tr4",
+    "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+    "transform": {
+     "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+     "status": "PROVISIONAL",
+     "x_to_m": 1.0,
+     "x_unit": "m",
+     "y_to_m": 1.0,
+     "y_unit": "m",
+     "z_offset_m": 2.5916,
+     "z_rule": "affine_declared_z",
+     "z_scale": 1.0,
+     "z_value_m": null
+    },
+    "u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering"
+   },
+   "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+   "seed": 20261026,
+   "u_policy": {
+    "u_id": "u-b83071ed9d15",
+    "u_sha256": "9b628d478b48b521bbb854e4ec158da3868a2847785adbbfd1445214316109d9"
+   }
+  },
+  "draws_parquet_sha256": "f002800e29b06a1414dace0c21e3818aa696b44f2e1c38982c70eccd683fd1c6",
+  "draws_sha256": "072b37e525ae2eaa8458b29edb1bf7a932680350329cb64a8944f20f91c03baa"
+ },
+ "schema": "minimal_loop_dataset_v0",
+ "tables": {
+  "candidates": {
+   "rows": 0,
+   "sha256": "94bb92bcdc359c5509339a0f4de79cbc141160ad5e0e8088cf0a15cb7785e3fa"
+  },
+  "decisions": {
+   "rows": 272,
+   "sha256": "f76954c7c5d1b227777c72650c0dc77c0893b56dd7f70bfbcea774ac9550c640"
+  },
+  "executions": {
+   "rows": 8,
+   "sha256": "9465e8f520117f9c2a04a2e655a77ff853aae37b7a7c528e04f4af2098f697e0"
+  },
+  "observations": {
+   "rows": 368,
+   "sha256": "94b331c0bced0eaf6ea2a1528d66e4c0ca138261cf3d2dd37a119e97e6ed27c9"
+  },
+  "realizations": {
+   "rows": 240,
+   "sha256": "b7429040364822454e54fd40f755066360f2c3e441167949ba8c636538c5e006"
+  }
+ }
+}

@@ -1,0 +1,131 @@
+{
+ "u_definition": "Laplace rate of filter-PASS states per straight-ray class G0_none/G1_upstream/G2_sbt/G3_tracker",
+ "classes": {
+  "G0_none": {
+   "valid_states": 24,
+   "positive_states": 0,
+   "sum_state_eta": 0.0,
+   "u": 0.038461538461538464
+  },
+  "G1_upstream": {
+   "valid_states": 15,
+   "positive_states": 2,
+   "sum_state_eta": 2.0,
+   "u": 0.17647058823529413
+  },
+  "G2_sbt": {
+   "valid_states": 1,
+   "positive_states": 0,
+   "sum_state_eta": 0.0,
+   "u": 0.3333333333333333
+  },
+  "G3_tracker": {
+   "valid_states": 19,
+   "positive_states": 13,
+   "sum_state_eta": 13.0,
+   "u": 0.6666666666666666
+  }
+ },
+ "fit_snapshots": [
+  "snap-be451908201b5fbc",
+  "snap-74f38b03b8ebb222",
+  "snap-24bb4fd52134edc4",
+  "snap-82fef7155e00c597",
+  "snap-b1239e37f2cdb410"
+ ],
+ "fit_states": [
+  "row-10420",
+  "row-10631",
+  "row-12851",
+  "row-14235",
+  "row-14503",
+  "row-16151",
+  "row-16237",
+  "row-16474",
+  "row-16830",
+  "row-1715",
+  "row-17546",
+  "row-17929",
+  "row-18016",
+  "row-18020",
+  "row-18183",
+  "row-19352",
+  "row-19445",
+  "row-19482",
+  "row-19513",
+  "row-20987",
+  "row-21705",
+  "row-22379",
+  "row-22707",
+  "row-23409",
+  "row-23764",
+  "row-27655",
+  "row-28702",
+  "row-29697",
+  "row-29823",
+  "row-30425",
+  "row-31238",
+  "row-31938",
+  "row-32063",
+  "row-32661",
+  "row-33048",
+  "row-33670",
+  "row-33946",
+  "row-3409",
+  "row-34090",
+  "row-34578",
+  "row-34615",
+  "row-34629",
+  "row-35264",
+  "row-3553",
+  "row-35638",
+  "row-35722",
+  "row-36227",
+  "row-36249",
+  "row-36799",
+  "row-37566",
+  "row-38700",
+  "row-4843",
+  "row-5110",
+  "row-5144",
+  "row-5503",
+  "row-6532",
+  "row-7276",
+  "row-857",
+  "row-9957"
+ ],
+ "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+ "stage_estimator_configuration": [
+  "pr1432_filter_any_v0@sha256:6fbd02f7ae1ab71020205170f4a303ffa51064184f8d1a00dcb318c05da2f706",
+  "eta_hat_positive_over_valid_v0@sha256:f391a3c62b60ffd627f892b43d522546e343360e50b9a873671e83f96bbcbe5e",
+  "pr1432_400c0fb_TRY_2026",
+  "c4857827b3365131fba084058cdc961991c38d045d37a9e43ce9de3ecfe3e145"
+ ],
+ "u_id": "u-2778ad8c2fca",
+ "evaluation_of_previous": {
+  "u_id": "u-b83071ed9d15",
+  "fresh_states": 30,
+  "by_class": {
+   "G0_none": {
+    "predicted_u": 0.047619047619047616,
+    "observed_sum_eta": 0.0,
+    "fresh_states": 5
+   },
+   "G1_upstream": {
+    "predicted_u": 0.2222222222222222,
+    "observed_sum_eta": 1.0,
+    "fresh_states": 8
+   },
+   "G2_sbt": {
+    "predicted_u": 0.3333333333333333,
+    "observed_sum_eta": 0,
+    "fresh_states": 0
+   },
+   "G3_tracker": {
+    "predicted_u": 0.75,
+    "observed_sum_eta": 11.0,
+    "fresh_states": 17
+   }
+  }
+ }
+}

@@ -1,0 +1,240 @@
+{
+ "scope": "PR #1432 filter stage only; not Y^(k), not reconstruction, not B. Exploratory smoke, no power claim.",
+ "reference_is": "uniform over eligible rows (empirical), not the nominal physical measure",
+ "arms": {
+  "G0_none": {
+   "executions": 5,
+   "distinct_states": 5,
+   "max_multiplicity": 1,
+   "technical_failure": 0,
+   "not_evaluated": 0,
+   "valid": 5,
+   "filter_pass_executions": 0,
+   "states_with_a_pass": 0,
+   "states_with_a_valid_execution": 5,
+   "wall_hours": 0.07,
+   "pass_per_wall_hour": 0.0,
+   "pass_per_valid_execution": 0.0,
+   "upper95_pass_rate_if_zero": 0.4507197283469412,
+   "by_u0": {
+    "u0_0": {
+     "valid": 5,
+     "pass": 0,
+     "upper95_if_zero": 0.4507197283469412
+    },
+    "u0_1": {
+     "valid": 0,
+     "pass": 0,
+     "upper95_if_zero": null
+    }
+   },
+   "snapshot": "scratch/minimal-loop-v0/iter2/data/snapshots/snap-24bb4fd52134edc4",
+   "coverage_deciles_of_eligible_pool": {
+    "p_gev": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     3,
+     0,
+     1,
+     0,
+     0
+    ],
+    "pt_gev": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     1,
+     3,
+     0,
+     0,
+     0
+    ],
+    "x_m": [
+     0,
+     4,
+     0,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0
+    ],
+    "y_m": [
+     1,
+     1,
+     0,
+     0,
+     1,
+     0,
+     2,
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "G1_upstream": {
+   "executions": 8,
+   "distinct_states": 8,
+   "max_multiplicity": 1,
+   "technical_failure": 0,
+   "not_evaluated": 0,
+   "valid": 8,
+   "filter_pass_executions": 1,
+   "states_with_a_pass": 1,
+   "states_with_a_valid_execution": 8,
+   "wall_hours": 0.11,
+   "pass_per_wall_hour": 9.12,
+   "pass_per_valid_execution": 0.125,
+   "upper95_pass_rate_if_zero": null,
+   "by_u0": {
+    "u0_0": {
+     "valid": 8,
+     "pass": 1,
+     "upper95_if_zero": null
+    },
+    "u0_1": {
+     "valid": 0,
+     "pass": 0,
+     "upper95_if_zero": null
+    }
+   },
+   "snapshot": "scratch/minimal-loop-v0/iter2/data/snapshots/snap-b1239e37f2cdb410",
+   "coverage_deciles_of_eligible_pool": {
+    "p_gev": [
+     0,
+     1,
+     0,
+     1,
+     1,
+     0,
+     0,
+     1,
+     0,
+     4
+    ],
+    "pt_gev": [
+     1,
+     2,
+     0,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0,
+     4
+    ],
+    "x_m": [
+     0,
+     0,
+     0,
+     1,
+     3,
+     4,
+     0,
+     0,
+     0,
+     0
+    ],
+    "y_m": [
+     0,
+     0,
+     3,
+     1,
+     0,
+     1,
+     3,
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "G3_tracker": {
+   "executions": 17,
+   "distinct_states": 17,
+   "max_multiplicity": 1,
+   "technical_failure": 0,
+   "not_evaluated": 0,
+   "valid": 17,
+   "filter_pass_executions": 11,
+   "states_with_a_pass": 11,
+   "states_with_a_valid_execution": 17,
+   "wall_hours": 0.234,
+   "pass_per_wall_hour": 46.94,
+   "pass_per_valid_execution": 0.647,
+   "upper95_pass_rate_if_zero": null,
+   "by_u0": {
+    "u0_0": {
+     "valid": 17,
+     "pass": 11,
+     "upper95_if_zero": null
+    },
+    "u0_1": {
+     "valid": 0,
+     "pass": 0,
+     "upper95_if_zero": null
+    }
+   },
+   "snapshot": "scratch/minimal-loop-v0/iter2/data/snapshots/snap-82fef7155e00c597",
+   "coverage_deciles_of_eligible_pool": {
+    "p_gev": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     15
+    ],
+    "pt_gev": [
+     1,
+     0,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     15
+    ],
+    "x_m": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     16,
+     0,
+     0,
+     0,
+     0
+    ],
+    "y_m": [
+     1,
+     0,
+     1,
+     2,
+     3,
+     9,
+     1,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ }
+}

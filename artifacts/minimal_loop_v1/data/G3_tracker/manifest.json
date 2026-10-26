@@ -1,0 +1,190 @@
+{
+ "bundles": [
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-000/bundle.json",
+   "request_id": "G3_tracker-000",
+   "sha256": "2dda01c578166a8e541f2c4f3369d4a22604bf349daea54433d346d2f229cad6"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-001/bundle.json",
+   "request_id": "G3_tracker-001",
+   "sha256": "e3519a136025854a646360a50b5b8f86d2f6d4fee1e608fe5a12ae7609d204c3"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-002/bundle.json",
+   "request_id": "G3_tracker-002",
+   "sha256": "16f3faf0fbd12d5ed85108e0604f3a35809c5f8a7779567252b99999e108eafc"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-003/bundle.json",
+   "request_id": "G3_tracker-003",
+   "sha256": "0797f592fbe1daf0a87006e7e5ee5c734ecf9620c875227d8ae0be7c44432b67"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-004/bundle.json",
+   "request_id": "G3_tracker-004",
+   "sha256": "738270c32771040d1286bf25ccdc2b0bd3d101fd9359ba84b76f278c5a3c13d2"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-005/bundle.json",
+   "request_id": "G3_tracker-005",
+   "sha256": "af1890c7f8e9f74a7f6c773d0dd34439feec418a0acb43df447076554adfff11"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-006/bundle.json",
+   "request_id": "G3_tracker-006",
+   "sha256": "30ad1c52eebdc87defa7464ebc1bc5422e8327e80aee26b780c6d041e9d872f0"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-007/bundle.json",
+   "request_id": "G3_tracker-007",
+   "sha256": "eb66502f22af376c3f5aba313f7b926114d1961eb6309ccd2e2122dfaa7253c7"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-008/bundle.json",
+   "request_id": "G3_tracker-008",
+   "sha256": "23049e89ecf9ce243b7fbc8d306e2004cd88c740f5517f0baa10cf2102491d2d"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-009/bundle.json",
+   "request_id": "G3_tracker-009",
+   "sha256": "7ab95a42cf90636271611b9ada094a1d5013f0e6e88b296b5b6ccee0378c9a7b"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-010/bundle.json",
+   "request_id": "G3_tracker-010",
+   "sha256": "bfca817a8c196b3d4d4e9949f4da65188f9e3e75aca8cfe540dc6fcacda9535a"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-011/bundle.json",
+   "request_id": "G3_tracker-011",
+   "sha256": "c73a644b1910a3568a8477db20f16a31518da6bce1ca53135d763e4d93e98612"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-012/bundle.json",
+   "request_id": "G3_tracker-012",
+   "sha256": "e7250051c34345fa167dac76f7697b086efd67b7f992a95496b5a506a7ba836b"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-013/bundle.json",
+   "request_id": "G3_tracker-013",
+   "sha256": "d99f6f731aabf8b8c8025eb4b03a13fcd31a05bc758f06f06ed71c5e86ab1a2b"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-014/bundle.json",
+   "request_id": "G3_tracker-014",
+   "sha256": "2743df686e4ef82b14512588d46620d12837c8bee49f7343aacc8bc8ff0ae92b"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-015/bundle.json",
+   "request_id": "G3_tracker-015",
+   "sha256": "2fd9b9d519d277034f5050dec79c20258137d69c7cb4bf0c6abcb33dc40889b1"
+  },
+  {
+   "backend": "pr1432_mudis_v0",
+   "bundle_file": "scratch/minimal-loop-v0/iter2/runs/G3_tracker-016/bundle.json",
+   "request_id": "G3_tracker-016",
+   "sha256": "4ff8f8cc30f962be9119486460b551afc02e026c991d990c72b09b1dd849a5b7"
+  }
+ ],
+ "is_physical": true,
+ "metadata": {
+  "arm": "G3_tracker",
+  "cost_parquet_sha256": "447f1d51377dbfe7ae4940044b5630dce39fd66618e060ba62a776f7bf9d1889",
+  "draws": "scratch/minimal-loop-v0/iter2/draws/draws.csv",
+  "draws_meta": {
+   "allocation": {
+    "G0_none": 5,
+    "G1_upstream": 8,
+    "G2_sbt": 0,
+    "G3_tracker": 17
+   },
+   "available": {
+    "G0_none": 23068,
+    "G1_upstream": 8226,
+    "G2_sbt": 0,
+    "G3_tracker": 17
+   },
+   "design": "stratified by straight-ray class, without replacement; h column = U of the class",
+   "draws_sha256": "072b37e525ae2eaa8458b29edb1bf7a932680350329cb64a8944f20f91c03baa",
+   "excluded_already_evaluated": 32,
+   "floor": 5,
+   "min_p_gev": 2.0,
+   "n": 30,
+   "scores": "scratch/minimal-loop-v0/iter2/score/pool_scores.npz",
+   "scores_meta": {
+    "fairship_commit": "400c0fb4ae31fd09f4cb8decc98c600c8441e0c1",
+    "fairship_dir": "/home/fabian/thesis/worktrees/FairShip-pr1432-400c0fb",
+    "geofile": "/home/fabian/thesis/scratch/fairship-update-1012/pr1432_inputs/runs/25740/geo_connector.root",
+    "geofile_sha256": "83ba54e9cd99059174187c1a098e286535f1dd5d1d282f47787983ce97b66ed0",
+    "n_rows": 40000,
+    "n_scored": 39998,
+    "n_u0_1": 14,
+    "pool": "/home/fabian/thesis/ship_adaptive_muon_bg/data/samples/muonsFullMC_afterMS_sample.npz",
+    "pool_sha256": "a45fc522fb2d334991305eb41bf4b82f2b60c52a9b3347217901da9f7bc46f16",
+    "ray_flags": "ray_upstream: ray enters an Upstream* (UBT) volume; ray_tracker: ray enters Tr1..Tr4",
+    "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+    "transform": {
+     "name": "afterms_nominal_plane_to_current_shield_exit_plus_1cm_f73a305_v0",
+     "status": "PROVISIONAL",
+     "x_to_m": 1.0,
+     "x_unit": "m",
+     "y_to_m": 1.0,
+     "y_unit": "m",
+     "z_offset_m": 2.5916,
+     "z_rule": "affine_declared_z",
+     "z_scale": 1.0,
+     "z_value_m": null
+    },
+    "u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering"
+   },
+   "scores_sha256": "bad776893091116e6c57fe6465aa281b0f82f2721f045eacc6d65dfec861cecc",
+   "seed": 20261026,
+   "u_policy": {
+    "u_id": "u-b83071ed9d15",
+    "u_sha256": "9b628d478b48b521bbb854e4ec158da3868a2847785adbbfd1445214316109d9"
+   }
+  },
+  "draws_parquet_sha256": "08246a77c08802e22596bc79d542ba013eb5bba22cdd70f0d5244302ea40d447",
+  "draws_sha256": "072b37e525ae2eaa8458b29edb1bf7a932680350329cb64a8944f20f91c03baa"
+ },
+ "schema": "minimal_loop_dataset_v0",
+ "tables": {
+  "candidates": {
+   "rows": 0,
+   "sha256": "94bb92bcdc359c5509339a0f4de79cbc141160ad5e0e8088cf0a15cb7785e3fa"
+  },
+  "decisions": {
+   "rows": 638,
+   "sha256": "97063bc6424ada233ec74e5d60142498fdcaf3d75950e488451c0eb82f359893"
+  },
+  "executions": {
+   "rows": 17,
+   "sha256": "491ecacaf57ad731cec9c72c721ce0d13b8428ed4d758e7adff364fec182449e"
+  },
+  "observations": {
+   "rows": 860,
+   "sha256": "6093efd902279524dd2a10699eab898ff4dc809c8b4c4e215b218b94f355e950"
+  },
+  "realizations": {
+   "rows": 570,
+   "sha256": "9578dd417ae8b9f33d271256f718565d8e0bc1ab4c70a099086a1311644ea2b2"
+  }
+ }
+}
