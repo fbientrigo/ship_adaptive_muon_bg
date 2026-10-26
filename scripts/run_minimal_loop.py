@@ -363,6 +363,45 @@ def draw_strata(args) -> None:
     print(json.dumps({k: meta[k] for k in ("available", "allocation", "u_policy")}, indent=1))
 
 
+def draw_repeats(args) -> None:
+    """FEATURE: repeat already-evaluated states with fresh seeds (seed variance inside a state).  Which groups and how
+    many states is the EXPERIMENT choice, given as ``--group CLASS:pass|fail:N``; the previous outcome comes from the
+    snapshots, the used seeds from the dataset dirs.  The h column holds the state's previous per-run pass rate."""
+    import duckdb
+
+    scores_meta = checked_scores(args.scores)
+    cls, eligible, a = classes(args.scores)
+    s = np.load(args.scores)
+    outcome, snap_ids, compat = state_outcomes(args.snapshots)
+    candidates: dict = {}
+    for sid, eta in outcome.items():
+        i = int(sid.removeprefix("row-"))
+        if eta in (0.0, 1.0) and eligible[i]:  # a state with mixed outcomes already shows seed variance
+            candidates.setdefault((ml.CLASSES[cls[i]], int(eta)), []).append(i)
+    n = {}
+    for g in args.group:
+        name, out, m = g.split(":")
+        n[(name, int(out == "pass"))] = int(m)
+    used = {int(x) for d in args.data for x, in duckdb.sql(f"select seed from '{d}/executions.parquet'").fetchall()}
+    rows = ml.draw_repeats(candidates, n, args.k, used, args.seed)
+    for r in rows:
+        i = r["row_index"]
+        r.update(u0=float(s["u0"][i]), h=outcome[f"row-{i}"], status="ELIGIBLE", initial_volume=str(s["initial_volume"][i]),
+                 p_gev=float(np.linalg.norm(a[i, :3])))
+    args.out.mkdir(parents=True, exist_ok=True)
+    with (args.out / "draws.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    meta = {"scores": str(args.scores), "scores_sha256": sha256(args.scores), "scores_meta": scores_meta, "seed": args.seed,
+            "design": "k repeats per state, states drawn without replacement per (class, previous outcome); h column = previous per-run pass rate",
+            "previous_outcome_snapshots": snap_ids, "stage_estimator_configuration": compat, "k": args.k,
+            "groups": {f"{c}:{'pass' if o else 'fail'}": {"candidates": len(v), "drawn": n.get((c, o), 0)} for (c, o), v in sorted(candidates.items())},
+            "seeds_excluded": len(used), "draws_sha256": sha256(args.out / "draws.csv")}
+    (args.out / "draws.json").write_text(json.dumps(meta, indent=1) + "\n")
+    print(json.dumps({k: meta[k] for k in ("groups", "k", "seeds_excluded")}, indent=1))
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -401,9 +440,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--n", type=int, default=30)
     p.add_argument("--floor", type=int, default=5)
     p.add_argument("--seed", type=int, default=20261026)
+    p = sub.add_parser("draw-repeats")
+    p.add_argument("--scores", type=Path, required=True)
+    p.add_argument("--snapshots", type=Path, nargs="+", required=True, help="previous outcome of each state")
+    p.add_argument("--data", type=Path, nargs="+", required=True, help="dataset dirs whose seeds must not be reused")
+    p.add_argument("--group", nargs="+", required=True, help="CLASS:pass|fail:N")
+    p.add_argument("--k", type=int, default=3)
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--seed", type=int, default=20261027)
     args = ap.parse_args(argv)
     {"score": score, "draw": draw, "run": run, "export": export, "report": report, "update-u": update_u,
-     "draw-strata": draw_strata}[args.cmd](args)
+     "draw-strata": draw_strata, "draw-repeats": draw_repeats}[args.cmd](args)
     return 0
 
 

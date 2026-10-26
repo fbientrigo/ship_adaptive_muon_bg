@@ -94,3 +94,13 @@ def test_draw_strata_without_replacement_and_excluding_known_states():
     idx = [r["row_index"] for r in rows]
     assert len(idx) == len(set(idx)) == 5 and 5 not in idx and len({r["sim_seed"] for r in rows}) == 5
     assert [r for r in rows if r["arm"] == "G3_tracker"][0] == {**rows[-1], "row_index": 6, "proposal_prob": 1.0}
+
+
+def test_draw_repeats_fresh_seeds_k_per_state():
+    cand = {("G3_tracker", 1): [4, 5, 6], ("G3_tracker", 0): [7], ("G1_upstream", 1): [8]}
+    used = set(range(1, 10))
+    rows = ml.draw_repeats(cand, {("G3_tracker", 1): 2, ("G3_tracker", 0): 1}, k=3, used_seeds=used, seed=1)
+    assert len(rows) == 9 and {r["row_index"] for r in rows} <= {4, 5, 6, 7} and 8 not in {r["row_index"] for r in rows}
+    seeds = [r["sim_seed"] for r in rows]
+    assert len(set(seeds)) == 9 and not set(seeds) & used and len({r["draw_id"] for r in rows}) == 9
+    assert {r["proposal_prob"] for r in rows if r["row_index"] == 7} == {1.0}

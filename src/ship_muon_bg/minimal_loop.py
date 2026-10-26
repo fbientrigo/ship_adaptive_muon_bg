@@ -141,3 +141,23 @@ def draw_strata(cls: np.ndarray, eligible: np.ndarray, alloc: dict[str, int], ex
             rows.append(dict(draw_id=f"{name}-{j:03d}", arm=name, row_index=int(i), sim_seed=int(sim_seeds[len(rows)]),
                              proposal_prob=alloc[name] / len(pool)))
     return rows
+
+
+def draw_repeats(candidates: dict[tuple[str, int], list[int]], n: dict[tuple[str, int], int], k: int, used_seeds: set[int],
+                 seed: int) -> list[dict]:
+    """``k`` more executions of ``n[g]`` states drawn at random per group ``g = (class, previous outcome)`` from states
+    already evaluated, each execution with a seed never used before: measures the seed variance inside one state.
+    ``proposal_prob`` is the state's inclusion probability inside its group."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for (name, out), ids in candidates.items():
+        m = n.get((name, out), 0)
+        for i in rng.choice(sorted(ids), m, replace=False) if m else []:
+            rows += [dict(draw_id=f"repeat-{name}-{'pass' if out else 'fail'}-{i}-{j}", arm="seed_repeat", row_index=int(i),
+                          proposal_prob=m / len(ids)) for j in range(k)]
+    seeds: list[int] = []
+    while len(seeds) < len(rows):
+        s = int(rng.integers(1, 900_000_000))  # PR #1432 seed range
+        if s not in used_seeds and s not in seeds:
+            seeds.append(s)
+    return [{**r, "sim_seed": s} for r, s in zip(rows, seeds)]
