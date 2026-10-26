@@ -66,3 +66,25 @@ def test_draws_csv_round_trip_keeps_numeric_types(tmp_path):
         w.writerows(rows)
     assert rml.read_draws(tmp_path / "d.csv") == rows  # a string "0.0" would silently empty the U0 strata
     assert rml.upper95(0) is None and abs(rml.upper95(20) - 0.1391) < 1e-4
+
+
+def test_fit_u_counts_states_not_executions():
+    u = ml.fit_u({"a": 0, "b": 0, "c": 3}, {"a": False, "b": False, "c": True})
+    assert u["G0_none"] == {"valid_states": 2, "positive_states": 0, "u": 0.25} and u["G3_tracker"]["u"] == 2 / 3
+    assert u["G1_upstream"]["u"] == 0.5  # no evidence -> prior, never zero
+
+
+def test_allocate_floor_then_proportional_capped_by_availability():
+    u = {"G0_none": 0.05, "G1_upstream": 0.2, "G2_sbt": 0.3, "G3_tracker": 0.75}
+    alloc = ml.allocate(u, {"G0_none": 9999, "G1_upstream": 9999, "G2_sbt": 0, "G3_tracker": 17}, 30, 5)
+    assert sum(alloc.values()) == 30 and alloc["G2_sbt"] == 0 and alloc["G3_tracker"] <= 17
+    assert min(alloc["G0_none"], alloc["G1_upstream"]) >= 5 and alloc["G3_tracker"] > alloc["G1_upstream"] > alloc["G0_none"]
+    assert sum(ml.allocate(u, {"G0_none": 2, "G1_upstream": 1, "G2_sbt": 0, "G3_tracker": 0}, 30, 5).values()) == 3
+
+
+def test_draw_strata_without_replacement_and_excluding_known_states():
+    cls = np.array([0, 0, 0, 1, 1, 3, 3])
+    rows = ml.draw_strata(cls, np.ones(7, bool), {"G0_none": 2, "G1_upstream": 2, "G3_tracker": 1}, exclude={5}, seed=3)
+    idx = [r["row_index"] for r in rows]
+    assert len(idx) == len(set(idx)) == 5 and 5 not in idx and len({r["sim_seed"] for r in rows}) == 5
+    assert [r for r in rows if r["arm"] == "G3_tracker"][0] == {**rows[-1], "row_index": 6, "proposal_prob": 1.0}

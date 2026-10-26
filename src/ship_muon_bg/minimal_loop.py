@@ -82,3 +82,57 @@ def concentration(status: np.ndarray, u0: np.ndarray) -> dict[str, dict[str, flo
         out[arm] = {"mass_u0_1": float(pi[u0 == 1].sum()), "effective_rows": float(1 / (pi ** 2).sum()),
                     "rows_for_90pct_mass": int(np.searchsorted(np.cumsum(top), 0.9) + 1)}
     return out
+
+
+# ---- iteration 2+: geometric strata, U fitted from snapshots, stratified allocation of expensive runs -------------
+#: The PR #1432 generator skips muons below 2 GeV (``adapters/pr1432_mudis.py`` GENERATOR_MIN_P_GEV): such a run is a
+#: known NOT_EVALUATED, so stratified draws never spend a simulation on it.  It is a support limit, not a negative.
+MIN_P_GEV = 2.0
+CLASSES = ("G0_none", "G1_upstream", "G2_sbt", "G3_tracker")
+
+
+def geo_class(u0: np.ndarray, ray_upstream: np.ndarray, ray_tracker: np.ndarray) -> np.ndarray:
+    """Straight-ray class, highest first: crosses Tr1-4 > crosses SBT LiSc > crosses Upstream (UBT) > none."""
+    return np.where(ray_tracker, 3, np.where(u0 == 1, 2, np.where(ray_upstream, 1, 0)))
+
+
+def fit_u(state_class: dict[str, int], state_positive: dict[str, bool]) -> dict[str, dict]:
+    """U per class = (positive states + 1) / (valid states + 2): Laplace rate over distinct *states*, never executions."""
+    out = {}
+    for k, name in enumerate(CLASSES):
+        ids = [s for s, c in state_class.items() if c == k]
+        pos = sum(state_positive[s] for s in ids)
+        out[name] = {"valid_states": len(ids), "positive_states": pos, "u": (pos + 1) / (len(ids) + 2)}
+    return out
+
+
+def allocate(u: dict[str, float], available: dict[str, int], n: int, floor: int) -> dict[str, int]:
+    """``floor`` runs per non-empty class (exploration, keeps every region measured), the rest proportional to U
+    (expected positives per run; costs are equal per run), capped by availability, largest-remainder rounding."""
+    alloc = {k: min(floor, available[k]) for k in u}
+    left = n - sum(alloc.values())
+    while left > 0:
+        open_ = {k: u[k] for k in u if alloc[k] < available[k]}
+        if not open_:
+            break
+        share = {k: left * v / sum(open_.values()) for k, v in open_.items()}
+        take = {k: min(int(share[k]), available[k] - alloc[k]) for k in open_}
+        if not sum(take.values()):  # all shares < 1: give one run to the largest remainder
+            take = {max(share, key=lambda k: share[k] - int(share[k])): 1}
+        for k, t in take.items():
+            alloc[k] += t
+        left = n - sum(alloc.values())
+    return alloc
+
+
+def draw_strata(cls: np.ndarray, eligible: np.ndarray, alloc: dict[str, int], exclude: set[int], seed: int) -> list[dict]:
+    """Without replacement inside each class; ``proposal_prob`` is the inclusion probability n_k / N_k."""
+    rng = np.random.default_rng(seed)
+    sim_seeds = rng.choice(899_999_999, size=sum(alloc.values()), replace=False) + 1
+    rows = []
+    for k, name in enumerate(CLASSES):
+        pool = np.array([i for i in np.where(eligible & (cls == k))[0] if int(i) not in exclude], dtype=int)
+        for j, i in enumerate(rng.choice(pool, alloc.get(name, 0), replace=False) if alloc.get(name) else []):
+            rows.append(dict(draw_id=f"{name}-{j:03d}", arm=name, row_index=int(i), sim_seed=int(sim_seeds[len(rows)]),
+                             proposal_prob=alloc[name] / len(pool)))
+    return rows

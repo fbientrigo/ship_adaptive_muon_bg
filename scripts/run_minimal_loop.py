@@ -51,15 +51,19 @@ def score(args) -> None:
     a = ml.load_pool()
     u0 = np.full(len(a), np.nan)
     volume = np.full(len(a), "", dtype=object)
+    upstream, tracker = np.zeros(len(a), bool), np.zeros(len(a), bool)
     for i in np.where(ml.valid_rows(a))[0]:
         c = record(a, i)
         x, y, z = TRANSFORM.apply(c)  # the exact placement the injection uses
-        info, _ = A.trajectory(geom, dict(px=c.px, py=c.py, pz=c.pz, x=x, y=y, z=z))
+        info, rows = A.trajectory(geom, dict(px=c.px, py=c.py, pz=c.pz, x=x, y=y, z=z))
         u0[i] = float(len(info["ray_sensitive_volumes"]) > 0)
         volume[i] = info["initial_volume"]
+        names = {r["volume"].split("_")[0] for r in rows}
+        upstream[i], tracker[i] = "Upstream" in names, bool(names & {"Tr1", "Tr2", "Tr3", "Tr4"})
     args.out.mkdir(parents=True, exist_ok=True)
-    np.savez(args.out / "pool_scores.npz", u0=u0, initial_volume=volume.astype(str))
+    np.savez(args.out / "pool_scores.npz", u0=u0, initial_volume=volume.astype(str), ray_upstream=upstream, ray_tracker=tracker)
     meta = {"u0_definition": "straight TGeo ray from the transformed state crosses a LiSc* (SBT) volume; no field, no scattering",
+            "ray_flags": "ray_upstream: ray enters an Upstream* (UBT) volume; ray_tracker: ray enters Tr1..Tr4",
             "pool": str(ml.POOL_NPZ), "pool_sha256": sha256(ml.POOL_NPZ), "geofile": str(args.geo), "geofile_sha256": sha256(args.geo),
             "fairship_dir": str(args.fairship), "fairship_commit": _git_head(args.fairship), "transform": TRANSFORM.manifest(),
             "n_rows": len(a), "n_scored": int(np.isfinite(u0).sum()), "n_u0_1": int((u0 == 1).sum()),
@@ -188,7 +192,7 @@ def export(args) -> None:
         if b is not None and (json.loads((run_dir / "draw.json").read_text())["draw"] != d or b["request_id"] != d["draw_id"]
                               or [(e["subject_id"], e["seed"]) for e in b["executions"]] != [(f"row-{d['row_index']}", d["sim_seed"])]):
             raise SystemExit(f"{run_dir}: bundle does not belong to draw {d['draw_id']}")
-    for arm in ml.ARMS:
+    for arm in dict.fromkeys(d["arm"] for d in draws):
         rows = [d for d in draws if d["arm"] == arm]
         missing = [d["draw_id"] for d in rows if not (args.runs / d["draw_id"] / "bundle.json").exists()]
         if missing:
@@ -221,10 +225,11 @@ def report(args) -> None:
     feats = {"p_gev": lambda m: np.linalg.norm(m[:, :3], axis=1), "pt_gev": lambda m: np.hypot(m[:, 0], m[:, 1]),
              "x_m": lambda m: m[:, 3], "y_m": lambda m: m[:, 4]}
     edges = {k: np.quantile(f(pool), np.linspace(0, 1, 11)) for k, f in feats.items()}
-    policy_u = {"u0_scores_sha256": sha256(scores), "u0_definition": "straight-ray SBT crossing (pool_scores.json)", "delta": ml.DELTA, "alpha": ml.ALPHA}
+    policy_u = draws_meta.get("u_policy") or {"u0_scores_sha256": sha256(scores), "u0_definition": "straight-ray SBT crossing (pool_scores.json)", "delta": ml.DELTA, "alpha": ml.ALPHA}
     rep: dict = {"scope": "PR #1432 filter stage only; not Y^(k), not reconstruction, not B. Exploratory smoke, no power claim.",
                  "reference_is": "uniform over eligible rows (empirical), not the nominal physical measure", "arms": {}}
-    for arm in ml.ARMS:
+    arms = list(dict.fromkeys(r for r, in duckdb.sql(f"select arm from read_csv('{args.draws}', header=true)").fetchall()))
+    for arm in arms:
         d = args.data / arm
         prov = {tuple(sorted((k, v) for k, v in json.loads(r).items() if k in ("fairship_commit", "n_dis_per_material", "filter_option")))
                 for r, in duckdb.sql(f"select provenance from '{d}/executions.parquet'").fetchall()}
@@ -264,14 +269,92 @@ def report(args) -> None:
             "coverage_deciles_of_eligible_pool": {k: np.histogram(np.clip(f(drawn), edges[k][0], edges[k][-1]), edges[k])[0].tolist()
                                                   for k, f in feats.items()},
         }
-    ref, tilt = (ml.arm_probabilities(arm, status, u0) for arm in ml.ARMS)
-    u0_0 = (status == "ELIGIBLE") & (u0 == 0)
-    rep["missed_region"] = {"reference_u0_0": rep["arms"]["reference_uniform_eligible"]["by_u0"]["u0_0"],
-                            "tilt_over_reference_prob_u0_0": float(tilt[u0_0][0] / ref[u0_0][0]),  # normalised, per row
-                            "within_tilt_weight_ratio_u0_0_over_u0_1": ml.DELTA ** ml.ALPHA,
-                            "tilt_mass_on_u0_0": float(tilt[u0_0].sum()), "reference_mass_on_u0_0": float(ref[u0_0].sum())}
+    if arms == list(ml.ARMS):
+        ref, tilt = (ml.arm_probabilities(arm, status, u0) for arm in ml.ARMS)
+        u0_0 = (status == "ELIGIBLE") & (u0 == 0)
+        rep["missed_region"] = {"reference_u0_0": rep["arms"]["reference_uniform_eligible"]["by_u0"]["u0_0"],
+                                "tilt_over_reference_prob_u0_0": float(tilt[u0_0][0] / ref[u0_0][0]),  # normalised, per row
+                                "within_tilt_weight_ratio_u0_0_over_u0_1": ml.DELTA ** ml.ALPHA,
+                                "tilt_mass_on_u0_0": float(tilt[u0_0].sum()), "reference_mass_on_u0_0": float(ref[u0_0].sum())}
     (args.data / "report.json").write_text(json.dumps(rep, indent=1) + "\n")
     print(json.dumps(rep, indent=1))
+
+
+def state_outcomes(snapshots: list[Path]) -> tuple[dict[str, bool], list[str]]:
+    """Distinct states with >= 1 valid execution -> any positive.  Pools a state's executions across snapshots of one
+    stage/configuration only; refuses snapshots that disagree on stage, estimator or configuration."""
+    import duckdb
+
+    specs = [json.loads((Path(s) / "snapshot.json").read_text()) for s in snapshots]
+    keys = {(x["stage_definition_id"], x["estimator_definition_id"], x["fs_sim_configuration_id"], x["options_digest"]) for x in specs}
+    if len(keys) != 1:
+        raise SystemExit(f"snapshots disagree on stage/estimator/configuration: {keys}")
+    for x, s in zip(specs, snapshots):
+        if sha256(Path(s) / "rows.parquet") != x["rows_sha256"]:
+            raise SystemExit(f"{s}/rows.parquet does not match its snapshot.json")
+    files = ", ".join(f"'{Path(s) / 'rows.parquet'}'" for s in snapshots)
+    rows = duckdb.sql(f"select subject_id, sum(valid), sum(positive) from read_parquet([{files}]) group by 1").fetchall()
+    return {sid: pos > 0 for sid, valid, pos in rows if valid > 0}, [x["snapshot_id"] for x in specs]
+
+
+def classes(scores: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    s = np.load(scores)
+    a = ml.load_pool()
+    eligible = (ml.eligibility(a, s["u0"], s["initial_volume"]) == "ELIGIBLE") & (np.linalg.norm(a[:, :3], axis=1) >= ml.MIN_P_GEV)
+    return ml.geo_class(s["u0"], s["ray_upstream"], s["ray_tracker"]), eligible, a
+
+
+def update_u(args) -> None:
+    """EXPERIMENT (U definition) on a FEATURE path: U is fitted only from frozen snapshots and written as a versioned file."""
+    checked_scores(args.scores)
+    cls, _, _ = classes(args.scores)
+    outcome, snap_ids = state_outcomes(args.snapshots)
+    state_class = {sid: int(cls[int(sid.removeprefix("row-"))]) for sid in outcome}
+    u = ml.fit_u(state_class, outcome)
+    spec = {"u_definition": "Laplace rate of filter-PASS states per straight-ray class " + "/".join(ml.CLASSES), "classes": u,
+            "fit_snapshots": snap_ids, "fit_states": sorted(outcome), "scores_sha256": sha256(args.scores)}
+    spec["u_id"] = "u-" + hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:12]
+    if args.evaluate:  # out-of-sample check of an earlier U on states it was not fitted on
+        prev = json.loads(args.evaluate.read_text())
+        fresh = {s for s in outcome if s not in set(prev["fit_states"])}
+        spec["evaluation_of_previous"] = {"u_id": prev["u_id"], "fresh_states": len(fresh), "by_class": {
+            name: {"predicted_u": prev["classes"][name]["u"],
+                   "observed": f"{sum(outcome[s] for s in fresh if state_class[s] == k)}/{sum(state_class[s] == k for s in fresh)}"}
+            for k, name in enumerate(ml.CLASSES)}}
+    args.out.write_text(json.dumps(spec, indent=1) + "\n")
+    print(json.dumps(spec, indent=1))
+
+
+def draw_strata(args) -> None:
+    """FEATURE: strategic use of expensive runs -- no run on a known outcome (p < 2 GeV, already evaluated states),
+    without replacement, an exploration floor per class, the rest proportional to U."""
+    import duckdb
+
+    scores_meta = checked_scores(args.scores)
+    cls, eligible, a = classes(args.scores)
+    s = np.load(args.scores)
+    u = json.loads(args.u.read_text())
+    exclude = {int(r.removeprefix("row-")) for d in args.exclude_data
+               for r, in duckdb.sql(f"select distinct subject_id from '{d}/executions.parquet'").fetchall()}
+    available = {name: int(sum(1 for i in np.where(eligible & (cls == k))[0] if int(i) not in exclude)) for k, name in enumerate(ml.CLASSES)}
+    alloc = ml.allocate({k: v["u"] for k, v in u["classes"].items()}, available, args.n, args.floor)
+    rows = ml.draw_strata(cls, eligible, alloc, exclude, args.seed)
+    for r in rows:
+        i = r["row_index"]
+        r.update(u0=float(s["u0"][i]), h=u["classes"][r["arm"]]["u"], status="ELIGIBLE", initial_volume=str(s["initial_volume"][i]),
+                 p_gev=float(np.linalg.norm(a[i, :3])))
+    args.out.mkdir(parents=True, exist_ok=True)
+    with (args.out / "draws.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    meta = {"scores": str(args.scores), "scores_sha256": sha256(args.scores), "scores_meta": scores_meta, "seed": args.seed,
+            "design": "stratified by straight-ray class, without replacement; h column = U of the class",
+            "u_policy": {"u_id": u["u_id"], "u_sha256": sha256(args.u)}, "n": args.n, "floor": args.floor,
+            "excluded_already_evaluated": len(exclude), "min_p_gev": ml.MIN_P_GEV, "available": available, "allocation": alloc,
+            "draws_sha256": sha256(args.out / "draws.csv")}
+    (args.out / "draws.json").write_text(json.dumps(meta, indent=1) + "\n")
+    print(json.dumps({k: meta[k] for k in ("available", "allocation", "u_policy")}, indent=1))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -299,8 +382,22 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--draws", type=Path, required=True)
         p.add_argument("--runs", type=Path, required=True)
         p.add_argument("--data", type=Path, required=True)
+    p = sub.add_parser("update-u")
+    p.add_argument("--scores", type=Path, required=True)
+    p.add_argument("--snapshots", type=Path, nargs="+", required=True)
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--evaluate", type=Path, help="earlier u.json to check on the states it was not fitted on")
+    p = sub.add_parser("draw-strata")
+    p.add_argument("--scores", type=Path, required=True)
+    p.add_argument("--u", type=Path, required=True)
+    p.add_argument("--exclude-data", type=Path, nargs="*", default=[], help="dataset dirs whose states are already evaluated")
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--n", type=int, default=30)
+    p.add_argument("--floor", type=int, default=5)
+    p.add_argument("--seed", type=int, default=20261026)
     args = ap.parse_args(argv)
-    {"score": score, "draw": draw, "run": run, "export": export, "report": report}[args.cmd](args)
+    {"score": score, "draw": draw, "run": run, "export": export, "report": report, "update-u": update_u,
+     "draw-strata": draw_strata}[args.cmd](args)
     return 0
 
 
