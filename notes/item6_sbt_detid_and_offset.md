@@ -34,3 +34,25 @@ OPEN (needs the source of the offset, not another run): what plane does 28.905 m
 and what is the intended FairShip plane? +3.035 m is only an arithmetic reading of the name, not a result.
 Impact: the eligibility gate in `minimal_loop.py` (cave/Cavern only) hides rows that start in iron; it does not
 fix a wrong plane (its own docstring says so, B5).
+
+## C. Where 2.5916 comes from (FairShip read-only search, 2026-10-27)
+
+| Claim | Label | Evidence |
+|---|---|---|
+| No FairShip commit ever contains `2.5916`, `25.916`, `2591.6`, `28.905` or `2890.5` | OBSERVED | `git log --all -S<string>` on `FairShip` at `e8627d1de` (2912 commits); only `70.845` hits (MuonBack target shift, `2b01ce653`, 2026-05-13) |
+| `muShield.length = sum(row[0] + 2*row[1])` and `muShield.z = hadronAbsorber.z = 204 cm`; end of shield = `z + length` | OBSERVED | `python/geometry_config.py` ~l.247-274, hadron absorber l.248-262 |
+| TRY_2026 end of shield = 31.9300 m (config arithmetic); equals the TGeo Magn7 end 3193 cm in section B | OBSERVED, two independent routes | `python/geometry_config.py` at `f73a305`; `geo_connector.root` |
+| TRY_2025 end of shield = 31.4866 m | OBSERVED (arithmetic on `shield_db["TRY_2025"]`) | same file, 6 rows |
+| `31.4866 - 28.905 = 2.5816`; plus 1 cm = **2.5916** (exact to 4 decimals) | OBSERVED (arithmetic) | the rows above |
+| Before `faec913b1` (2026-07-08, "Add TRY_2026 MS design") the default shield was TRY_2025 | OBSERVED | `geometry_config.py` default `shieldName="TRY_2025"` before that commit; `TRY_2026` added by it |
+
+INFERENCE (strong, numeric, not documented anywhere): the offset was computed as "TRY_2025 shield exit minus 28.905 m, plus 1 cm"
+and then reused on `f73a305`, whose TRY_2026 shield ends at 31.93 m. The name `..._current_shield_exit_plus_1cm_f73a305_v0`
+describes the intent; the number belongs to the previous shield. Under TRY_2026 the same rule gives
+`31.93 + 0.01 - 28.905 = 3.035 m`, so **the plane lands 43 cm too early** (inside Magn7 iron).
+This is consistent with rows starting in `Magn7_*` iron (not proven to be the only cause).
+
+Still OPEN: (1) that 28.905 m really is the exit plane of the shield that produced the sample (the sample's own
+production geometry is not recorded in the repo); (2) whether TRY_2025's end is 31.4866 m in TGeo (arithmetic only; no
+TRY_2025 geometry file was read); (3) whether "+1 cm" is the intended clearance. The change to +3.035 m is a candidate,
+not a decision: it needs the user and a bounded run, and moves every injected state.
