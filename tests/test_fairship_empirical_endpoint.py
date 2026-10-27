@@ -91,3 +91,11 @@ def test_sbt_technical_unavailability_is_not_a_negative() -> None:
     decision = StageEvaluator().evaluate(SBT_STAGE, (observation,), subject_ref=execution.execution_id)
     assert decision.decision is None
     assert decision.evaluation_status is not DecisionEvaluationStatus.EVALUATED
+
+
+def test_sbt_predicate_matches_pinned_rule_text():
+    from ship_muon_bg.benchmarks.fairship_endpoint import SBT_SELECTION_RULE, is_sbt_hit
+
+    assert SBT_SELECTION_RULE == "1000 < detector_id < 999999 AND abs(pdg_id) == 13 AND momentum_gev > 3.0"
+    assert is_sbt_hit(1001, -13, 3.1) and not is_sbt_hit(1000, 13, 3.1)
+    assert not is_sbt_hit(1001, 11, 3.1) and not is_sbt_hit(1001, 13, 3.0)
