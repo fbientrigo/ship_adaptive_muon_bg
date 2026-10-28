@@ -21,4 +21,10 @@ Labels: OBSERVED (read in code / ran), INFERENCE, OPEN. Goal (user): regenerate 
 - TRY_2026 shield: starts 2.04 m, ends 31.93 m from the target origin (`geometry_config.py`; matches TGeo). OBSERVED.
 - No GAN code exists in FairShip `e8627d1de` (grep). The "same generator" is the Pythia8+Geant4 chain above. OBSERVED.
 - Heavy-flavour option (`-C`/`-B`) needs a Cascade input file on EOS (`EOSSHIP`), not available locally. OBSERVED (default path in the argparse).
-- A muon is rare per event: with `-e 1`, 20 events gave 0 kept events. Yield per POT is being measured (run `stage1_n3000`, kaon/pion splitting 10).
+- Yield measured (run `scratch/gen-from-scratch-v0/stage1_n3000`: `-n 3000 -e 1 --storeOnlyMuons --kaon-pion-splits 10 -rs 2 -r 2`):
+  1784 s wall (0.59 s/event, single core), 4 events with activity, 13 `PlaneHAPoint` hits (8 x pdg 13, 5 x pdg -13),
+  all at z = 434.7 cm, p = 1.2..4.7 GeV. So ~0.004 hits/event, ~137 s per hit at this cut. OBSERVED.
+  The 13 hits come from only 4 events: split kaon/pion clones share a parent, so they are not independent muons.
+  Weights of split clones are not read yet. OPEN.
+- `PlaneHA` sits at z = 4.347 m (end of the first shield segment, 4.34 m in `geometry_config.py` + 1 cm), not at 2.04 m. OBSERVED.
+- p of these muons is low (<5 GeV); the hard `p>3 GeV` SBT cut and the generator's `p<2 GeV` limit will remove many. INFERENCE from 13 hits.
