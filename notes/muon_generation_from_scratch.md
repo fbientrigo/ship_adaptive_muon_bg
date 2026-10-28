@@ -28,3 +28,23 @@ Labels: OBSERVED (read in code / ran), INFERENCE, OPEN. Goal (user): regenerate 
   Weights of split clones are not read yet. OPEN.
 - `PlaneHA` sits at z = 4.347 m (end of the first shield segment, 4.34 m in `geometry_config.py` + 1 cm), not at 2.04 m. OBSERVED.
 - p of these muons is low (<5 GeV); the hard `p>3 GeV` SBT cut and the generator's `p<2 GeV` limit will remove many. INFERENCE from 13 hits.
+
+## Production started 2026-10-28 (stage 1, local)
+
+- Launcher `~/thesis/scratch/gen-from-scratch-v0/launch_stage1.sh <seed> <n>`; 3 detached workers, seeds 101/102/103, 20000 events each,
+  `-e 1 --storeOnlyMuons --kaon-pion-splits 10`, output `prod_stage1/seed_<seed>/out/`, log `run.log` (ends with `exit=<code>`).
+  Expected ~3.3 h each at 0.59 s/event (estimate from the 3000-event run, not a measurement of these runs).
+- Memory: each worker held ~1.1 GB RSS (OBSERVED, `ps`); the machine has 7.8 GB and other sessions. Do not start more than 3-4.
+- Outputs are scratch evidence; nothing is committed to the repo.
+
+## GAN (what exists)
+
+| Claim | Label | Evidence |
+|---|---|---|
+| SHiP published a GAN that emulates the proton-target interaction and returns muons ("fast simulation ... factor of O(10^6)") | OBSERVED (paper) | arXiv:1909.04451, JINST 2019 (Ahdida, Ratnikov, Zaytsev et al.) |
+| It replaces the slow part of our stage 1 (target + absorber), not the muon shield | INFERENCE from the abstract | same |
+| No GAN code or weights in FairShip `e8627d1de`, its branches or history; no public repository found by two web searches | OBSERVED (negative; absence of evidence) | local grep and `git log --grep`; searches |
+| The thesis registry lists `muons_GAN.pkl` (291 MB) and `muonsGAN_afterMS.pkl` (496 MB) with geometry, geofile and POT scale all UNRESOLVED; the files are not on this machine | OBSERVED | `phd-thesis/thesis_material_audit/dataset_registry.json`; `find` found no copy |
+
+Consequence: a GAN cannot be used from what we have. It would be a different, lower-trust source (BLOCKED in the registry) and the question
+"how to increase production" is answered today only by more stage-1 CPU, FairShip's built-in boosts (`--kaon-pion-splits`, `-C/-B` with the EOS Cascade file) and lxplus.
