@@ -108,3 +108,15 @@ def test_stage2_event_id_minus_one_is_the_stage1_entry_by_primary_momentum():
                     assert any(max(abs(a - b) for a, b in zip(mom(k), h)) < 2e-3 for h in ha)
                     checked += 1
     assert checked == 21  # 1+10+2+4+1 + 1+1 + 1 primary muons in the 8 stage-2 events
+
+
+def test_compare_with_standard_reports_lost_crossings_and_events():
+    from ship_muon_bg.adapters.fairship_p2 import compare_with_standard
+
+    def r(ev, tid):
+        return {"mc_event_id": ev, "track_id": tid, "crossing_index": 0}
+
+    raw = [r(1, 5), r(1, 6), r(2, 7), r(3, 8)]
+    c = compare_with_standard(raw, [r(1, 5), r(3, 8)])  # event 2 vanished, event 1 lost one of two crossings
+    assert (c["generated"], c["kept"], len(c["lost"]), c["lost_events"], c["extra_in_standard"]) == (4, 2, 2, [2], [])
+    assert compare_with_standard(raw, raw + [r(9, 1)])["extra_in_standard"] == [(9, 1, 0)]

@@ -105,3 +105,17 @@ def geometry_manifest(geofile: Path | str, extra_nodes: Iterable[str] = ()) -> d
         "shield_end_from_nodes": shield_end, "nodes": nodes,
         "p2_center_minus_shield_end": nodes[f"{P2_NODE}_{P2_DETID}"]["center"][2] - shield_end,
     }
+
+
+def compare_with_standard(unfiltered: Iterable[Mapping[str, Any]], standard: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """Crossings of the unfiltered file against the standard (``--MuonBack``-filtered) file of the same run.
+
+    Key: ``(mc_event_id, track_id, crossing_index)``; ``mc_event_id`` survives the filter, ``entry`` does not.
+    ``extra_in_standard`` must be empty (the filter only removes events); ``lost`` are the crossings it removed and
+    ``lost_events`` their event ids (events whose P2 crossings were all removed with them).
+    """
+    key = lambda r: (r["mc_event_id"], r["track_id"], r["crossing_index"])  # noqa: E731
+    raw, std = {key(r): r for r in unfiltered}, {key(r) for r in standard}
+    lost = [raw[k] for k in raw if k not in std]
+    return {"generated": len(raw), "kept": len(raw) - len(lost), "lost": lost, "extra_in_standard": sorted(std - raw.keys()),
+            "lost_events": sorted({r["mc_event_id"] for r in lost} - {r["mc_event_id"] for r in raw.values() if key(r) in std})}
