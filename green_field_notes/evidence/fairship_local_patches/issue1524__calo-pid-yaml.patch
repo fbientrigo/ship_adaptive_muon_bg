@@ -1,0 +1,200 @@
+diff --git a/python/caloScoringPlanePID.py b/python/caloScoringPlanePID.py
+index 1ff585f..c087e3a 100644
+--- a/python/caloScoringPlanePID.py
++++ b/python/caloScoringPlanePID.py
+@@ -16,10 +16,12 @@ load_pid() does both for a file.
+ from __future__ import annotations
+ 
+ import os
++from collections.abc import Hashable
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+ import yaml
++from yaml.constructor import ConstructorError
+ from yaml.error import YAMLError
+ 
+ # Order of CaloScoringPlanePID::Species (kElectron = 0, kHadron = 1, kMuon = 2).
+@@ -32,6 +34,42 @@ class PIDConfigError(ValueError):
+     """The PID file is malformed; the message names the file and the entry."""
+ 
+ 
++class _UniqueKeySafeLoader(yaml.SafeLoader):
++    """SafeLoader that rejects repeated explicitly declared mapping keys."""
++
++    def __init__(self, stream):
++        super().__init__(stream)
++        self._checked_mappings = set()
++
++    def flatten_mapping(self, node):
++        # Check before merging; inherited keys may be explicitly overridden.
++        # This hook also visits inline merge sources skipped by construct_mapping().
++        if node in self._checked_mappings:
++            # Aliases can revisit nodes already containing inherited keys.
++            return super().flatten_mapping(node)
++
++        self._checked_mappings.add(node)
++        keys = set()
++        for key_node, _ in node.value:
++            if key_node.tag == "tag:yaml.org,2002:merge":
++                continue
++            if key_node.tag == "tag:yaml.org,2002:value":
++                key_node.tag = "tag:yaml.org,2002:str"  # Match SafeConstructor's handling of '='.
++            key = self.construct_object(key_node, deep=True)
++            if not isinstance(key, Hashable):
++                continue  # SafeConstructor reports unhashable keys as usual.
++            if key in keys:
++                raise ConstructorError(
++                    "while constructing a mapping",
++                    node.start_mark,
++                    f"found duplicate key {key!r}",
++                    key_node.start_mark,
++                )
++            keys.add(key)
++
++        return super().flatten_mapping(node)
++
++
+ @dataclass
+ class PIDModel:
+     """Confusion matrices in the species order of CaloScoringPlanePID."""
+@@ -108,7 +146,7 @@ def load(path: str) -> PIDModel:
+     expanded = os.path.expanduser(os.path.expandvars(path))
+     try:
+         with open(expanded) as f:
+-            config = yaml.safe_load(f)
++            config = yaml.load(f, Loader=_UniqueKeySafeLoader)
+     except OSError as error:
+         raise PIDConfigError(f"cannot read the PID file {expanded}: {error.strerror}") from error
+     except YAMLError as error:
+diff --git a/tests/test_caloScoringPlanePID.py b/tests/test_caloScoringPlanePID.py
+index 08af069..b9cb73a 100644
+--- a/tests/test_caloScoringPlanePID.py
++++ b/tests/test_caloScoringPlanePID.py
+@@ -16,6 +16,7 @@ from caloScoringPlanePID import SPECIES, PIDConfigError, load, parse
+ 
+ SHIPPED = os.path.join(os.path.dirname(__file__), "..", "geometry", "caloScoringPlane_pid_provided.yaml")
+ IDENTITY = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
++MATRIX_YAML = "[[1, 0, 0], [0, 1, 0], [0, 0, 1]]"
+ 
+ 
+ def config(**extra):
+@@ -115,6 +116,118 @@ def test_invalid_yaml(tmp_path):
+         load(str(path))
+ 
+ 
++@pytest.mark.parametrize(
++    ("text", "key", "line", "column"),
++    [
++        ("pdg_overrides:\n  211: hadron\n  211: muon\n" + yaml.safe_dump(config()), "211", 3, 3),
++        ("pdg_overrides:\n  +211: hadron\n  211: muon\n" + yaml.safe_dump(config()), "211", 3, 3),
++        (
++            "points:\n  - energy: 1\n    energy: 2\n    matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]\n",
++            "energy",
++            3,
++            5,
++        ),
++        (
++            "interpolation: linear\ninterpolation: log\n" + yaml.safe_dump(config()),
++            "interpolation",
++            2,
++            1,
++        ),
++        (
++            "points:\n"
++            "  - &defaults\n"
++            "    energy: 1\n"
++            "    energy: 2\n"
++            "    matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]\n"
++            "  - <<: *defaults\n"
++            "    energy: 3\n",
++            "energy",
++            4,
++            5,
++        ),
++        (
++            "points:\n"
++            "  - &defaults\n"
++            "    energy: 1\n"
++            "    matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]\n"
++            "  - <<: *defaults\n"
++            "    energy: 2\n"
++            "    energy: 3\n",
++            "energy",
++            7,
++            5,
++        ),
++        (
++            "points:\n  - <<: {energy: 1, energy: 2}\n    matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]\n",
++            "energy",
++            2,
++            21,
++        ),
++    ],
++    ids=[
++        "pdg",
++        "equivalent-pdg",
++        "point-energy",
++        "interpolation",
++        "nested-merge-source",
++        "merged-mapping",
++        "inline-merge-source",
++    ],
++)
++def test_duplicate_yaml_keys_are_rejected_by_load(tmp_path, text, key, line, column):
++    path = tmp_path / "duplicate.yaml"
++    path.write_text(text)
++
++    with pytest.raises(PIDConfigError) as error:
++        load(str(path))
++
++    message = str(error.value)
++    assert str(path) in message
++    assert "duplicate key" in message and key in message
++    assert f"line {line}, column {column}" in message
++    problem_mark = error.value.__cause__.problem_mark
++    assert problem_mark.name == str(path)
++    assert problem_mark.line == line - 1
++    assert problem_mark.column == column - 1
++
++
++@pytest.mark.parametrize(
++    ("text", "energies"),
++    [
++        (
++            f"points:\n  - &defaults {{energy: 1, matrix: {MATRIX_YAML}}}\n  - {{<<: *defaults, energy: 2}}\n",
++            [1.0, 2.0],
++        ),
++        (
++            f"points:\n  - &first {{energy: 1, matrix: {MATRIX_YAML}}}\n"
++            f"  - &second {{energy: 2, matrix: {MATRIX_YAML}}}\n"
++            "  - {<<: [*first, *second]}\n",
++            [1.0, 2.0, 1.0],
++        ),
++        (
++            "points:\n  - &defaults\n"
++            f"    <<: {{energy: 1, matrix: {MATRIX_YAML}}}\n"
++            "  - *defaults\n"
++            "  - {<<: *defaults, energy: 2}\n",
++            [1.0, 1.0, 2.0],
++        ),
++    ],
++    ids=["explicit-override", "overlapping-merge-sequence", "alias-reuse"],
++)
++def test_valid_yaml_merge_keys_are_accepted(tmp_path, text, energies):
++    path = tmp_path / "merged.yaml"
++    path.write_text(text)
++
++    assert load(str(path)).energies == energies
++
++
++def test_valid_yaml_without_duplicates_is_accepted(tmp_path):
++    path = tmp_path / "valid.yaml"
++    path.write_text(yaml.safe_dump(config()))
++
++    assert load(str(path)).energies == [1.0]
++
++
+ def test_environment_variables_are_expanded(tmp_path, monkeypatch):
+     (tmp_path / "pid.yaml").write_text(yaml.safe_dump(config()))
+     monkeypatch.setenv("PID_TEST_DIR", str(tmp_path))

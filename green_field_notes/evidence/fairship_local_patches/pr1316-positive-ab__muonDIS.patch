@@ -1,0 +1,110 @@
+diff --git a/muonDIS/add_muonresponse.py b/muonDIS/add_muonresponse.py
+index aa3ad7f85..11f368cb5 100644
+--- a/muonDIS/add_muonresponse.py
++++ b/muonDIS/add_muonresponse.py
+@@ -43,10 +43,10 @@ headers = [
+ def inspect_file(inputfile, muonfile, print_table=False) -> bool:
+     """Inspecting the produced file for successfully added muon veto points."""
+     input_file = r.TFile.Open(inputfile, "read")
+-    input_tree = input_file.cbmsim
++    input_tree = input_file["cbmsim"]
+ 
+     muon_file = r.TFile.Open(muonfile, "read")
+-    muon_tree = muon_file.DIS
++    muon_tree = muon_file["DIS"]
+ 
+     muons_found = False
+ 
+@@ -99,7 +99,7 @@ def modify_file(inputfile, muonfile) -> None:
+ 
+     input_file = r.TFile.Open(inputfile, "read")
+     try:
+-        input_tree = input_file.cbmsim
++        input_tree = input_file["cbmsim"]
+     except Exception as e:
+         print(f"Error: {e}")
+         input_file.Close()
+@@ -108,7 +108,7 @@ def modify_file(inputfile, muonfile) -> None:
+     # Open the external file with additional vetoPoints
+     muon_file = r.TFile.Open(muonfile, "read")
+     try:
+-        muon_tree = muon_file.DIS
++        muon_tree = muon_file["DIS"]
+     except Exception as e:
+         print(f"Error: {e}")
+         muon_file.Close()
+diff --git a/muonDIS/makeMuonDIS.py b/muonDIS/makeMuonDIS.py
+index 26ba7292a..91d187f30 100644
+--- a/muonDIS/makeMuonDIS.py
++++ b/muonDIS/makeMuonDIS.py
+@@ -73,7 +73,7 @@ def update_file(filename: str, final_xsec) -> None:
+     """Update the DIS cross section of the muon to the converged value from Pythia."""
+     file = r.TFile.Open(filename, "read")
+ 
+-    original_tree = file.DIS
++    original_tree = file["DIS"]
+ 
+     temp_filename = filename + ".tmp"
+     temp_file = r.TFile.Open(temp_filename, "recreate")
+@@ -112,7 +112,7 @@ Fixtarget = {1: "p+", 0: "n0"}
+ def inspect_file(filename: str) -> None:
+     """Inspect the contents of muonDis file."""
+     file = r.TFile.Open(filename, "READ")
+-    tree = file.DIS
++    tree = file["DIS"]
+ 
+     table_rows = []
+ 
+@@ -141,7 +141,7 @@ def makeMuonDIS() -> None:
+     muonFile = r.TFile.Open(args.inputFile, "read")
+ 
+     try:
+-        muon_tree = muonFile.MuonAndSoftInteractions
++        muon_tree = muonFile["MuonAndSoftInteractions"]
+     except Exception as e:
+         logging.error(e)
+         muonFile.Close()
+diff --git a/muonDIS/make_nTuple_SBT.py b/muonDIS/make_nTuple_SBT.py
+index 3116e5f42..d78bc4007 100644
+--- a/muonDIS/make_nTuple_SBT.py
++++ b/muonDIS/make_nTuple_SBT.py
+@@ -223,7 +223,7 @@ for inputFolder in os.listdir(path):
+             os.path.join(path, inputFolder, "ship.conical.MuonBack-TGeant4.root"),
+             "read",
+         )
+-        tree = f.cbmsim
++        tree = f["cbmsim"]
+     except Exception as e:
+         logging.debug(f"Error :{e}")
+ 
+@@ -384,7 +384,7 @@ print(
+ event_data = []
+ with r.TFile.Open(args.outputfile, "read") as file:
+     try:
+-        tree = file.MuonAndSoftInteractions
++        tree = file["MuonAndSoftInteractions"]
+     except Exception as e:
+         print(f"Error: {e}")
+         exit(1)
+diff --git a/muonDIS/make_nTuple_Tr.py b/muonDIS/make_nTuple_Tr.py
+index e28ae5e43..df72e9586 100644
+--- a/muonDIS/make_nTuple_Tr.py
++++ b/muonDIS/make_nTuple_Tr.py
+@@ -222,7 +222,7 @@ for inputFolder in os.listdir(path):
+             os.path.join(path, inputFolder, "ship.conical.MuonBack-TGeant4.root"),
+             "read",
+         )
+-        tree = f.cbmsim
++        tree = f["cbmsim"]
+     except Exception as e:
+         print(f"Error :{e}")
+ 
+@@ -392,7 +392,7 @@ print(
+ event_data = []
+ with r.TFile.Open(args.outputfile, "read") as file:
+     try:
+-        tree = file.MuonAndSoftInteractions
++        tree = file["MuonAndSoftInteractions"]
+     except Exception as e:
+         print(f"Error: {e}")
+         exit(1)
